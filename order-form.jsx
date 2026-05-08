@@ -90,6 +90,9 @@ const NewOrderDrawer = ({ open, onClose }) => {
 
   const [saving, setSaving] = useStateOF(false);
   const [error, setError] = useStateOF('');
+  const canCreateOrder = hasPermission('CREATE_ORDER');
+  const canEditLabConfig = hasPermission('EDIT_LAB_CONFIG');
+  const canEditTestCatalog = hasPermission('EDIT_TEST_CATALOG');
 
   const firstFieldRef = useRefOF(null);
 
@@ -150,9 +153,11 @@ const NewOrderDrawer = ({ open, onClose }) => {
   );
 
   const startNewClient = () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     setDraftClient({ code: clientQ.trim().toUpperCase(), name: '', type: 'CLINIC', deliveryChannel: 'fax', deliveryEndpoint: '' });
   };
   const commitNewClient = async () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return null;
     if (!draftClient) return null;
     if (!draftClient.code || !draftClient.name) {
       setError('New client needs a code and name.');
@@ -185,8 +190,12 @@ const NewOrderDrawer = ({ open, onClose }) => {
     return pat;
   };
 
-  const startNewTest = () => setDraftTest({ code: testQ.trim(), name: '', units: '' });
+  const startNewTest = () => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
+    setDraftTest({ code: testQ.trim(), name: '', units: '' });
+  };
   const commitNewTest = async () => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return null;
     if (!draftTest) return null;
     if (!draftTest.code || !draftTest.name) {
       setError('New test needs at least code and name.');
@@ -204,6 +213,7 @@ const NewOrderDrawer = ({ open, onClose }) => {
   const removeTest = (id) => setSelectedTestIds(ids => ids.filter(x => x !== id));
 
   const save = async () => {
+    if (!hasPermission('CREATE_ORDER')) return;
     setError('');
     let pid = patientId;
     if (!pid && draftPatient) {
@@ -228,6 +238,7 @@ const NewOrderDrawer = ({ open, onClose }) => {
       const t = todayStart.getTime();
       const todayCount = allOrders.filter(o => (o.orderedAt || o.createdAt || 0) >= t).length;
 
+      if (!hasPermission('CREATE_ORDER')) return;
       const order = window.schema.newOrder({
         orderNumber: __orderNumber(todayCount),
         patientId: pid,
@@ -313,7 +324,9 @@ const NewOrderDrawer = ({ open, onClose }) => {
                         {c.deliveryChannel && <span style={{ marginLeft: 10, color: 'var(--ink-400)' }}>delivers via {c.deliveryChannel}</span>}
                       </SuggestionRow>
                     ))}
-                    <SuggestionAction onClick={startNewClient}>
+                    <SuggestionAction onClick={startNewClient}
+                      disabled={!canEditLabConfig}
+                      title={permissionTitle(canEditLabConfig, 'Add new client', 'edit lab configuration')}>
                       + Add new client {clientQ ? `(code "${clientQ.toUpperCase()}")` : ''}
                     </SuggestionAction>
                   </Suggestions>
@@ -373,7 +386,8 @@ const NewOrderDrawer = ({ open, onClose }) => {
             )}
             {draftTest ? (
               <NewTestFields draft={draftTest} setDraft={setDraftTest}
-                onCancel={() => setDraftTest(null)} onCommit={commitNewTest}/>
+                onCancel={() => setDraftTest(null)} onCommit={commitNewTest}
+                canEditTestCatalog={canEditTestCatalog}/>
             ) : (
               <div>
                 <input className="input" placeholder="Search test catalogue (code, name, LOINC)…"
@@ -389,7 +403,9 @@ const NewOrderDrawer = ({ open, onClose }) => {
                         {t.units && <span style={{ marginLeft: 10, color: 'var(--ink-400)' }}>{t.units}</span>}
                       </SuggestionRow>
                     ))}
-                    <SuggestionAction onClick={startNewTest}>
+                    <SuggestionAction onClick={startNewTest}
+                      disabled={!canEditTestCatalog}
+                      title={permissionTitle(canEditTestCatalog, 'Add new test', 'edit the test catalog')}>
                       + Add new test {testQ ? `(code "${testQ}")` : ''}
                     </SuggestionAction>
                   </Suggestions>
@@ -462,7 +478,9 @@ const NewOrderDrawer = ({ open, onClose }) => {
         }}>
           <button className="btn" data-size="sm" onClick={onClose} disabled={saving}>Cancel</button>
           <div style={{ flex: 1 }}/>
-          <button className="btn" data-variant="primary" data-size="sm" onClick={save} disabled={saving}>
+          <button className="btn" data-variant="primary" data-size="sm" onClick={save}
+            disabled={saving || !canCreateOrder}
+            title={permissionTitle(canCreateOrder, 'Create order', 'create orders')}>
             {saving ? 'Saving…' : 'Create order'}
           </button>
         </div>
@@ -515,12 +533,14 @@ const SuggestionEmpty = ({ children }) => (
   <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--ink-400)' }}>{children}</div>
 );
 
-const SuggestionAction = ({ onClick, children }) => (
-  <button type="button" onClick={onClick}
+const SuggestionAction = ({ onClick, children, disabled, title }) => (
+  <button type="button" onClick={onClick} disabled={disabled} title={title}
     style={{
       display: 'block', width: '100%', textAlign: 'left',
       padding: '8px 12px', border: 0, background: 'var(--ivory-100)',
-      fontSize: 12, color: 'var(--sage-700)', fontWeight: 500, cursor: 'pointer',
+      fontSize: 12, color: 'var(--sage-700)', fontWeight: 500,
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      opacity: disabled ? 0.55 : 1,
     }}>{children}</button>
 );
 
@@ -651,12 +671,14 @@ const NewPatientFields = ({ draft, setDraft, onCancel }) => (
   </div>
 );
 
-const NewTestFields = ({ draft, setDraft, onCancel, onCommit }) => (
+const NewTestFields = ({ draft, setDraft, onCancel, onCommit, canEditTestCatalog }) => (
   <div style={{ border: '1px solid var(--line)', borderRadius: 6, padding: 10, background: '#fff' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
       <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-700)', flex: 1 }}>New test</span>
       <button className="btn" data-variant="ghost" data-size="xs" onClick={onCancel}>Cancel</button>
-      <button className="btn" data-variant="primary" data-size="xs" onClick={onCommit}>Add</button>
+      <button className="btn" data-variant="primary" data-size="xs" onClick={onCommit}
+        disabled={!canEditTestCatalog}
+        title={permissionTitle(canEditTestCatalog, 'Add test', 'edit the test catalog')}>Add</button>
     </div>
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: 8 }}>
       <Labeled label="Code">

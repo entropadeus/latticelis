@@ -6,7 +6,7 @@ const { useState: useStateRX, useMemo: useMemoRX, useEffect: useEffectRX, useRef
 // =====================================================================
 // Editor — three column layout
 // =====================================================================
-const RuleEditor = ({ rule, onSave, onClose, onDelete, onDuplicate }) => {
+const RuleEditor = ({ rule, onSave, onClose, onDelete, onDuplicate, canEdit = true }) => {
   const [draft, setDraft] = useStateRX(rule);
   const [dirty, setDirty] = useStateRX(false);
   const [picker, setPicker] = useStateRX(null); // { kind: 'condition'|'action', target?, onPick }
@@ -20,6 +20,7 @@ const RuleEditor = ({ rule, onSave, onClose, onDelete, onDuplicate }) => {
   };
 
   const save = async () => {
+    if (!canEdit || !hasPermission('EDIT_RULES')) return false;
     const saved = await onSave({ ...draft, version: dirty ? draft.version + 1 : draft.version });
     if (saved !== false) setDirty(false);
   };
@@ -101,7 +102,9 @@ const RuleEditor = ({ rule, onSave, onClose, onDelete, onDuplicate }) => {
         <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: 'var(--ink-500)' }}>
           {draft.enabled ? (<><span className="dot" data-tone="ok"/> Live</>) : (<><span className="dot" data-tone="idle"/> Disabled</>)}
         </span>
-        <Toggle checked={draft.enabled} onChange={(en) => update({ enabled: en })}/>
+        <Toggle checked={draft.enabled} onChange={(en) => update({ enabled: en })}
+          disabled={!canEdit}
+          title={permissionTitle(canEdit, draft.enabled ? 'Disable rule' : 'Enable rule', 'edit rules')}/>
 
         <div style={{ width: 1, height: 18, background: 'var(--line)' }}/>
 
@@ -112,11 +115,12 @@ const RuleEditor = ({ rule, onSave, onClose, onDelete, onDuplicate }) => {
           <IconArchive size={12}/> History
         </button>
         <Menu items={[
-          { label: 'Duplicate', onClick: () => onDuplicate(draft.id) },
+          { label: 'Duplicate', onClick: () => onDuplicate(draft.id), disabled: !canEdit, title: permissionTitle(canEdit, 'Duplicate rule', 'edit rules') },
           { label: 'Export JSON', onClick: () => {} },
-          { label: 'Delete', onClick: () => onDelete(draft.id), danger: true },
+          { label: 'Delete', onClick: () => onDelete(draft.id), danger: true, disabled: !canEdit, title: permissionTitle(canEdit, 'Delete rule', 'edit rules') },
         ]}/>
-        <button className="btn" data-variant="primary" data-size="sm" disabled={!dirty} onClick={save}>
+        <button className="btn" data-variant="primary" data-size="sm" disabled={!dirty || !canEdit} onClick={save}
+          title={permissionTitle(canEdit, dirty ? 'Save changes' : 'Saved', 'edit rules')}>
           {dirty ? 'Save changes' : 'Saved'}
         </button>
       </div>

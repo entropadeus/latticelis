@@ -52,7 +52,10 @@ const App = () => {
   // Expose a global hook so the command palette, OrdersPage button, and any future
   // shortcut can all open the New Order drawer without prop-drilling.
   useEffectApp(() => {
-    window.openNewOrder = () => setNewOrderOpen(true);
+    window.openNewOrder = () => {
+      if (!hasPermission('CREATE_ORDER')) return;
+      setNewOrderOpen(true);
+    };
     return () => { delete window.openNewOrder; };
   }, []);
 
@@ -106,6 +109,7 @@ const App = () => {
   }, []);
 
   const setRules = useCallbackApp((updater) => {
+    if (!hasPermission('EDIT_RULES')) return;
     const next = typeof updater === 'function' ? updater(rules) : updater;
     const nextIds = new Set(next.map(r => r.id));
     const prevIds = new Set(rules.map(r => r.id));
@@ -129,47 +133,7 @@ const App = () => {
   const showSidebar = navStyle === 'sidebar' || navStyle === 'hybrid';
   const showTopRail = navStyle === 'top';
 
-  // Route-level permission gate. Pages that should restrict access by role
-  // declare the permission here; if the current user lacks it, we render
-  // a Forbidden panel instead of the page. Routes not in this map are
-  // unrestricted.
-  const ROUTE_PERMISSIONS = {
-    accession:     'ACCESSION',
-    instruments:   'EDIT_INTERFACES',
-    interfaces:    'EDIT_INTERFACES',
-    rules:         'EDIT_RULES',
-    tests:         'EDIT_TEST_CATALOG',
-    clients:       'EDIT_LAB_CONFIG',
-    locations:     'EDIT_LAB_CONFIG',
-    labels:        'EDIT_LABEL_TEMPLATES',
-    mappers:       'EDIT_INTERFACES',
-    qc:            'RESOLVE_QC',
-    notifications: 'EDIT_LAB_CONFIG',
-    users:         'EDIT_USERS',
-  };
-
-  const Forbidden = ({ route, perm }) => (
-    <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 32 }}>
-      <div className="panel" style={{ padding: 32, maxWidth: 440, textAlign: 'center' }}>
-        <div style={{ fontSize: 28, marginBottom: 8 }}>🔒</div>
-        <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--ink-900)', marginBottom: 8 }}>
-          Your role doesn't allow this
-        </div>
-        <div style={{ fontSize: 12.5, color: 'var(--ink-500)', lineHeight: 1.6, marginBottom: 14 }}>
-          The <span className="mono">{route}</span> page requires the
-          <span className="mono"> {perm}</span> permission. Talk to a Lab Director or IT Admin if you need access, or sign out and use an account that holds that permission.
-        </div>
-        <button className="btn" data-size="sm" onClick={() => setActive('dashboard')}>Back to Dashboard</button>
-      </div>
-    </div>
-  );
-
   const activePage = useMemoApp(() => {
-    const perm = ROUTE_PERMISSIONS[active];
-    if (perm && window.userRoles && window.currentUser
-        && !window.userRoles.userHasPermission(window.currentUser.id, perm)) {
-      return <Forbidden route={active} perm={perm}/>;
-    }
     switch (active) {
       case 'dashboard':   return <DashboardPage/>;
       case 'orders':      return <OrdersPage filterClientId={ordersFilterClientId}

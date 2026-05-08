@@ -10,6 +10,7 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
   const [q, setQ] = useStateOS('');
   const [status, setStatus] = useStateOS('all');
   const [copiedOrderId, setCopiedOrderId] = useStateOS(null);
+  const canCreateOrder = hasPermission('CREATE_ORDER');
 
   const pinnedClient = filterClientId ? clientById[filterClientId] : null;
 
@@ -54,7 +55,9 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
         actions={[
           <button key="f" className="btn" data-size="sm"><IconFilter size={13}/> Filter</button>,
           <button key="n" className="btn" data-size="sm" data-variant="primary"
-            onClick={() => window.openNewOrder && window.openNewOrder()}><IconPlus size={13}/> New order</button>,
+            onClick={() => window.openNewOrder && window.openNewOrder()}
+            disabled={!canCreateOrder}
+            title={permissionTitle(canCreateOrder, 'Create new order', 'create orders')}><IconPlus size={13}/> New order</button>,
         ]}/>
       <div className="panel">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 10, borderBottom: '1px solid var(--line)' }}>
@@ -276,6 +279,7 @@ const WorklistsPage = () => {
   const orderById = useMemoOS(() => Object.fromEntries(orders.map(o => [o.id, o])), [orders]);
   const patientById = useMemoOS(() => Object.fromEntries(patients.map(p => [p.id, p])), [patients]);
   const testById = useMemoOS(() => Object.fromEntries(tests.map(t => [t.id, t])), [tests]);
+  const canAccession = hasPermission('ACCESSION');
 
   // Build a routedTo → instrument lookup that handles BOTH key formats:
   // some specimens were routed by id (`inst_xxx` from the seeder), others
@@ -401,6 +405,7 @@ const WorklistsPage = () => {
   };
 
   const bulkRoute = async () => {
+    if (!hasPermission('ACCESSION')) return;
     if (checkedSpecimens.length === 0) return;
     if (routeOptions.length === 0) {
       await safetyNotice({
@@ -427,6 +432,7 @@ const WorklistsPage = () => {
       confirmLabel: 'Route batch',
     });
     if (!ask.confirmed || !ask.reason) return;
+    if (!hasPermission('ACCESSION')) return;
     const target = ask.reason;
     const actor = currentActorId();
     for (const s of checkedSpecimens) {
@@ -437,6 +443,7 @@ const WorklistsPage = () => {
   };
 
   const bulkReject = async () => {
+    if (!hasPermission('ACCESSION')) return;
     if (checkedSpecimens.length === 0) return;
     const ask = await safetyConfirm({
       id: 'worklists.reject.batch',
@@ -455,6 +462,7 @@ const WorklistsPage = () => {
       confirmLabel: 'Reject batch',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('ACCESSION')) return;
     const actor = currentActorId();
     for (const s of checkedSpecimens) {
       const fresh = await window.db.get('specimens', s.id);
@@ -464,6 +472,7 @@ const WorklistsPage = () => {
   };
 
   const releaseToInstrument = async (specimen) => {
+    if (!hasPermission('ACCESSION')) return;
     if (routeOptions.length === 0) {
       await safetyNotice({
         tone: 'danger',
@@ -492,6 +501,7 @@ const WorklistsPage = () => {
       audit: false,
     });
     if (!ask.confirmed || !ask.reason) return;
+    if (!hasPermission('ACCESSION')) return;
     const fresh = await window.db.get('specimens', specimen.id);
     if (!fresh) return;
     const actor = currentActorId();
@@ -549,8 +559,12 @@ const WorklistsPage = () => {
                 {checkedSpecimens.length > 0 && (
                   <>
                     <span style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>{checkedSpecimens.length} selected</span>
-                    <button className="btn" data-variant="primary" data-size="xs" onClick={bulkRoute}>Route…</button>
-                    <button className="btn" data-variant="danger" data-size="xs" onClick={bulkReject}>Reject…</button>
+                    <button className="btn" data-variant="primary" data-size="xs" onClick={bulkRoute}
+                      disabled={!canAccession}
+                      title={permissionTitle(canAccession, 'Route selected specimens', 'accession or route specimens')}>Route…</button>
+                    <button className="btn" data-variant="danger" data-size="xs" onClick={bulkReject}
+                      disabled={!canAccession}
+                      title={permissionTitle(canAccession, 'Reject selected specimens', 'accession or route specimens')}>Reject…</button>
                     <button className="btn" data-variant="ghost" data-size="xs" onClick={() => setChecked(new Set())}>Clear</button>
                   </>
                 )}
@@ -601,7 +615,9 @@ const WorklistsPage = () => {
                             <td><span className="mono" style={{ color: 'var(--ink-400)' }}>{formatTime(s.receivedAt)}</span></td>
                             <td onClick={e => e.stopPropagation()}>
                               {selected.id === '__unrouted' ? (
-                                <button className="btn" data-variant="primary" data-size="xs" onClick={() => releaseToInstrument(s)}>Route</button>
+                                <button className="btn" data-variant="primary" data-size="xs" onClick={() => releaseToInstrument(s)}
+                                  disabled={!canAccession}
+                                  title={permissionTitle(canAccession, 'Route specimen', 'accession or route specimens')}>Route</button>
                               ) : null}
                             </td>
                           </tr>

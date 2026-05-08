@@ -31,6 +31,7 @@ const CriticalAlerts = () => {
   const specimenById = useMemoCA(() => Object.fromEntries(specimens.map(s => [s.id, s])), [specimens]);
   const patientById = useMemoCA(() => Object.fromEntries(patients.map(p => [p.id, p])), [patients]);
   const testById = useMemoCA(() => Object.fromEntries(tests.map(t => [t.id, t])), [tests]);
+  const canAckCritical = hasPermission('ACK_CRITICAL');
 
   const unacked = useMemoCA(() => {
     return results
@@ -66,6 +67,7 @@ const CriticalAlerts = () => {
   };
 
   const ack = async (r) => {
+    if (!hasPermission('ACK_CRITICAL')) return;
     const spec = r.specimenId ? specimenById[r.specimenId] : null;
     const pat = spec && spec.patientId ? patientById[spec.patientId] : null;
     const test = r.testId ? testById[r.testId] : null;
@@ -90,6 +92,7 @@ const CriticalAlerts = () => {
       confirmLabel: 'Acknowledge',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('ACK_CRITICAL')) return;
     const fresh = await window.db.get('results', r.id);
     if (!fresh || fresh.criticalAckedAt) return;
     const actor = window.currentUser ? window.currentUser.id : 'unknown';
@@ -102,6 +105,7 @@ const CriticalAlerts = () => {
   };
 
   const ackAll = async () => {
+    if (!hasPermission('ACK_CRITICAL')) return;
     const ask = await caConfirm({
       id: 'critical.ack.batch',
       tone: 'danger',
@@ -123,6 +127,7 @@ const CriticalAlerts = () => {
       confirmLabel: 'Acknowledge all',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('ACK_CRITICAL')) return;
     const actor = window.currentUser ? window.currentUser.id : 'unknown';
     for (const r of unacked) {
       const fresh = await window.db.get('results', r.id);
@@ -172,10 +177,14 @@ const CriticalAlerts = () => {
           {unacked.length} critical {unacked.length === 1 ? 'result' : 'results'} pending
         </span>
         {unacked.length > 1 && (
-          <button onClick={ackAll} style={{
+          <button onClick={ackAll}
+            disabled={!canAckCritical}
+            title={permissionTitle(canAckCritical, 'Acknowledge all critical results', 'acknowledge critical results')}
+            style={{
             background: 'rgba(255,255,255,0.18)', color: '#fff',
             border: 0, borderRadius: 4, height: 22, padding: '0 8px',
-            fontSize: 11, cursor: 'pointer',
+            fontSize: 11, cursor: canAckCritical ? 'pointer' : 'not-allowed',
+            opacity: canAckCritical ? 1 : 0.55,
           }}>Ack all</button>
         )}
         <button onClick={() => setCollapsedPersisted(true)} style={{
@@ -244,7 +253,10 @@ const CriticalAlerts = () => {
               </div>
             )}
             <div style={{ display: 'flex', gap: 6 }}>
-              <button className="btn" data-variant="primary" data-size="xs" onClick={() => ack(r)} style={{ flex: 1 }}>
+              <button className="btn" data-variant="primary" data-size="xs" onClick={() => ack(r)}
+                disabled={!canAckCritical}
+                title={permissionTitle(canAckCritical, 'Acknowledge critical result', 'acknowledge critical results')}
+                style={{ flex: 1 }}>
                 Acknowledge
               </button>
               <button className="btn" data-size="xs" onClick={() => {

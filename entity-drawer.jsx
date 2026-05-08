@@ -341,6 +341,7 @@ const ManualResultEntry = ({ specimen, tests, onClose }) => {
     }), {})
   );
   const [saving, setSaving] = useStateED(false);
+  const canVerify = hasPermission('VERIFY_RESULT');
 
   // Auto-flag based on the resolved demographic range. Numeric values get
   // L / H if outside; non-numeric strings stay flagless (handled by rules
@@ -374,7 +375,7 @@ const ManualResultEntry = ({ specimen, tests, onClose }) => {
 
         const value = isNaN(Number(entry.value)) ? entry.value : Number(entry.value);
         const range = ranges[test.id] || { low: test.refRangeLow, high: test.refRangeHigh, source: 'fallback', matchedRange: null };
-        const verifyNow = !!entry.verifyNow;
+        const verifyNow = !!entry.verifyNow && hasPermission('VERIFY_RESULT');
 
         // Build the record. If the operator opted to verify on save we bake
         // status='final' + verifiedBy/At into the record itself rather than
@@ -500,8 +501,9 @@ const ManualResultEntry = ({ specimen, tests, onClose }) => {
                 </td>
                 <td>
                   <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: 'var(--ink-700)' }}
-                    title="Mark this result as final and stamp verified-by on save">
+                    title={permissionTitle(canVerify, 'Mark this result as final and stamp verified-by on save', 'verify results')}>
                     <input type="checkbox" checked={!!entry.verifyNow}
+                      disabled={!canVerify}
                       onChange={e => setVal(t.id, 'verifyNow', e.target.checked)}/>
                     on save
                   </label>
@@ -764,11 +766,13 @@ const ResultOverview = ({ result }) => {
   }, [chain]);
   const isCorrection = !!result.correctionOf;
   const wasSuperseded = !!result.supersededByResultId;
+  const canCorrect = hasPermission('CORRECT_RESULT');
 
   // The "Correct this result" button opens a global modal via window.openCorrection
   // — the modal lives at the page level so it works whether you got here from
   // the Results page or via Activity Log click-through.
   const openCorrect = () => {
+    if (!hasPermission('CORRECT_RESULT')) return;
     if (window.openCorrectionFor) window.openCorrectionFor(result.id);
     else window.alert('Correction UI not available on this page.');
   };
@@ -874,7 +878,9 @@ const ResultOverview = ({ result }) => {
 
       {correctable && (
         <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
-          <button className="btn" data-size="sm" data-variant="primary" onClick={openCorrect}>
+          <button className="btn" data-size="sm" data-variant="primary" onClick={openCorrect}
+            disabled={!canCorrect}
+            title={permissionTitle(canCorrect, 'Correct this result', 'correct results')}>
             <IconCorrect/> Correct this result
           </button>
         </div>

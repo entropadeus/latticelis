@@ -134,6 +134,16 @@ const formatDateTime = (ts) => {
 
 const currentActorId = () => (window.currentUser ? window.currentUser.id : 'unknown');
 
+const hasPermission = (permission) => !!(
+  window.userRoles &&
+  window.userRoles.userHasPermission(window.currentUser && window.currentUser.id, permission)
+);
+
+const permissionTitle = (can, allowedTitle, deniedAction) =>
+  can ? allowedTitle : `you don't have permission to ${deniedAction}`;
+
+Object.assign(window, { hasPermission, permissionTitle });
+
 const safetyFact = (label, value) => ({
   label,
   value: value == null || value === '' ? '-' : String(value),
