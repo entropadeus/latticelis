@@ -533,8 +533,8 @@ const OrderOverview = ({ order }) => {
   const patient = window.useEntity('patients', order.patientId);
   const client  = window.useEntity('clients', order.clientId);
   const location = window.useEntity('locations', order.locationId);
-  const specs = window.useEntities('specimens', s => s.orderId === order.id);
-  const tests = window.useEntities('tests', t => order.testIds.includes(t.id));
+  const specs = window.useEntities('specimens', s => order && s.orderId === order.id);
+  const tests = window.useEntities('tests', t => order && order.testIds && order.testIds.includes(t.id));
   // Display: prefer locationId → location.name; fall back to free-text facility.
   const facilityDisplay = location
     ? <span><span className="mono" style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>{location.code}</span> <span style={{ marginLeft: 6 }}>{location.name}</span></span>

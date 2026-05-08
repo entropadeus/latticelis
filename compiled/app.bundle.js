@@ -7918,8 +7918,8 @@ var OrderOverview = ({
   var patient = window.useEntity('patients', order.patientId);
   var client = window.useEntity('clients', order.clientId);
   var location = window.useEntity('locations', order.locationId);
-  var specs = window.useEntities('specimens', s => s.orderId === order.id);
-  var tests = window.useEntities('tests', t => order.testIds.includes(t.id));
+  var specs = window.useEntities('specimens', s => order && s.orderId === order.id);
+  var tests = window.useEntities('tests', t => order && order.testIds && order.testIds.includes(t.id));
   var facilityDisplay = location ? React.createElement("span", null, React.createElement("span", {
     className: "mono",
     style: {
