@@ -16840,12 +16840,21 @@ var LeveyJenningsChart = ({
     flagged: Math.abs(r.zScore || 0) > Z_RANGE
   }));
   var linePath = points.map((p, i) => (i === 0 ? 'M' : 'L') + p.x + ',' + p.y).join(' ');
-  return React.createElement("svg", {
+  return React.createElement("div", {
+    style: {
+      position: 'relative',
+      width: '100%',
+      paddingBottom: (H / W * 100).toFixed(4) + '%'
+    }
+  }, React.createElement("svg", {
     viewBox: `0 0 ${W} ${H}`,
     preserveAspectRatio: "xMidYMid meet",
     style: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
       width: '100%',
-      aspectRatio: `${W} / ${H}`,
+      height: '100%',
       display: 'block',
       font: '10px var(--font-mono)'
     }
@@ -16899,7 +16908,7 @@ var LeveyJenningsChart = ({
     y: H - 6,
     textAnchor: "end",
     fill: "var(--ink-400)"
-  }, new Date(points[n - 1].ranAt).toISOString().slice(5, 16).replace('T', ' '))));
+  }, new Date(points[n - 1].ranAt).toISOString().slice(5, 16).replace('T', ' ')))));
 };
 var WESTGARD_RULE_INFO = {
   '1-2s': {

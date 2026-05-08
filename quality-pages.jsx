@@ -27,8 +27,14 @@ const LeveyJenningsChart = ({ results }) => {
 
   const linePath = points.map((p, i) => (i === 0 ? 'M' : 'L') + p.x + ',' + p.y).join(' ');
 
+  // Bulletproof responsive-SVG pattern: a wrapping div whose padding-bottom
+  // percentage is height/width, giving it a real computed height proportional
+  // to its width. The SVG then absolutely fills that div. This sidesteps the
+  // chromium quirk where `height: auto` on inline SVG with viewBox can resolve
+  // to 0, which silently kills the chart panel.
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', aspectRatio: `${W} / ${H}`, display: 'block', font: '10px var(--font-mono)' }}>
+    <div style={{ position: 'relative', width: '100%', paddingBottom: ((H / W) * 100).toFixed(4) + '%' }}>
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'block', font: '10px var(--font-mono)' }}>
       {/* Bands (drawn from outermost to innermost so the centre is the lightest tint) */}
       {bands.map(b => (
         <rect key={b.z}
@@ -78,6 +84,7 @@ const LeveyJenningsChart = ({ results }) => {
         </>
       )}
     </svg>
+    </div>
   );
 };
 
