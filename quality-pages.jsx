@@ -28,7 +28,7 @@ const LeveyJenningsChart = ({ results }) => {
   const linePath = points.map((p, i) => (i === 0 ? 'M' : 'L') + p.x + ',' + p.y).join(' ');
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block', font: '10px var(--font-mono)' }}>
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', aspectRatio: `${W} / ${H}`, display: 'block', font: '10px var(--font-mono)' }}>
       {/* Bands (drawn from outermost to innermost so the centre is the lightest tint) */}
       {bands.map(b => (
         <rect key={b.z}

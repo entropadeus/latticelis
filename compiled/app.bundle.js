@@ -16842,9 +16842,10 @@ var LeveyJenningsChart = ({
   var linePath = points.map((p, i) => (i === 0 ? 'M' : 'L') + p.x + ',' + p.y).join(' ');
   return React.createElement("svg", {
     viewBox: `0 0 ${W} ${H}`,
+    preserveAspectRatio: "xMidYMid meet",
     style: {
       width: '100%',
-      height: 'auto',
+      aspectRatio: `${W} / ${H}`,
       display: 'block',
       font: '10px var(--font-mono)'
     }
