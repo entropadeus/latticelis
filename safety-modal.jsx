@@ -59,6 +59,14 @@ const SafetyConfirmHost = () => {
         reasonLabel: rawOptions.reasonLabel || 'Reason',
         reasonPlaceholder: rawOptions.reasonPlaceholder || '',
         reasonDefault: rawOptions.reasonDefault || '',
+        // When provided, render the reason as a <select> instead of a text
+        // input. Each option is `{ value: string, label: string }`. The
+        // selected option's `value` becomes `reason`. Use this for pickers
+        // (route-to-instrument, reject-reason enum, etc.) so the operator
+        // can't typo or pick a stale identifier.
+        reasonOptions: Array.isArray(rawOptions.reasonOptions)
+          ? rawOptions.reasonOptions.filter(o => o && typeof o.value === 'string')
+          : null,
         requireTypedText: rawOptions.requireTypedText || '',
         confirmLabel: rawOptions.confirmLabel || 'Confirm',
         cancelLabel: rawOptions.cancelLabel === undefined ? 'Cancel' : rawOptions.cancelLabel,
@@ -217,10 +225,23 @@ const SafetyConfirmHost = () => {
           {options.requireReason && (
             <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               <span className="field-label">{options.reasonLabel}</span>
-              <input ref={reasonRef} className="input" value={reason}
-                placeholder={options.reasonPlaceholder}
-                onChange={e => setReason(e.target.value)}
-                style={{ height: 32 }}/>
+              {options.reasonOptions && options.reasonOptions.length > 0 ? (
+                <select ref={reasonRef} className="input" value={reason}
+                  onChange={e => setReason(e.target.value)}
+                  style={{ height: 32 }}>
+                  {/* Empty placeholder so reasonOk fails until the operator
+                      makes an explicit choice; no silently-pick-the-first. */}
+                  <option value="">— pick one —</option>
+                  {options.reasonOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label || opt.value}</option>
+                  ))}
+                </select>
+              ) : (
+                <input ref={reasonRef} className="input" value={reason}
+                  placeholder={options.reasonPlaceholder}
+                  onChange={e => setReason(e.target.value)}
+                  style={{ height: 32 }}/>
+              )}
             </label>
           )}
           {requiredText && (

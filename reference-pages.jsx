@@ -11,6 +11,8 @@ const TestCatalogPage = ({ onBack }) => {
       .sort((a, b) => (a.code || '').localeCompare(b.code || ''));
   }, [tests, q]);
 
+  const pager = usePagination(filtered);
+
   const startNew = () => {
     setEditingId(null);
     setDraft({ code: '', name: '', shortName: '', loinc: '', units: '', refRangeLow: '', refRangeHigh: '', turnaroundMinutes: '', referenceRanges: [], criticalEscalationT1Sec: '', criticalEscalationT2Sec: '', active: true });
@@ -143,6 +145,7 @@ const TestCatalogPage = ({ onBack }) => {
             <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{filtered.length} of {tests.length}</span>
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
+            {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
             {filtered.length === 0 ? (
               <div className="empty" style={{ padding: '40px 24px' }}>
                 <div className="empty-title">{tests.length === 0 ? 'No tests yet' : 'No tests match'}</div>
@@ -158,7 +161,7 @@ const TestCatalogPage = ({ onBack }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(t => (
+                  {pager.slice.map(t => (
                     <tr key={t.id} style={{ opacity: t.active === false ? 0.5 : 1, background: editingId === t.id ? 'var(--sage-50)' : undefined }}>
                       <td onClick={() => toggleActive(t)} style={{ cursor: 'pointer' }} title={t.active === false ? 'Inactive — click to activate' : 'Active — click to deactivate'}>
                         <span className="dot" data-tone={t.active === false ? 'idle' : 'ok'}/>
@@ -184,6 +187,7 @@ const TestCatalogPage = ({ onBack }) => {
                 </tbody>
               </table>
             )}
+            {filtered.length > 0 && <TablePagination {...pager}/>}
           </div>
         </div>
 

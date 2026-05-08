@@ -9221,6 +9221,7 @@ var SafetyConfirmHost = () => {
         reasonLabel: rawOptions.reasonLabel || 'Reason',
         reasonPlaceholder: rawOptions.reasonPlaceholder || '',
         reasonDefault: rawOptions.reasonDefault || '',
+        reasonOptions: Array.isArray(rawOptions.reasonOptions) ? rawOptions.reasonOptions.filter(o => o && typeof o.value === 'string') : null,
         requireTypedText: rawOptions.requireTypedText || '',
         confirmLabel: rawOptions.confirmLabel || 'Confirm',
         cancelLabel: rawOptions.cancelLabel === undefined ? 'Cancel' : rawOptions.cancelLabel,
@@ -9432,7 +9433,20 @@ var SafetyConfirmHost = () => {
     }
   }, React.createElement("span", {
     className: "field-label"
-  }, options.reasonLabel), React.createElement("input", {
+  }, options.reasonLabel), options.reasonOptions && options.reasonOptions.length > 0 ? React.createElement("select", {
+    ref: reasonRef,
+    className: "input",
+    value: reason,
+    onChange: e => setReason(e.target.value),
+    style: {
+      height: 32
+    }
+  }, React.createElement("option", {
+    value: ""
+  }, "\u2014 pick one \u2014"), options.reasonOptions.map(opt => React.createElement("option", {
+    key: opt.value,
+    value: opt.value
+  }, opt.label || opt.value))) : React.createElement("input", {
     ref: reasonRef,
     className: "input",
     value: reason,
@@ -9735,6 +9749,178 @@ var compactName = patient => {
   if (!patient) return 'no patient';
   var name = [patient.lastName, patient.firstName].filter(Boolean).join(', ');
   return [patient.mrn, name].filter(Boolean).join(' - ') || patient.id;
+};
+var PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250];
+var usePagination = (items, initialPageSize = 10) => {
+  var [page, setPage] = React.useState(1);
+  var [pageSize, setPageSize] = React.useState(initialPageSize);
+  var total = Array.isArray(items) ? items.length : 0;
+  var totalPages = Math.max(1, Math.ceil(total / pageSize));
+  React.useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+  var safePage = Math.min(page, totalPages);
+  var from = total === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  var to = Math.min(total, safePage * pageSize);
+  var slice = Array.isArray(items) ? items.slice((safePage - 1) * pageSize, safePage * pageSize) : [];
+  return {
+    page: safePage,
+    pageSize,
+    total,
+    totalPages,
+    from,
+    to,
+    slice,
+    setPage: n => setPage(Math.max(1, Math.min(totalPages, Number(n) || 1))),
+    setPageSize: n => {
+      var next = Math.max(1, Number(n) || initialPageSize);
+      setPageSize(next);
+      setPage(1);
+    }
+  };
+};
+var TablePagination = ({
+  page,
+  pageSize,
+  total,
+  totalPages,
+  from,
+  to,
+  setPage,
+  setPageSize,
+  options = PAGE_SIZE_OPTIONS,
+  compact = false,
+  pos = 'bottom'
+}) => {
+  var inputRef = React.useRef(null);
+  var [editing, setEditing] = React.useState(String(page));
+  React.useEffect(() => {
+    setEditing(String(page));
+  }, [page]);
+  var submitPageInput = () => {
+    var n = Number(editing);
+    if (Number.isFinite(n) && n >= 1 && n <= totalPages) setPage(n);else setEditing(String(page));
+  };
+  return React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: compact ? '6px 10px' : '8px 12px',
+      borderTop: pos === 'bottom' ? '1px solid var(--line)' : 'none',
+      borderBottom: pos === 'top' ? '1px solid var(--line)' : 'none',
+      background: 'var(--ivory-50)',
+      fontSize: 11.5,
+      color: 'var(--ink-500)'
+    }
+  }, React.createElement("label", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6
+    }
+  }, React.createElement("span", null, "Show"), React.createElement("select", {
+    value: pageSize,
+    onChange: e => setPageSize(Number(e.target.value)),
+    className: "input mono tnum",
+    style: {
+      width: 64,
+      height: 24,
+      padding: '0 4px',
+      fontSize: 11.5
+    }
+  }, options.map(n => React.createElement("option", {
+    key: n,
+    value: n
+  }, n))), React.createElement("span", null, "entries")), React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }), React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 4
+    }
+  }, React.createElement("button", {
+    className: "btn",
+    "data-size": "xs",
+    "data-variant": "ghost",
+    onClick: () => setPage(1),
+    disabled: page <= 1,
+    title: "First page",
+    style: {
+      minWidth: 24,
+      padding: '0 6px'
+    }
+  }, "\xAB"), React.createElement("button", {
+    className: "btn",
+    "data-size": "xs",
+    "data-variant": "ghost",
+    onClick: () => setPage(page - 1),
+    disabled: page <= 1,
+    title: "Previous page",
+    style: {
+      minWidth: 24,
+      padding: '0 6px'
+    }
+  }, "\u2039"), React.createElement("input", {
+    ref: inputRef,
+    className: "input mono tnum",
+    value: editing,
+    onChange: e => setEditing(e.target.value.replace(/[^\d]/g, '')),
+    onBlur: submitPageInput,
+    onKeyDown: e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitPageInput();
+        inputRef.current && inputRef.current.blur();
+      }
+    },
+    style: {
+      width: 44,
+      height: 24,
+      textAlign: 'center',
+      padding: '0 4px',
+      fontSize: 11.5
+    },
+    "aria-label": "Page number"
+  }), React.createElement("span", {
+    style: {
+      color: 'var(--ink-400)'
+    }
+  }, "/ ", totalPages), React.createElement("button", {
+    className: "btn",
+    "data-size": "xs",
+    "data-variant": "ghost",
+    onClick: () => setPage(page + 1),
+    disabled: page >= totalPages,
+    title: "Next page",
+    style: {
+      minWidth: 24,
+      padding: '0 6px'
+    }
+  }, "\u203A"), React.createElement("button", {
+    className: "btn",
+    "data-size": "xs",
+    "data-variant": "ghost",
+    onClick: () => setPage(totalPages),
+    disabled: page >= totalPages,
+    title: "Last page",
+    style: {
+      minWidth: 24,
+      padding: '0 6px'
+    }
+  }, "\xBB")), React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }), React.createElement("span", {
+    className: "tnum",
+    style: {
+      color: 'var(--ink-700)'
+    }
+  }, total === 0 ? 'No entries' : `Showing ${from} to ${to} of ${total} ${total === 1 ? 'entry' : 'entries'}`));
 };
 var median = nums => {
   if (!nums || nums.length === 0) return null;
@@ -11010,6 +11196,7 @@ var summarizeEvent = ev => {
 
 
 // ---- order-workflow-pages.jsx ----
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 var OrdersPage = ({
   filterClientId,
   onClearFilter
@@ -11048,6 +11235,7 @@ var OrdersPage = ({
       return hay.includes(needle);
     }).sort((a, b) => (b.orderedAt || b.createdAt || 0) - (a.orderedAt || a.createdAt || 0));
   }, [orders, patientById, locationById, q, status, filterClientId]);
+  var pager = usePagination(filtered);
   return React.createElement(Page, {
     label: "Orders"
   }, React.createElement(PageHeader, {
@@ -11143,13 +11331,15 @@ var OrdersPage = ({
       fontSize: 11.5,
       color: 'var(--ink-400)'
     }
-  }, filtered.length, " orders")), filtered.length === 0 ? React.createElement(EmptyTable, {
+  }, filtered.length, " orders")), filtered.length > 0 && React.createElement(TablePagination, _extends({}, pager, {
+    pos: "top"
+  })), filtered.length === 0 ? React.createElement(EmptyTable, {
     columns: ['Order #', 'Patient', 'MRN', 'Tests', 'Priority', 'Status', 'TAT', 'Ordered', 'Facility'],
     message: orders.length === 0 ? 'No orders yet' : 'No orders match the filter',
     sub: orders.length === 0 ? 'Click "New order" to add a patient, pick tests, and set priority. Orders can also arrive via inbound interface.' : 'Adjust the filter or search.'
   }) : React.createElement("table", {
     className: "tbl"
-  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Order #"), React.createElement("th", null, "Client"), React.createElement("th", null, "Patient"), React.createElement("th", null, "MRN"), React.createElement("th", null, "Tests"), React.createElement("th", null, "Priority"), React.createElement("th", null, "Status"), React.createElement("th", null, "TAT"), React.createElement("th", null, "Ordered"), React.createElement("th", null, "Facility"))), React.createElement("tbody", null, filtered.map(o => {
+  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Order #"), React.createElement("th", null, "Client"), React.createElement("th", null, "Patient"), React.createElement("th", null, "MRN"), React.createElement("th", null, "Tests"), React.createElement("th", null, "Priority"), React.createElement("th", null, "Status"), React.createElement("th", null, "TAT"), React.createElement("th", null, "Ordered"), React.createElement("th", null, "Facility"))), React.createElement("tbody", null, pager.slice.map(o => {
     var pat = o.patientId ? patientById[o.patientId] : null;
     var cli = o.clientId ? clientById[o.clientId] : null;
     var loc = o.locationId ? locationById[o.locationId] : null;
@@ -11266,7 +11456,7 @@ var OrdersPage = ({
         color: 'var(--ink-300)'
       }
     }, "\u2014")));
-  })))));
+  }))), filtered.length > 0 && React.createElement(TablePagination, pager)));
 };
 var SpecimensPage = () => {
   var specimens = window.useEntities('specimens');
@@ -11290,6 +11480,7 @@ var SpecimensPage = () => {
       return [s.barcode, s.accessionNumber, s.id, s.type, s.container].filter(Boolean).join(' ').toLowerCase().includes(needle);
     }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [specimens, q, filter]);
+  var pager = usePagination(filtered);
   return React.createElement(Page, {
     label: "Specimens"
   }, React.createElement(PageHeader, {
@@ -11349,13 +11540,15 @@ var SpecimensPage = () => {
       fontSize: 11.5,
       color: 'var(--ink-400)'
     }
-  }, filtered.length, " specimens")), filtered.length === 0 ? React.createElement(EmptyTable, {
+  }, filtered.length, " specimens")), filtered.length > 0 && React.createElement(TablePagination, _extends({}, pager, {
+    pos: "top"
+  })), filtered.length === 0 ? React.createElement(EmptyTable, {
     columns: ['Accession', 'Barcode', 'Patient', 'Order', 'Type', 'Container', 'Collected', 'Received', 'Flags', 'State'],
     message: specimens.length === 0 ? 'No specimens yet' : 'No specimens match the filter',
     sub: specimens.length === 0 ? 'Accession a specimen to populate the pipeline.' : 'Adjust the filter or search.'
   }) : React.createElement("table", {
     className: "tbl"
-  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Accession"), React.createElement("th", null, "Barcode"), React.createElement("th", null, "Patient"), React.createElement("th", null, "Order"), React.createElement("th", null, "Type"), React.createElement("th", null, "Container"), React.createElement("th", null, "Received"), React.createElement("th", null, "Condition"), React.createElement("th", null, "Flags"), React.createElement("th", null, "State"))), React.createElement("tbody", null, filtered.map(s => {
+  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Accession"), React.createElement("th", null, "Barcode"), React.createElement("th", null, "Patient"), React.createElement("th", null, "Order"), React.createElement("th", null, "Type"), React.createElement("th", null, "Container"), React.createElement("th", null, "Received"), React.createElement("th", null, "Condition"), React.createElement("th", null, "Flags"), React.createElement("th", null, "State"))), React.createElement("tbody", null, pager.slice.map(s => {
     var pat = s.patientId ? patientById[s.patientId] : null;
     var ord = s.orderId ? orderById[s.orderId] : null;
     var flags = Array.isArray(s.flags) ? s.flags : [];
@@ -11425,34 +11618,55 @@ var SpecimensPage = () => {
     }, f)))), React.createElement("td", null, React.createElement(SpecimenStatePill, {
       state: s.state
     })));
-  })))));
+  }))), filtered.length > 0 && React.createElement(TablePagination, pager)));
 };
 var WorklistsPage = () => {
   var specimens = window.useEntities('specimens');
   var orders = window.useEntities('orders');
   var patients = window.useEntities('patients');
   var tests = window.useEntities('tests');
+  var instruments = window.useEntities('instruments');
   var orderById = useMemoOS(() => Object.fromEntries(orders.map(o => [o.id, o])), [orders]);
   var patientById = useMemoOS(() => Object.fromEntries(patients.map(p => [p.id, p])), [patients]);
   var testById = useMemoOS(() => Object.fromEntries(tests.map(t => [t.id, t])), [tests]);
+  var instrumentByKey = useMemoOS(() => {
+    var out = {};
+    for (var inst of instruments) {
+      if (inst.id) out[inst.id] = inst;
+      if (inst.code) out[inst.code] = inst;
+    }
+    return out;
+  }, [instruments]);
+  var labelForRouteKey = key => {
+    if (!key || key === '__unrouted') return 'Unrouted';
+    var inst = instrumentByKey[key];
+    if (inst) return inst.name || inst.code || key;
+    return key;
+  };
   var groups = useMemoOS(() => {
     var g = new Map();
     for (var s of specimens) {
       if (s.state === 'rejected' || s.state === 'completed') continue;
-      var key = s.routedTo || '__unrouted';
+      var raw = s.routedTo || '__unrouted';
+      var inst = instrumentByKey[raw];
+      var key = inst ? inst.id : raw;
       if (!g.has(key)) g.set(key, []);
       g.get(key).push(s);
     }
     return Array.from(g.entries()).map(([key, items]) => ({
       id: key,
-      label: key === '__unrouted' ? 'Unrouted' : key,
+      label: labelForRouteKey(key),
       items: items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
     })).sort((a, b) => {
       if (a.id === '__unrouted') return -1;
       if (b.id === '__unrouted') return 1;
       return a.label.localeCompare(b.label);
     });
-  }, [specimens]);
+  }, [specimens, instrumentByKey]);
+  var routeOptions = useMemoOS(() => [...instruments].filter(i => i.active !== false).sort((a, b) => (a.name || a.code || '').localeCompare(b.name || b.code || '')).map(i => ({
+    value: i.id,
+    label: (i.name || i.code) + (i.code ? ' (' + i.code + ')' : '')
+  })), [instruments]);
   var [selectedKey, setSelectedKey] = useStateOS(null);
   var [checked, setChecked] = useStateOS(() => new Set());
   var selected = groups.find(g => g.id === selectedKey) || groups[0] || null;
@@ -11524,6 +11738,14 @@ var WorklistsPage = () => {
   };
   var bulkRoute = async () => {
     if (checkedSpecimens.length === 0) return;
+    if (routeOptions.length === 0) {
+      await safetyNotice({
+        tone: 'danger',
+        title: 'No instruments configured',
+        message: 'Add at least one instrument in Admin > Instruments before routing specimens.'
+      });
+      return;
+    }
     var ask = await safetyConfirm({
       id: 'worklists.route.batch',
       tone: 'warning',
@@ -11532,7 +11754,7 @@ var WorklistsPage = () => {
       facts: [safetyFact('selected', checkedSpecimens.length), safetyFact('first accessions', checkedSpecimens.slice(0, 8).map(s => s.accessionNumber || s.id.slice(-6)).join(', '))],
       requireReason: true,
       reasonLabel: 'Route to',
-      reasonDefault: 'cobas-c303',
+      reasonOptions: routeOptions,
       entityType: 'specimen',
       entityId: 'batch',
       confirmLabel: 'Route batch'
@@ -11570,6 +11792,15 @@ var WorklistsPage = () => {
     setChecked(new Set());
   };
   var releaseToInstrument = async specimen => {
+    if (routeOptions.length === 0) {
+      await safetyNotice({
+        tone: 'danger',
+        title: 'No instruments configured',
+        message: 'Add at least one instrument in Admin > Instruments before routing specimens.'
+      });
+      return;
+    }
+    var currentInst = specimen.routedTo ? instrumentByKey[specimen.routedTo] : null;
     var ask = await safetyConfirm({
       id: 'worklists.route.single',
       tone: 'info',
@@ -11578,7 +11809,8 @@ var WorklistsPage = () => {
       facts: factsForSpecimen(specimen),
       requireReason: true,
       reasonLabel: 'Route to',
-      reasonDefault: specimen.routedTo || 'cobas-c303',
+      reasonOptions: routeOptions,
+      reasonDefault: currentInst ? currentInst.id : '',
       entityType: 'specimen',
       entityId: specimen.id,
       confirmLabel: 'Route',
@@ -11840,6 +12072,7 @@ var WorklistsPage = () => {
 
 
 // ---- result-pages.jsx ----
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 var ResultsPage = () => {
   var results = window.useEntities('results');
   var specimens = window.useEntities('specimens');
@@ -11872,6 +12105,7 @@ var ResultsPage = () => {
       return true;
     }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [results, filter, showSuperseded]);
+  var pager = usePagination(filtered);
   var pendingCount = useMemoOS(() => results.filter(r => r.status === 'preliminary' || r.status === 'pending').length, [results]);
   var factsForResult = r => {
     var spec = r && r.specimenId ? specimenById[r.specimenId] : null;
@@ -12322,7 +12556,9 @@ var ResultsPage = () => {
       fontSize: 11.5,
       color: 'var(--ink-400)'
     }
-  }, filtered.length, " results")), filtered.length === 0 ? React.createElement(EmptyTable, {
+  }, filtered.length, " results")), filtered.length > 0 && React.createElement(TablePagination, _extends({}, pager, {
+    pos: "top"
+  })), filtered.length === 0 ? React.createElement(EmptyTable, {
     columns: ['Accession', 'Patient', 'Test', 'Value', 'Units', 'Ref range', 'Flag', 'Status', ''],
     message: results.length === 0 ? 'No results yet' : 'No results match the filter',
     sub: results.length === 0 ? 'Route a specimen to an analyzer — the simulator drops results within a few seconds.' : 'Adjust the filter.'
@@ -12342,7 +12578,7 @@ var ResultsPage = () => {
     style: {
       width: 180
     }
-  }))), React.createElement("tbody", null, filtered.map(r => {
+  }))), React.createElement("tbody", null, pager.slice.map(r => {
     var spec = r.specimenId ? specimenById[r.specimenId] : null;
     var pat = spec && spec.patientId ? patientById[spec.patientId] : null;
     var test = r.testId ? testById[r.testId] : null;
@@ -12476,7 +12712,7 @@ var ResultsPage = () => {
       onClick: () => setCorrecting(r),
       title: "Issue a correction"
     }, "Correct") : null));
-  })))), correcting && React.createElement(CorrectResultModal, {
+  }))), filtered.length > 0 && React.createElement(TablePagination, pager)), correcting && React.createElement(CorrectResultModal, {
     prior: correcting,
     test: correcting.testId ? testById[correcting.testId] : null,
     specimen: correcting.specimenId ? specimenById[correcting.specimenId] : null,
@@ -14242,6 +14478,7 @@ var Hl7IntakePanel = () => {
 
 
 // ---- reports-pages.jsx ----
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 var ReportsPage = () => {
   var events = window.useEntities('audit_events');
   var [q, setQ] = useStateOS('');
@@ -14285,6 +14522,7 @@ var ReportsPage = () => {
       return blob.includes(q.toLowerCase());
     }).sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 500);
   }, [events, q, filter, eventType, actor, entityType, windowMs]);
+  var pager = usePagination(filtered);
   var resetFilters = () => {
     setQ('');
     setFilter('all');
@@ -14506,7 +14744,9 @@ var ReportsPage = () => {
       flex: 1,
       overflowY: 'auto'
     }
-  }, filtered.length === 0 ? React.createElement("div", {
+  }, filtered.length > 0 && React.createElement(TablePagination, _extends({}, pager, {
+    pos: "top"
+  })), filtered.length === 0 ? React.createElement("div", {
     className: "empty",
     style: {
       padding: '40px 24px'
@@ -14531,7 +14771,7 @@ var ReportsPage = () => {
     style: {
       width: 100
     }
-  }, "Entity"))), React.createElement("tbody", null, filtered.map(e => {
+  }, "Entity"))), React.createElement("tbody", null, pager.slice.map(e => {
     var drawerKind = {
       order: 'order',
       specimen: 'specimen',
@@ -14593,12 +14833,13 @@ var ReportsPage = () => {
         color: 'var(--ink-300)'
       }
     }, "\u2014")));
-  }))))));
+  }))), filtered.length > 0 && React.createElement(TablePagination, pager))));
 };
 //# sourceURL=reports-pages.jsx
 
 
 // ---- reference-pages.jsx ----
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 var TestCatalogPage = ({
   onBack
 }) => {
@@ -14610,6 +14851,7 @@ var TestCatalogPage = ({
     var needle = q.trim().toLowerCase();
     return [...tests].filter(t => !needle || [t.code, t.name, t.shortName, t.loinc].filter(Boolean).join(' ').toLowerCase().includes(needle)).sort((a, b) => (a.code || '').localeCompare(b.code || ''));
   }, [tests, q]);
+  var pager = usePagination(filtered);
   var startNew = () => {
     setEditingId(null);
     setDraft({
@@ -14821,7 +15063,9 @@ var TestCatalogPage = ({
       flex: 1,
       overflowY: 'auto'
     }
-  }, filtered.length === 0 ? React.createElement("div", {
+  }, filtered.length > 0 && React.createElement(TablePagination, _extends({}, pager, {
+    pos: "top"
+  })), filtered.length === 0 ? React.createElement("div", {
     className: "empty",
     style: {
       padding: '40px 24px'
@@ -14840,7 +15084,7 @@ var TestCatalogPage = ({
     style: {
       width: 100
     }
-  }))), React.createElement("tbody", null, filtered.map(t => React.createElement("tr", {
+  }))), React.createElement("tbody", null, pager.slice.map(t => React.createElement("tr", {
     key: t.id,
     style: {
       opacity: t.active === false ? 0.5 : 1,
@@ -14893,7 +15137,7 @@ var TestCatalogPage = ({
     "data-variant": "danger",
     "data-size": "xs",
     onClick: () => remove(t)
-  }, "Delete"))))))))), draft && React.createElement("div", {
+  }, "Delete"))))))), filtered.length > 0 && React.createElement(TablePagination, pager))), draft && React.createElement("div", {
     className: "panel",
     style: {
       display: 'flex',
@@ -16753,15 +16997,14 @@ var LabelsPage = ({
       fontSize: 11.5
     }
   })), (() => {
-    var orient = __orientationOf(draft.width, draft.height);
-    var bodyMatch = /\^PW(\d+).*?\^LL(\d+)/s.exec(draft.zpl || '');
+    var expOrient = __orientationOf(draft.width, draft.height);
+    var bodyMatch = /\^PW(\d+)[\s\S]*?\^LL(\d+)/.exec(draft.zpl || '');
     var bodyW = bodyMatch ? Number(bodyMatch[1]) : null;
     var bodyH = bodyMatch ? Number(bodyMatch[2]) : null;
-    var expectedW = Math.round(Number(draft.width || 0) * Number(draft.dpi || 0));
-    var expectedH = Math.round(Number(draft.height || 0) * Number(draft.dpi || 0));
-    var mismatch = bodyW != null && bodyH != null && (bodyW !== expectedW || bodyH !== expectedH);
+    var bodyOrient = bodyW != null && bodyH != null ? __orientationOf(bodyW / 100, bodyH / 100) : null;
+    var mismatch = bodyOrient && expOrient !== 'square' && bodyOrient !== 'square' && bodyOrient !== expOrient;
     var applyDefault = () => {
-      var next = __defaultBodyFor(orient);
+      var next = __defaultBodyFor(expOrient);
       setDraft({
         ...draft,
         zpl: next
@@ -16789,7 +17032,7 @@ var LabelsPage = ({
         color: 'var(--warn-700, #B5462E)',
         fontSize: 10.5
       }
-    }, "Body ^PW", bodyW, "/^LL", bodyH, " doesn't match ", expectedW, "\xD7", expectedH, ". The ZPL output forces the dimensions but field coords will likely fall outside the printable region \u2014 reset to the ", orient, " default if you don't have a custom layout.")), React.createElement("button", {
+    }, "Body is designed for ", bodyOrient, " but the form is set to ", expOrient, ". Field coords will fall off the printable region \u2014 reset to the ", expOrient, " default if you don't have a custom layout.")), React.createElement("button", {
       type: "button",
       onClick: applyDefault,
       className: "btn",
@@ -16797,8 +17040,8 @@ var LabelsPage = ({
       style: {
         flexShrink: 0
       },
-      title: `Replace body with the canonical ${orient} default`
-    }, "Reset to ", orient, " default"));
+      title: `Replace body with the canonical ${expOrient} default`
+    }, "Reset to ", expOrient, " default"));
   })(), React.createElement(CatalogField, {
     label: "Active"
   }, React.createElement("label", {
@@ -18934,6 +19177,7 @@ var NotificationsPage = ({
 
 
 // ---- users-pages.jsx ----
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 var UsersPage = ({
   onBack
 }) => {
@@ -18962,6 +19206,7 @@ var UsersPage = ({
       return (a.lastName || a.username || '').localeCompare(b.lastName || b.username || '');
     });
   }, [users, q, statusFilter]);
+  var pager = usePagination(filtered);
   var stats = useMemoOS(() => {
     var out = {
       total: users.length,
@@ -19336,7 +19581,9 @@ var UsersPage = ({
     value: "ACTIVE"
   }, "Active"), React.createElement("option", {
     value: "INACTIVE"
-  }, "Inactive"))), filtered.length === 0 ? React.createElement("div", {
+  }, "Inactive"))), filtered.length > 0 && React.createElement(TablePagination, _extends({}, pager, {
+    pos: "top"
+  })), filtered.length === 0 ? React.createElement("div", {
     className: "empty",
     style: {
       padding: '36px 24px'
@@ -19368,7 +19615,7 @@ var UsersPage = ({
       width: 70,
       textAlign: 'right'
     }
-  }, "Audit"))), React.createElement("tbody", null, filtered.map(u => {
+  }, "Audit"))), React.createElement("tbody", null, pager.slice.map(u => {
     var meta = window.userRoles ? window.userRoles.primaryRoleMeta(u.id) : null;
     var userRoles = Array.isArray(u.roles) ? u.roles : [];
     var inactive = u.status === 'INACTIVE';
@@ -19453,7 +19700,7 @@ var UsersPage = ({
         color: 'var(--ink-400)'
       }
     }, auditCountByUser[u.id] || 0));
-  })))), draft && React.createElement("div", {
+  }))), filtered.length > 0 && React.createElement(TablePagination, pager)), draft && React.createElement("div", {
     className: "panel",
     style: {
       padding: 14
