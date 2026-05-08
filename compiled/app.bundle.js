@@ -9952,7 +9952,6 @@ var LoginPage = ({
   var [busy, setBusy] = useStateLP(false);
   var [error, setError] = useStateLP(null);
   var [shakeKey, setShakeKey] = useStateLP(0);
-  var [seedOpen, setSeedOpen] = useStateLP(false);
   var usernameRef = useRefLP(null);
   useEffectLP(() => {
     if (usernameRef.current) usernameRef.current.focus();
@@ -10182,70 +10181,7 @@ var LoginPage = ({
   }), " Signing in\u2026") : 'Sign in'), error && React.createElement("div", {
     className: "login-error",
     role: "alert"
-  }, error)), React.createElement("div", {
-    style: {
-      marginTop: 28,
-      paddingTop: 18,
-      borderTop: '1px solid var(--line-soft)'
-    }
-  }, React.createElement("button", {
-    type: "button",
-    onClick: () => setSeedOpen(o => !o),
-    style: {
-      background: 'transparent',
-      border: 0,
-      cursor: 'pointer',
-      padding: 0,
-      fontSize: 11,
-      color: 'var(--ink-500)',
-      letterSpacing: '0.04em',
-      textTransform: 'uppercase',
-      fontWeight: 500
-    }
-  }, seedOpen ? '− Hide' : '+ Show', " dev seed credentials"), seedOpen && React.createElement("div", {
-    style: {
-      marginTop: 10,
-      padding: '10px 12px',
-      background: 'var(--ivory-100)',
-      border: '1px solid var(--line)',
-      borderRadius: 6,
-      fontSize: 11.5,
-      color: 'var(--ink-500)',
-      lineHeight: 1.7
-    }
-  }, "Each seeded user's default password equals their username:", React.createElement("div", {
-    style: {
-      marginTop: 6,
-      fontFamily: 'var(--font-mono, monospace)',
-      color: 'var(--ink-700)'
-    }
-  }, "rivera / rivera ", React.createElement("span", {
-    style: {
-      color: 'var(--ink-300)'
-    }
-  }, "\xB7 Lab Director + Pathologist"), React.createElement("br", null), "morgan / morgan ", React.createElement("span", {
-    style: {
-      color: 'var(--ink-300)'
-    }
-  }, "\xB7 Lab Supervisor"), React.createElement("br", null), "alex / alex ", React.createElement("span", {
-    style: {
-      color: 'var(--ink-300)'
-    }
-  }, "\xB7 Medical Technologist"), React.createElement("br", null), "priya / priya ", React.createElement("span", {
-    style: {
-      color: 'var(--ink-300)'
-    }
-  }, "\xB7 Lab Assistant"), React.createElement("br", null), "jordan / jordan ", React.createElement("span", {
-    style: {
-      color: 'var(--ink-300)'
-    }
-  }, "\xB7 IT Admin")), React.createElement("div", {
-    style: {
-      marginTop: 8,
-      fontSize: 10.5,
-      color: 'var(--ink-400)'
-    }
-  }, "Change defaults via the Users & Roles admin page."))))));
+  }, error)))));
 };
 window.LoginPage = LoginPage;
 //# sourceURL=login-page.jsx
