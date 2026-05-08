@@ -67,6 +67,7 @@ const confirmConfigChange = (options) => safetyConfirm({
 const InstrumentsPage = ({ onBack }) => {
   const [simEnabled, setSimEnabled] = useStateOS(window.instrumentSim ? window.instrumentSim.isEnabled() : true);
   const [activity, setActivity] = useStateOS(() => (window.instrumentSim ? window.instrumentSim.getRecent(40) : []));
+  const canEditInterfaces = hasPermission('EDIT_INTERFACES');
 
   // Subscribe to simulator activity events; merge into our buffer.
   React.useEffect(() => {
@@ -79,6 +80,7 @@ const InstrumentsPage = ({ onBack }) => {
   }, []);
 
   const toggleSim = () => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     const next = !simEnabled;
     if (window.instrumentSim) window.instrumentSim.setEnabled(next);
     setSimEnabled(next);
@@ -99,15 +101,21 @@ const InstrumentsPage = ({ onBack }) => {
       <PageHeader title="Instrument Manager" sub="Connected analyzers, QC status, calibration, and message throughput."
         actions={[
           ...(onBack ? [<button key="b" className="btn" data-size="sm" data-variant="ghost" onClick={onBack}><IconChevRight size={13} style={{ transform: 'rotate(180deg)' }}/> Admin</button>] : []),
-          <button key="r" className="btn" data-size="sm" onClick={() => window.instrumentSim && window.instrumentSim.catchUp('manual')}
-            title="Re-scan all in-flight specimens for unfilled tests. Use after a page reload, after re-enabling the simulator, or to recover a stuck specimen.">
+          <button key="r" className="btn" data-size="sm"
+            onClick={() => { if (!hasPermission('EDIT_INTERFACES')) return; window.instrumentSim && window.instrumentSim.catchUp('manual'); }}
+            disabled={!canEditInterfaces}
+            title={permissionTitle(canEditInterfaces, 'Re-scan all in-flight specimens for unfilled tests. Use after a page reload, after re-enabling the simulator, or to recover a stuck specimen.', 'edit interfaces')}>
             Re-scan in-flight
           </button>,
-          <button key="t" className="btn" data-size="sm" data-variant={simEnabled ? 'ghost' : 'primary'} onClick={toggleSim}>
+          <button key="t" className="btn" data-size="sm" data-variant={simEnabled ? 'ghost' : 'primary'} onClick={toggleSim}
+            disabled={!canEditInterfaces}
+            title={permissionTitle(canEditInterfaces, 'Toggle simulator', 'edit interfaces')}>
             <span className="dot" data-tone={simEnabled ? 'ok' : 'idle'} style={{ marginRight: 6 }}/>
             Simulator: {simEnabled ? 'enabled' : 'disabled'}
           </button>,
-          <button key="n" className="btn" data-size="sm"><IconPlus size={13}/> Connect analyzer</button>,
+          <button key="n" className="btn" data-size="sm"
+            disabled={!canEditInterfaces}
+            title={permissionTitle(canEditInterfaces, 'Connect analyzer', 'edit interfaces')}><IconPlus size={13}/> Connect analyzer</button>,
         ]}/>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
@@ -192,6 +200,7 @@ const SimKindPill = ({ kind }) => (
 // ===== Interfaces =====
 const InterfacesPage = ({ onBack }) => {
   const interfaces = window.useEntities('interfaces');
+  const canEditInterfaces = hasPermission('EDIT_INTERFACES');
   const counts = useMemoOS(() => ({
     inbound:  interfaces.filter(i => i.direction === 'inbound' || i.direction === 'bidirectional').length,
     outbound: interfaces.filter(i => i.direction === 'outbound' || i.direction === 'bidirectional').length,
@@ -205,7 +214,9 @@ const InterfacesPage = ({ onBack }) => {
       <PageHeader title="Interfaces" sub="HL7 endpoints, MLLP listeners, file drops, and reference lab integrations."
         actions={[
           ...(onBack ? [<button key="b" className="btn" data-size="sm" data-variant="ghost" onClick={onBack}><IconChevRight size={13} style={{ transform: 'rotate(180deg)' }}/> Admin</button>] : []),
-          <button key="n" className="btn" data-size="sm" data-variant="primary"><IconPlus size={13}/> Add interface</button>,
+          <button key="n" className="btn" data-size="sm" data-variant="primary"
+            disabled={!canEditInterfaces}
+            title={permissionTitle(canEditInterfaces, 'Add interface', 'edit interfaces')}><IconPlus size={13}/> Add interface</button>,
         ]}/>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 12 }}>
         <KpiPanel label="Inbound" value={counts.inbound}/>
@@ -268,6 +279,7 @@ const MapperIntakePanel = () => {
   const [preview, setPreview] = useStateOS(null);
   const [committing, setCommitting] = useStateOS(false);
   const [result, setResult] = useStateOS(null);
+  const canEditInterfaces = hasPermission('EDIT_INTERFACES');
 
   const mapperRecord = mapperId ? mappers.find(m => m.id === mapperId) : (inboundMappers[0] || null);
   const parsedMapper = useMemoOS(() => mapperRecord ? window.mappers.parse(mapperRecord.text) : null, [mapperRecord]);
@@ -315,6 +327,7 @@ const MapperIntakePanel = () => {
   };
 
   const ingest = async () => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     if (!preview || !preview.rows) return;
     const check = validateMapperPreview(payload, preview.rows);
     if (!check.ok) {
@@ -343,6 +356,7 @@ const MapperIntakePanel = () => {
       confirmLabel: 'Ingest rows',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_INTERFACES')) return;
     const freshCheck = validateMapperPreview(payload, preview.rows);
     if (!freshCheck.ok) {
       await safetyNotice({ tone: 'danger', title: 'Mapper ingest blocked', message: freshCheck.errors.slice(0, 4).join('; ') });
@@ -417,7 +431,8 @@ const MapperIntakePanel = () => {
           <div style={{ flex: 1 }}/>
           <button className="btn" data-size="sm" onClick={runPreview} disabled={!payload || !mapperRecord}>Preview</button>
           <button className="btn" data-variant="primary" data-size="sm" onClick={ingest}
-            disabled={!preview || !preview.rows || preview.rows.length === 0 || committing}>
+            disabled={!preview || !preview.rows || preview.rows.length === 0 || committing || !canEditInterfaces}
+            title={permissionTitle(canEditInterfaces, 'Ingest mapped rows', 'edit interfaces')}>
             {committing ? 'Ingesting…' : `Ingest ${preview && preview.rows ? preview.rows.length : 0} row(s)`}
           </button>
         </div>
@@ -494,6 +509,7 @@ const Hl7IntakePanel = () => {
   const [parsed, setParsed] = useStateOS(null);
   const [committing, setCommitting] = useStateOS(false);
   const [result, setResult] = useStateOS(null);
+  const canEditInterfaces = hasPermission('EDIT_INTERFACES');
 
   const fillExample = () => {
     setText(window.hl7 && window.hl7.SAMPLE_ORM ? window.hl7.SAMPLE_ORM : '');
@@ -515,6 +531,7 @@ const Hl7IntakePanel = () => {
   };
 
   const ingest = async () => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     if (!parsed || !parsed.patient || !parsed.order || parsed.tests.length === 0) return;
     const check = validateHl7Intake(text, parsed);
     if (!check.ok) {
@@ -543,6 +560,7 @@ const Hl7IntakePanel = () => {
       confirmLabel: 'Ingest order',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_INTERFACES')) return;
     const freshCheck = validateHl7Intake(text, parsed);
     if (!freshCheck.ok) {
       await safetyNotice({ tone: 'danger', title: 'HL7 ingest blocked', message: freshCheck.errors.slice(0, 4).join('; ') });
@@ -633,7 +651,9 @@ const Hl7IntakePanel = () => {
           </select>
           <div style={{ flex: 1 }}/>
           <button className="btn" data-size="sm" onClick={parse} disabled={!canParse}>Parse</button>
-          <button className="btn" data-variant="primary" data-size="sm" onClick={ingest} disabled={!canIngest || committing}>
+          <button className="btn" data-variant="primary" data-size="sm" onClick={ingest}
+            disabled={!canIngest || committing || !canEditInterfaces}
+            title={permissionTitle(canEditInterfaces, 'Ingest HL7 order', 'edit interfaces')}>
             {committing ? 'Ingesting…' : 'Ingest order'}
           </button>
         </div>

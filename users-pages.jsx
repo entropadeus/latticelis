@@ -21,6 +21,7 @@ const UsersPage = ({ onBack }) => {
   const [q, setQ] = useStateOS('');
   const [statusFilter, setStatusFilter] = useStateOS('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
   const [credInput, setCredInput] = useStateOS('');
+  const canEditUsers = hasPermission('EDIT_USERS');
 
   // Build "user → audit count" once so the row + form can both read it.
   // Counts both `actor === userId` and `criticalAckedBy === userId`-type
@@ -74,6 +75,7 @@ const UsersPage = ({ onBack }) => {
   const [showPw, setShowPw] = useStateOS(false);
 
   const startNew = () => {
+    if (!hasPermission('EDIT_USERS')) return;
     setEditingId(null);
     setDraft({
       firstName: '', lastName: '', username: '', email: '',
@@ -84,6 +86,7 @@ const UsersPage = ({ onBack }) => {
     setShowPw(false);
   };
   const startEdit = (u) => {
+    if (!hasPermission('EDIT_USERS')) return;
     setEditingId(u.id);
     setDraft({
       firstName: u.firstName || '',
@@ -102,28 +105,33 @@ const UsersPage = ({ onBack }) => {
   const cancel = () => { setEditingId(null); setDraft(null); setCredInput(''); setShowPw(false); };
 
   const toggleRole = (roleId) => {
+    if (!hasPermission('EDIT_USERS')) return;
     setDraft(d => {
       const has = d.roles.includes(roleId);
       return { ...d, roles: has ? d.roles.filter(r => r !== roleId) : [...d.roles, roleId] };
     });
   };
   const toggleFacility = (locId) => {
+    if (!hasPermission('EDIT_USERS')) return;
     setDraft(d => {
       const has = d.facilityIds.includes(locId);
       return { ...d, facilityIds: has ? d.facilityIds.filter(f => f !== locId) : [...d.facilityIds, locId] };
     });
   };
   const addCredential = () => {
+    if (!hasPermission('EDIT_USERS')) return;
     const v = credInput.trim();
     if (!v) return;
     setDraft(d => d.credentials.includes(v) ? d : { ...d, credentials: [...d.credentials, v] });
     setCredInput('');
   };
   const removeCredential = (c) => {
+    if (!hasPermission('EDIT_USERS')) return;
     setDraft(d => ({ ...d, credentials: d.credentials.filter(x => x !== c) }));
   };
 
   const save = async () => {
+    if (!hasPermission('EDIT_USERS')) return;
     if (!draft || !draft.firstName.trim() || !draft.lastName.trim()) return;
     if (!draft.username.trim()) {
       await safetyNotice({ tone: 'warning', title: 'Username required', message: 'Pick a username — it\'s what the operator types at sign-in.' });
@@ -201,6 +209,7 @@ const UsersPage = ({ onBack }) => {
       confirmLabel: editingId ? 'Save user' : 'Create user',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_USERS')) return;
 
     // Strip the plaintext draft fields so they never reach the user record.
     const { password, confirmPassword, ...persistable } = draft;
@@ -231,6 +240,7 @@ const UsersPage = ({ onBack }) => {
   };
 
   const clearPasswordFor = async (u) => {
+    if (!hasPermission('EDIT_USERS')) return;
     if (!u || !window.auth || !window.auth.clearPassword) return;
     const ask = await safetyConfirm({
       id: 'admin.users.clear_password',
@@ -246,10 +256,12 @@ const UsersPage = ({ onBack }) => {
       confirmLabel: 'Clear password',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_USERS')) return;
     await window.auth.clearPassword(u.id);
   };
 
   const deactivate = async (u) => {
+    if (!hasPermission('EDIT_USERS')) return;
     const ask = await safetyConfirm({
       id: 'admin.users.deactivate',
       tone: 'warning',
@@ -265,18 +277,21 @@ const UsersPage = ({ onBack }) => {
       confirmLabel: 'Deactivate user',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_USERS')) return;
     const fresh = await window.db.get('users', u.id);
     if (!fresh) return;
     await window.db.put('users', window.schema.newUser({ ...fresh, status: 'INACTIVE' }));
   };
 
   const reactivate = async (u) => {
+    if (!hasPermission('EDIT_USERS')) return;
     const fresh = await window.db.get('users', u.id);
     if (!fresh) return;
     await window.db.put('users', window.schema.newUser({ ...fresh, status: 'ACTIVE' }));
   };
 
   const hardDelete = async (u) => {
+    if (!hasPermission('EDIT_USERS')) return;
     const count = auditCountByUser[u.id] || 0;
     if (count > 0) {
       await safetyNotice({
@@ -301,6 +316,7 @@ const UsersPage = ({ onBack }) => {
       confirmLabel: 'Delete user',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_USERS')) return;
     await window.db.delete('users', u.id);
     if (editingId === u.id) cancel();
   };
@@ -318,7 +334,9 @@ const UsersPage = ({ onBack }) => {
           <button key="b" className="btn" data-size="sm" data-variant="ghost" onClick={onBack}>
             <IconChevRight size={13} style={{ transform: 'rotate(180deg)' }}/> Admin
           </button>,
-          <button key="n" className="btn" data-size="sm" data-variant="primary" onClick={startNew}>New user</button>,
+          <button key="n" className="btn" data-size="sm" data-variant="primary" onClick={startNew}
+            disabled={!canEditUsers}
+            title={permissionTitle(canEditUsers, 'Create new user', 'edit users')}>New user</button>,
         ]}/>
 
       <div className="panel" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 14 }}>
@@ -380,8 +398,9 @@ const UsersPage = ({ onBack }) => {
                   const inactive = u.status === 'INACTIVE';
                   return (
                     <tr key={u.id} onClick={() => startEdit(u)}
+                      title={permissionTitle(canEditUsers, 'Edit user', 'edit users')}
                       style={{
-                        cursor: 'pointer',
+                        cursor: canEditUsers ? 'pointer' : 'not-allowed',
                         background: editingId === u.id ? 'var(--sage-50)' : 'transparent',
                         opacity: inactive ? 0.65 : 1,
                       }}>
@@ -505,6 +524,7 @@ const UsersPage = ({ onBack }) => {
                   <input className="input" type={showPw ? 'text' : 'password'}
                     placeholder={editingExisting ? '••••••••' : 'min 4 characters'}
                     value={draft.password}
+                    disabled={!canEditUsers}
                     autoComplete="new-password"
                     onChange={e => setDraft(d => ({ ...d, password: e.target.value }))}
                     style={{ width: '100%', paddingRight: 50 }}/>
@@ -523,6 +543,7 @@ const UsersPage = ({ onBack }) => {
                 <input className="input" type={showPw ? 'text' : 'password'}
                   placeholder="confirm"
                   value={draft.confirmPassword}
+                  disabled={!canEditUsers}
                   autoComplete="new-password"
                   onChange={e => setDraft(d => ({ ...d, confirmPassword: e.target.value }))}/>
               </div>
@@ -535,9 +556,12 @@ const UsersPage = ({ onBack }) => {
                 <div style={{ marginTop: 6 }}>
                   <button type="button"
                     onClick={() => clearPasswordFor(editingUser)}
+                    disabled={!canEditUsers}
+                    title={permissionTitle(canEditUsers, 'Clear password', 'edit users')}
                     style={{
-                      border: 0, background: 'transparent', cursor: 'pointer', padding: 0,
+                      border: 0, background: 'transparent', cursor: canEditUsers ? 'pointer' : 'not-allowed', padding: 0,
                       fontSize: 10.5, color: 'var(--ink-500)', textDecoration: 'underline',
+                      opacity: canEditUsers ? 1 : 0.55,
                     }}>
                     Clear password (force admin reset before next sign-in)
                   </button>
@@ -553,7 +577,9 @@ const UsersPage = ({ onBack }) => {
                   <span key={c} className="pill" data-tone="ghost" style={{ fontSize: 10 }}>
                     {c}
                     <button onClick={() => removeCredential(c)}
-                      style={{ marginLeft: 6, border: 0, background: 'transparent', cursor: 'pointer', color: 'var(--ink-400)', padding: 0, fontSize: 11 }}>×</button>
+                      disabled={!canEditUsers}
+                      title={permissionTitle(canEditUsers, 'Remove credential', 'edit users')}
+                      style={{ marginLeft: 6, border: 0, background: 'transparent', cursor: canEditUsers ? 'pointer' : 'not-allowed', color: 'var(--ink-400)', padding: 0, fontSize: 11 }}>×</button>
                   </span>
                 ))}
               </div>
@@ -563,7 +589,9 @@ const UsersPage = ({ onBack }) => {
                   onChange={e => setCredInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCredential(); } }}
                   style={{ flex: 1 }}/>
-                <button className="btn" data-size="sm" onClick={addCredential}>Add</button>
+                <button className="btn" data-size="sm" onClick={addCredential}
+                  disabled={!canEditUsers}
+                  title={permissionTitle(canEditUsers, 'Add credential', 'edit users')}>Add</button>
               </div>
             </div>
 
@@ -577,17 +605,18 @@ const UsersPage = ({ onBack }) => {
                   const enabled = draft.roles.includes(r.id);
                   return (
                     <label key={r.id}
-                      title={r.description}
+                      title={permissionTitle(canEditUsers, r.description, 'edit users')}
                       style={{
                         display: 'flex', alignItems: 'flex-start', gap: 6,
                         padding: '6px 8px',
                         background: enabled ? '#fff' : 'var(--ivory-100)',
                         border: '1px solid var(--line)',
                         borderRadius: 4,
-                        cursor: 'pointer',
-                        opacity: enabled ? 1 : 0.7,
+                        cursor: canEditUsers ? 'pointer' : 'not-allowed',
+                        opacity: !canEditUsers ? 0.5 : (enabled ? 1 : 0.7),
                       }}>
                       <input type="checkbox" checked={enabled}
+                        disabled={!canEditUsers}
                         onChange={() => toggleRole(r.id)}
                         style={{ marginTop: 2 }}/>
                       <div>
@@ -612,9 +641,11 @@ const UsersPage = ({ onBack }) => {
                     return (
                       <button key={loc.id}
                         onClick={() => toggleFacility(loc.id)}
+                        disabled={!canEditUsers}
+                        title={permissionTitle(canEditUsers, 'Assign facility scope', 'edit users')}
                         className="pill"
                         data-tone={enabled ? 'sage' : 'ghost'}
-                        style={{ fontSize: 10, cursor: 'pointer', border: 'none', opacity: enabled ? 1 : 0.6 }}>
+                        style={{ fontSize: 10, cursor: canEditUsers ? 'pointer' : 'not-allowed', border: 'none', opacity: !canEditUsers ? 0.5 : (enabled ? 1 : 0.6) }}>
                         {enabled ? '✓ ' : ''}{loc.name || loc.code}
                       </button>
                     );
@@ -628,9 +659,11 @@ const UsersPage = ({ onBack }) => {
               <span style={{ fontSize: 11, fontWeight: 500 }}>Status</span>
               <button
                 onClick={() => setDraft(d => ({ ...d, status: d.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }))}
+                disabled={!canEditUsers}
+                title={permissionTitle(canEditUsers, 'Toggle user status', 'edit users')}
                 className="pill"
                 data-tone={draft.status === 'ACTIVE' ? 'sage' : 'ghost'}
-                style={{ fontSize: 10, cursor: 'pointer', border: 'none' }}>
+                style={{ fontSize: 10, cursor: canEditUsers ? 'pointer' : 'not-allowed', border: 'none', opacity: canEditUsers ? 1 : 0.55 }}>
                 {draft.status === 'ACTIVE' ? '✓ active' : 'inactive'}
               </button>
               <span style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>
@@ -642,27 +675,33 @@ const UsersPage = ({ onBack }) => {
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button className="btn" data-size="sm" data-variant="primary" onClick={save}
-                disabled={!draft.firstName.trim() || !draft.lastName.trim()}>
+                disabled={!draft.firstName.trim() || !draft.lastName.trim() || !canEditUsers}
+                title={permissionTitle(canEditUsers, editingExisting ? 'Save user' : 'Create user', 'edit users')}>
                 {editingExisting ? 'Save user' : 'Create user'}
               </button>
               <button className="btn" data-size="sm" onClick={cancel}>Cancel</button>
               <span style={{ flex: 1 }}/>
               {editingExisting && editingUser && (editingUser.status || 'ACTIVE') === 'ACTIVE' && (
                 <button className="btn" data-size="sm" data-variant="ghost"
-                  onClick={() => deactivate(editingUser)}>
+                  onClick={() => deactivate(editingUser)}
+                  disabled={!canEditUsers}
+                  title={permissionTitle(canEditUsers, 'Deactivate user', 'edit users')}>
                   Deactivate
                 </button>
               )}
               {editingExisting && editingUser && editingUser.status === 'INACTIVE' && (
                 <button className="btn" data-size="sm" data-variant="ghost"
-                  onClick={() => reactivate(editingUser)}>
+                  onClick={() => reactivate(editingUser)}
+                  disabled={!canEditUsers}
+                  title={permissionTitle(canEditUsers, 'Reactivate user', 'edit users')}>
                   Reactivate
                 </button>
               )}
               {editingExisting && editingUser && (
                 <button className="btn" data-size="sm" data-variant="danger"
                   onClick={() => hardDelete(editingUser)}
-                  title={auditCountForEditing > 0 ? 'Blocked — user has audit history' : 'Hard delete (only safe with no audit history)'}>
+                  disabled={!canEditUsers}
+                  title={!canEditUsers ? "you don't have permission to edit users" : (auditCountForEditing > 0 ? 'Blocked - user has audit history' : 'Hard delete (only safe with no audit history)')}>
                   Delete
                 </button>
               )}

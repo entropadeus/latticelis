@@ -21,6 +21,7 @@ const AdminPage = ({ onNav }) => {
     if (!window.userRoles || !window.currentUser) return true;
     return window.userRoles.userHasPermission(window.currentUser.id, t.permission);
   });
+  const canRestoreSnapshot = hasPermission('RESTORE_SNAPSHOT');
 
   const exportSnapshot = async () => {
     const snap = await window.db.exportAll();
@@ -41,6 +42,7 @@ const AdminPage = ({ onNav }) => {
   // synthetic click events on detached <input type=file> can't carry a File.
   useEffectOS(() => {
     window.__previewImport = async (snap) => {
+      if (!hasPermission('RESTORE_SNAPSHOT')) return;
       try {
         const diff = await window.db.diffSnapshot(snap);
         setImportPreview({ snap, diff, fileName: '(programmatic)' });
@@ -52,9 +54,11 @@ const AdminPage = ({ onNav }) => {
   }, []);
 
   const importSnapshot = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     const input = document.createElement('input');
     input.type = 'file'; input.accept = '.json,application/json';
     input.onchange = async () => {
+      if (!hasPermission('RESTORE_SNAPSHOT')) return;
       const file = input.files && input.files[0];
       if (!file) return;
       const text = await file.text();
@@ -75,6 +79,7 @@ const AdminPage = ({ onNav }) => {
   };
 
   const confirmImport = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     if (!importPreview) return;
     const totalAdded = Object.values(importPreview.diff.collections || {}).reduce((n, c) => n + (c.added || 0), 0);
     const totalRemoved = Object.values(importPreview.diff.collections || {}).reduce((n, c) => n + (c.removed || 0), 0);
@@ -100,6 +105,7 @@ const AdminPage = ({ onNav }) => {
       confirmLabel: 'Restore database',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     try {
       const freshDiff = await window.db.diffSnapshot(importPreview.snap);
       setImportPreview({ ...importPreview, diff: freshDiff });
@@ -116,6 +122,7 @@ const AdminPage = ({ onNav }) => {
   };
 
   const resetDb = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     const snap = await window.db.exportAll();
     const counts = Object.entries(snap.collections || {}).map(([name, rows]) => `${name}:${(rows || []).length}`).join(' ');
     const ask = await safetyConfirm({
@@ -131,6 +138,7 @@ const AdminPage = ({ onNav }) => {
       audit: false,
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     await window.db.dropAll();
     if (window.events) {
       window.events.publish('operator.safety.confirmed', {
@@ -146,6 +154,7 @@ const AdminPage = ({ onNav }) => {
 
   const [seeding, setSeeding] = useStateOS(false);
   const seedDemo = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     if (!window.seed) { await safetyNotice({ tone: 'danger', title: 'Seed unavailable', message: 'Seed module not loaded.' }); return; }
     const ask = await safetyConfirm({
       id: 'admin.demo.seed',
@@ -158,6 +167,7 @@ const AdminPage = ({ onNav }) => {
       confirmLabel: 'Seed demo',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     setSeeding(true);
     try {
       const summary = await window.seed.demo();
@@ -174,6 +184,7 @@ const AdminPage = ({ onNav }) => {
     }
   };
   const clearDemo = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     if (!window.seed) { await safetyNotice({ tone: 'danger', title: 'Seed unavailable', message: 'Seed module not loaded.' }); return; }
     const ask = await safetyConfirm({
       id: 'admin.demo.clear',
@@ -186,6 +197,7 @@ const AdminPage = ({ onNav }) => {
       confirmLabel: 'Clear demo',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     const removed = await window.seed.clear();
     await safetyNotice({ tone: 'info', title: 'Demo data cleared', message: 'Removed ' + removed + ' demo records.' });
   };
@@ -194,13 +206,21 @@ const AdminPage = ({ onNav }) => {
     <Page label="Admin">
       <PageHeader title="Admin" sub="System configuration and governance."
         actions={[
-          <button key="seed" className="btn" data-size="sm" data-variant="primary" onClick={seedDemo} disabled={seeding}>
+          <button key="seed" className="btn" data-size="sm" data-variant="primary" onClick={seedDemo}
+            disabled={seeding || !canRestoreSnapshot}
+            title={permissionTitle(canRestoreSnapshot, 'Seed demo data', 'restore or reset data')}>
             {seeding ? 'Seeding…' : 'Seed demo'}
           </button>,
-          <button key="seedClr" className="btn" data-size="sm" onClick={clearDemo} disabled={seeding}>Clear demo</button>,
+          <button key="seedClr" className="btn" data-size="sm" onClick={clearDemo}
+            disabled={seeding || !canRestoreSnapshot}
+            title={permissionTitle(canRestoreSnapshot, 'Clear demo data', 'restore or reset data')}>Clear demo</button>,
           <button key="exp" className="btn" data-size="sm" onClick={exportSnapshot}>Export</button>,
-          <button key="imp" className="btn" data-size="sm" onClick={importSnapshot}>Import</button>,
-          <button key="rst" className="btn" data-size="sm" data-variant="danger" onClick={resetDb}>Reset</button>,
+          <button key="imp" className="btn" data-size="sm" onClick={importSnapshot}
+            disabled={!canRestoreSnapshot}
+            title={permissionTitle(canRestoreSnapshot, 'Import snapshot', 'restore or reset data')}>Import</button>,
+          <button key="rst" className="btn" data-size="sm" data-variant="danger" onClick={resetDb}
+            disabled={!canRestoreSnapshot}
+            title={permissionTitle(canRestoreSnapshot, 'Reset database', 'restore or reset data')}>Reset</button>,
         ]}/>
       {/* Environment strip — honest about prototype status. The amber dot
           signals "this is not production"; the tooltip explains where to
@@ -257,6 +277,7 @@ const AdminPage = ({ onNav }) => {
 
       {importPreview && (
         <ImportPreviewModal preview={importPreview}
+          canRestoreSnapshot={canRestoreSnapshot}
           onConfirm={confirmImport}
           onCancel={() => setImportPreview(null)}/>
       )}
@@ -266,7 +287,7 @@ const AdminPage = ({ onNav }) => {
 
 // Modal showing the diff before import-wipe-restore. Counts only — per-record
 // drill-down would be a future iteration.
-const ImportPreviewModal = ({ preview, onConfirm, onCancel }) => {
+const ImportPreviewModal = ({ preview, onConfirm, onCancel, canRestoreSnapshot }) => {
   const { snap, diff, fileName } = preview;
   const collEntries = useMemoOS(() => {
     return Object.entries(diff.collections)
@@ -359,7 +380,9 @@ const ImportPreviewModal = ({ preview, onConfirm, onCancel }) => {
           <span style={{ fontSize: 11, color: 'var(--err-700)' }}>This wipes the current database before restoring.</span>
           <div style={{ flex: 1 }}/>
           <button className="btn" data-size="sm" onClick={onCancel}>Cancel</button>
-          <button className="btn" data-size="sm" data-variant="primary" onClick={onConfirm}>Restore now</button>
+          <button className="btn" data-size="sm" data-variant="primary" onClick={onConfirm}
+            disabled={!canRestoreSnapshot}
+            title={permissionTitle(canRestoreSnapshot, 'Restore snapshot', 'restore or reset data')}>Restore now</button>
         </div>
       </div>
     </div>

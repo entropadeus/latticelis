@@ -44,6 +44,7 @@ const AccessioningPage = () => {
   const [sessionStart] = useStateAC(Date.now());
   const [labelSpecId, setLabelSpecId] = useStateAC(null);
   const fieldRefs = useRefAC({});
+  const canAccession = hasPermission('ACCESSION');
 
   // Live specimens (most recent first). Filter to ones touched in this session for the
   // session log, and reuse the same pipeline data for cross-page consistency.
@@ -161,6 +162,7 @@ const AccessioningPage = () => {
   };
 
   const commitRow = async (forcedState) => {
+    if (!hasPermission('ACCESSION')) return;
     // Allow rejected with no fields (rejecting a no-show), but for accessioned we need
     // at least a barcode or an order #.
     if (forcedState !== 'rejected' && !draft.barcode && !draft.order) return;
@@ -305,10 +307,14 @@ const AccessioningPage = () => {
 
         {/* Action row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
-          <button className="btn" data-variant="primary" data-size="sm" onClick={() => commitRow('accessioned')}>
+          <button className="btn" data-variant="primary" data-size="sm" onClick={() => commitRow('accessioned')}
+            disabled={!canAccession}
+            title={permissionTitle(canAccession, 'Accession specimen', 'accession specimens')}>
             Accession <span className="kbd" style={{ marginLeft: 4, background: 'rgba(255,255,255,0.18)', borderColor: 'transparent', color: 'rgba(255,255,255,0.85)' }}>⌘↵</span>
           </button>
-          <button className="btn" data-size="sm" data-variant="danger" onClick={() => commitRow('rejected')}>
+          <button className="btn" data-size="sm" data-variant="danger" onClick={() => commitRow('rejected')}
+            disabled={!canAccession}
+            title={permissionTitle(canAccession, 'Reject specimen', 'accession specimens')}>
             Reject <span className="kbd" style={{ marginLeft: 4 }}>⌘R</span>
           </button>
           <button className="btn" data-size="sm">

@@ -3,6 +3,7 @@ const MappersPage = ({ onBack }) => {
   const [editingId, setEditingId] = useStateOS(null);
   const [draft, setDraft] = useStateOS(null);
   const [q, setQ] = useStateOS('');
+  const canEditInterfaces = hasPermission('EDIT_INTERFACES');
 
   const filtered = useMemoOS(() => {
     const needle = q.trim().toLowerCase();
@@ -29,12 +30,14 @@ order.priority     = map(Priority, S=stat, R=routine)
 `;
 
   const startNew = () => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     setEditingId(null);
     setDraft({ id: 'mapper_' + Date.now().toString(36), name: 'Untitled Mapper', text: TEMPLATE, active: true, builtin: false });
   };
-  const startEdit = (m) => { setEditingId(m.id); setDraft({ ...m }); };
+  const startEdit = (m) => { if (!hasPermission('EDIT_INTERFACES')) return; setEditingId(m.id); setDraft({ ...m }); };
   const cancel = () => { setEditingId(null); setDraft(null); };
   const save = async () => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     if (!draft || !draft.text) return;
     const parsed = window.mappers.parse(draft.text);
     const name = (parsed.meta && parsed.meta.name) || draft.name || 'Untitled';
@@ -47,6 +50,7 @@ order.priority     = map(Priority, S=stat, R=routine)
     cancel();
   };
   const remove = async (m) => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     if (m.builtin) {
       await safetyNotice({
         tone: 'warning',
@@ -71,6 +75,7 @@ order.priority     = map(Priority, S=stat, R=routine)
       confirmLabel: 'Delete mapper',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_INTERFACES')) return;
     const fresh = await window.db.get('mappers', m.id);
     if (!fresh) return;
     await window.db.delete('mappers', m.id);
@@ -78,6 +83,7 @@ order.priority     = map(Priority, S=stat, R=routine)
   };
 
   const toggleActive = async (m) => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     const nextActive = m.active === false;
     const ask = await confirmConfigChange({
       id: nextActive ? 'admin.mapper.activate' : 'admin.mapper.deactivate',
@@ -94,6 +100,7 @@ order.priority     = map(Priority, S=stat, R=routine)
       confirmLabel: nextActive ? 'Activate mapper' : 'Deactivate mapper',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_INTERFACES')) return;
     const fresh = await window.db.get('mappers', m.id);
     if (!fresh) return;
     await window.db.put('mappers', { ...fresh, active: nextActive });
@@ -110,7 +117,9 @@ order.priority     = map(Priority, S=stat, R=routine)
       <PageHeader title="Mappers" sub="Lattice Mapper Language (LML) scripts: bridge partner formats (CSV, JSON, dialect HL7) into the LIS pipeline. Plain text, easy to edit."
         actions={[
           <button key="b" className="btn" data-size="sm" data-variant="ghost" onClick={onBack}><IconChevRight size={13} style={{ transform: 'rotate(180deg)' }}/> Admin</button>,
-          <button key="n" className="btn" data-size="sm" data-variant="primary" onClick={startNew}><IconPlus size={13}/> New mapper</button>,
+          <button key="n" className="btn" data-size="sm" data-variant="primary" onClick={startNew}
+            disabled={!canEditInterfaces}
+            title={permissionTitle(canEditInterfaces, 'Create new mapper', 'edit interfaces')}><IconPlus size={13}/> New mapper</button>,
         ]}/>
 
       <div style={{ display: 'grid', gridTemplateColumns: draft ? '320px 1fr' : '1fr', gap: 12, height: 'calc(100% - 80px)' }}>
@@ -163,15 +172,21 @@ order.priority     = map(Priority, S=stat, R=routine)
               )}
               <div style={{ flex: 1 }}/>
               {editingId && !draft.builtin && (
-                <button className="btn" data-variant="danger" data-size="xs" onClick={() => remove(draft)}>Delete</button>
+                <button className="btn" data-variant="danger" data-size="xs" onClick={() => remove(draft)}
+                  disabled={!canEditInterfaces}
+                  title={permissionTitle(canEditInterfaces, 'Delete mapper', 'edit interfaces')}>Delete</button>
               )}
               {editingId && (
-                <button className="btn" data-size="xs" onClick={() => toggleActive(draft)}>
+                <button className="btn" data-size="xs" onClick={() => toggleActive(draft)}
+                  disabled={!canEditInterfaces}
+                  title={permissionTitle(canEditInterfaces, draft.active === false ? 'Activate mapper' : 'Deactivate mapper', 'edit interfaces')}>
                   {draft.active === false ? 'Activate' : 'Deactivate'}
                 </button>
               )}
               <button className="btn" data-variant="ghost" data-size="xs" onClick={cancel}>Cancel</button>
-              <button className="btn" data-variant="primary" data-size="xs" onClick={save}>Save</button>
+              <button className="btn" data-variant="primary" data-size="xs" onClick={save}
+                disabled={!canEditInterfaces}
+                title={permissionTitle(canEditInterfaces, 'Save mapper', 'edit interfaces')}>Save</button>
             </div>
             <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 280px', overflow: 'hidden' }}>
               <textarea

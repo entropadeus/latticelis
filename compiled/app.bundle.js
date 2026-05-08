@@ -2373,7 +2373,9 @@ var CommandPalette = ({
       id: 'a-new-order',
       label: 'Create new order',
       kind: 'Action',
-      target: 'orders'
+      target: 'orders',
+      permission: 'CREATE_ORDER',
+      deniedAction: 'create orders'
     }, {
       id: 'a-search-patient',
       label: 'Find patient by MRN',
@@ -2414,6 +2416,7 @@ var CommandPalette = ({
   };
   var pick = item => {
     if (!item) return;
+    if (item.permission && !hasPermission(item.permission)) return;
     if (item.target) onNav(item.target);
     onClose();
     if (item.id === 'a-new-order' && window.openNewOrder) {
@@ -2487,39 +2490,45 @@ var CommandPalette = ({
       color: 'var(--ink-400)',
       fontSize: 12.5
     }
-  }, "No matches. Try a different query.") : items.map((item, i) => React.createElement("button", {
-    key: item.id,
-    onClick: () => pick(item),
-    onMouseEnter: () => setIdx(i),
-    style: {
-      width: '100%',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 10,
-      padding: '8px 10px',
-      border: 'none',
-      background: idx === i ? 'var(--ivory-100)' : 'transparent',
-      borderRadius: 5,
-      cursor: 'pointer',
-      textAlign: 'left'
-    }
-  }, React.createElement("span", {
-    style: {
-      fontSize: 13,
-      color: 'var(--ink-900)',
-      flex: 1
-    }
-  }, item.label), React.createElement("span", {
-    style: {
-      fontSize: 11,
-      color: 'var(--ink-400)'
-    }
-  }, item.kind), idx === i && React.createElement(IconArrowRight, {
-    size: 12,
-    style: {
-      color: 'var(--ink-400)'
-    }
-  })))), React.createElement("div", {
+  }, "No matches. Try a different query.") : items.map((item, i) => {
+    var allowed = !item.permission || hasPermission(item.permission);
+    return React.createElement("button", {
+      key: item.id,
+      onClick: () => pick(item),
+      onMouseEnter: () => setIdx(i),
+      disabled: !allowed,
+      title: allowed ? item.label : `you don't have permission to ${item.deniedAction || 'use this action'}`,
+      style: {
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '8px 10px',
+        border: 'none',
+        background: idx === i ? 'var(--ivory-100)' : 'transparent',
+        borderRadius: 5,
+        cursor: allowed ? 'pointer' : 'not-allowed',
+        textAlign: 'left',
+        opacity: allowed ? 1 : 0.5
+      }
+    }, React.createElement("span", {
+      style: {
+        fontSize: 13,
+        color: 'var(--ink-900)',
+        flex: 1
+      }
+    }, item.label), React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: 'var(--ink-400)'
+      }
+    }, item.kind), idx === i && React.createElement(IconArrowRight, {
+      size: 12,
+      style: {
+        color: 'var(--ink-400)'
+      }
+    }));
+  })), React.createElement("div", {
     style: {
       borderTop: '1px solid var(--line)',
       padding: '8px 14px',
@@ -2635,18 +2644,21 @@ var RulesEnginePage = ({
     status: 'all',
     cat: 'all'
   });
+  var canEditRules = hasPermission('EDIT_RULES');
   var activeRule = rules.find(r => r.id === activeRuleId);
   var openRule = id => {
     setActiveRuleId(id);
     setView('editor');
   };
   var newRule = () => {
+    if (!hasPermission('EDIT_RULES')) return;
     var r = createBlankRule();
     setRules([r, ...rules]);
     setActiveRuleId(r.id);
     setView('editor');
   };
   var updateRule = async (updated, opts = {}) => {
+    if (!hasPermission('EDIT_RULES')) return false;
     var prev = rules.find(r => r.id === updated.id) || null;
     if (!updated || !updated.id) return false;
     if (await needsRuleSafetyConfirm(prev, updated, opts)) {
@@ -2666,10 +2678,12 @@ var RulesEnginePage = ({
         return false;
       }
     }
+    if (!hasPermission('EDIT_RULES')) return false;
     setRules(rules.map(r => r.id === updated.id ? updated : r));
     return true;
   };
   var deleteRule = async id => {
+    if (!hasPermission('EDIT_RULES')) return;
     var rule = rules.find(r => r.id === id);
     if (!rule) return;
     var ask = window.safetyConfirm ? await window.safetyConfirm({
@@ -2697,6 +2711,7 @@ var RulesEnginePage = ({
       confirmed: false
     };
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_RULES')) return;
     setRules(rules.filter(r => r.id !== id));
     if (activeRuleId === id) {
       setActiveRuleId(null);
@@ -2704,6 +2719,7 @@ var RulesEnginePage = ({
     }
   };
   var duplicateRule = id => {
+    if (!hasPermission('EDIT_RULES')) return;
     var src = rules.find(r => r.id === id);
     if (!src) return;
     var copy = {
@@ -2727,7 +2743,8 @@ var RulesEnginePage = ({
         setView('list');
       },
       onDelete: deleteRule,
-      onDuplicate: duplicateRule
+      onDuplicate: duplicateRule,
+      canEdit: canEditRules
     });
   }
   return React.createElement(RulesListView, {
@@ -2749,7 +2766,8 @@ var RulesEnginePage = ({
     },
     onDuplicate: duplicateRule,
     onDelete: deleteRule,
-    onBack: onBack
+    onBack: onBack,
+    canEdit: canEditRules
   });
 };
 var ruleFact = (label, value) => ({
@@ -2886,7 +2904,8 @@ var RulesListView = ({
   onToggle,
   onDuplicate,
   onDelete,
-  onBack
+  onBack,
+  canEdit
 }) => {
   var filtered = rules.filter(r => {
     if (filter.status === 'enabled' && !r.enabled) return false;
@@ -2957,7 +2976,9 @@ var RulesListView = ({
     className: "btn",
     "data-variant": "primary",
     "data-size": "sm",
-    onClick: onNew
+    onClick: onNew,
+    disabled: !canEdit,
+    title: permissionTitle(canEdit, 'Create new rule', 'edit rules')
   }, React.createElement(IconPlus, {
     size: 13
   }), " New rule"))), React.createElement("div", {
@@ -3106,7 +3127,8 @@ var RulesListView = ({
     size: 13
   }), " Sort")), filtered.length === 0 ? React.createElement(RulesEmpty, {
     hasAny: rules.length > 0,
-    onNew: onNew
+    onNew: onNew,
+    canEdit: canEdit
   }) : React.createElement("table", {
     className: "tbl"
   }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", {
@@ -3151,7 +3173,8 @@ var RulesListView = ({
     onOpen: () => onOpen(r.id),
     onToggle: en => onToggle(r.id, en),
     onDuplicate: () => onDuplicate(r.id),
-    onDelete: () => onDelete(r.id)
+    onDelete: () => onDelete(r.id),
+    canEdit: canEdit
   }))))));
 };
 var StatBlock = ({
@@ -3183,7 +3206,8 @@ var RuleRow = ({
   onOpen,
   onToggle,
   onDuplicate,
-  onDelete
+  onDelete,
+  canEdit
 }) => {
   var cat = RULE_CATEGORIES.find(c => c.id === rule.category);
   var trig = RULE_TRIGGERS.find(t => t.id === rule.trigger);
@@ -3197,7 +3221,9 @@ var RuleRow = ({
     onClick: e => e.stopPropagation()
   }, React.createElement(Toggle, {
     checked: rule.enabled,
-    onChange: onToggle
+    onChange: onToggle,
+    disabled: !canEdit,
+    title: permissionTitle(canEdit, rule.enabled ? 'Disable rule' : 'Enable rule', 'edit rules')
   })), React.createElement("td", null, React.createElement("div", {
     style: {
       fontWeight: 500,
@@ -3248,17 +3274,22 @@ var RuleRow = ({
       onClick: onOpen
     }, {
       label: 'Duplicate',
-      onClick: onDuplicate
+      onClick: onDuplicate,
+      disabled: !canEdit,
+      title: permissionTitle(canEdit, 'Duplicate rule', 'edit rules')
     }, {
       label: 'Delete',
       onClick: onDelete,
-      danger: true
+      danger: true,
+      disabled: !canEdit,
+      title: permissionTitle(canEdit, 'Delete rule', 'edit rules')
     }]
   })));
 };
 var RulesEmpty = ({
   hasAny,
-  onNew
+  onNew,
+  canEdit
 }) => React.createElement("div", {
   className: "empty",
   style: {
@@ -3282,7 +3313,9 @@ var RulesEmpty = ({
   className: "btn",
   "data-variant": "primary",
   "data-size": "sm",
-  onClick: onNew
+  onClick: onNew,
+  disabled: !canEdit,
+  title: permissionTitle(canEdit, 'Create first rule', 'edit rules')
 }, React.createElement(IconPlus, {
   size: 13
 }), " Create first rule"), React.createElement("button", {
@@ -3351,12 +3384,18 @@ var relativeTime = ts => {
 var Toggle = ({
   checked,
   onChange,
-  size = 'sm'
+  size = 'sm',
+  disabled = false,
+  title
 }) => {
   var w = size === 'sm' ? 26 : 32,
     h = size === 'sm' ? 14 : 18;
   return React.createElement("button", {
-    onClick: () => onChange(!checked),
+    onClick: () => {
+      if (!disabled) onChange(!checked);
+    },
+    disabled: disabled,
+    title: title,
     style: {
       width: w,
       height: h,
@@ -3366,7 +3405,8 @@ var Toggle = ({
       borderRadius: 999,
       position: 'relative',
       transition: 'background 100ms linear, border-color 100ms linear',
-      cursor: 'pointer'
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      opacity: disabled ? 0.55 : 1
     }
   }, React.createElement("span", {
     style: {
@@ -3560,9 +3600,12 @@ var Menu = ({
   }, items.map((it, i) => React.createElement("button", {
     key: i,
     onClick: () => {
+      if (it.disabled) return;
       setOpen(false);
       it.onClick();
     },
+    disabled: it.disabled,
+    title: it.title,
     style: {
       width: '100%',
       display: 'block',
@@ -3572,8 +3615,9 @@ var Menu = ({
       background: 'transparent',
       color: it.danger ? 'var(--err-700)' : 'var(--ink-900)',
       borderRadius: 4,
-      cursor: 'pointer',
-      fontSize: 12.5
+      cursor: it.disabled ? 'not-allowed' : 'pointer',
+      fontSize: 12.5,
+      opacity: it.disabled ? 0.5 : 1
     },
     onMouseEnter: e => e.currentTarget.style.background = it.danger ? '#F5E5DD' : 'var(--ivory-100)',
     onMouseLeave: e => e.currentTarget.style.background = 'transparent'
@@ -3605,7 +3649,8 @@ var RuleEditor = ({
   onSave,
   onClose,
   onDelete,
-  onDuplicate
+  onDuplicate,
+  canEdit = true
 }) => {
   var [draft, setDraft] = useStateRX(rule);
   var [dirty, setDirty] = useStateRX(false);
@@ -3624,6 +3669,7 @@ var RuleEditor = ({
     setDirty(true);
   };
   var save = async () => {
+    if (!canEdit || !hasPermission('EDIT_RULES')) return false;
     var saved = await onSave({
       ...draft,
       version: dirty ? draft.version + 1 : draft.version
@@ -3775,7 +3821,9 @@ var RuleEditor = ({
     checked: draft.enabled,
     onChange: en => update({
       enabled: en
-    })
+    }),
+    disabled: !canEdit,
+    title: permissionTitle(canEdit, draft.enabled ? 'Disable rule' : 'Enable rule', 'edit rules')
   }), React.createElement("div", {
     style: {
       width: 1,
@@ -3796,21 +3844,26 @@ var RuleEditor = ({
   }), " History"), React.createElement(Menu, {
     items: [{
       label: 'Duplicate',
-      onClick: () => onDuplicate(draft.id)
+      onClick: () => onDuplicate(draft.id),
+      disabled: !canEdit,
+      title: permissionTitle(canEdit, 'Duplicate rule', 'edit rules')
     }, {
       label: 'Export JSON',
       onClick: () => {}
     }, {
       label: 'Delete',
       onClick: () => onDelete(draft.id),
-      danger: true
+      danger: true,
+      disabled: !canEdit,
+      title: permissionTitle(canEdit, 'Delete rule', 'edit rules')
     }]
   }), React.createElement("button", {
     className: "btn",
     "data-variant": "primary",
     "data-size": "sm",
-    disabled: !dirty,
-    onClick: save
+    disabled: !dirty || !canEdit,
+    onClick: save,
+    title: permissionTitle(canEdit, dirty ? 'Save changes' : 'Saved', 'edit rules')
   }, dirty ? 'Save changes' : 'Saved')), React.createElement("div", {
     style: {
       flex: 1,
@@ -5288,6 +5341,9 @@ var NewOrderDrawer = ({
   var [deliveryEndpoint, setDeliveryEndpoint] = useStateOF('');
   var [saving, setSaving] = useStateOF(false);
   var [error, setError] = useStateOF('');
+  var canCreateOrder = hasPermission('CREATE_ORDER');
+  var canEditLabConfig = hasPermission('EDIT_LAB_CONFIG');
+  var canEditTestCatalog = hasPermission('EDIT_TEST_CATALOG');
   var firstFieldRef = useRefOF(null);
   useEffectOF(() => {
     if (!open) return;
@@ -5350,6 +5406,7 @@ var NewOrderDrawer = ({
   var selectedPatient = patientId ? allPatients.find(p => p.id === patientId) : null;
   var selectedTests = useMemoOF(() => selectedTestIds.map(id => allTests.find(t => t.id === id)).filter(Boolean), [selectedTestIds, allTests]);
   var startNewClient = () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     setDraftClient({
       code: clientQ.trim().toUpperCase(),
       name: '',
@@ -5359,6 +5416,7 @@ var NewOrderDrawer = ({
     });
   };
   var commitNewClient = async () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return null;
     if (!draftClient) return null;
     if (!draftClient.code || !draftClient.name) {
       setError('New client needs a code and name.');
@@ -5395,12 +5453,16 @@ var NewOrderDrawer = ({
     setError('');
     return pat;
   };
-  var startNewTest = () => setDraftTest({
-    code: testQ.trim(),
-    name: '',
-    units: ''
-  });
+  var startNewTest = () => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
+    setDraftTest({
+      code: testQ.trim(),
+      name: '',
+      units: ''
+    });
+  };
   var commitNewTest = async () => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return null;
     if (!draftTest) return null;
     if (!draftTest.code || !draftTest.name) {
       setError('New test needs at least code and name.');
@@ -5416,6 +5478,7 @@ var NewOrderDrawer = ({
   };
   var removeTest = id => setSelectedTestIds(ids => ids.filter(x => x !== id));
   var save = async () => {
+    if (!hasPermission('CREATE_ORDER')) return;
     setError('');
     var pid = patientId;
     if (!pid && draftPatient) {
@@ -5443,6 +5506,7 @@ var NewOrderDrawer = ({
       todayStart.setHours(0, 0, 0, 0);
       var t = todayStart.getTime();
       var todayCount = allOrders.filter(o => (o.orderedAt || o.createdAt || 0) >= t).length;
+      if (!hasPermission('CREATE_ORDER')) return;
       var order = window.schema.newOrder({
         orderNumber: __orderNumber(todayCount),
         patientId: pid,
@@ -5576,7 +5640,9 @@ var NewOrderDrawer = ({
       color: 'var(--ink-400)'
     }
   }, "delivers via ", c.deliveryChannel))), React.createElement(SuggestionAction, {
-    onClick: startNewClient
+    onClick: startNewClient,
+    disabled: !canEditLabConfig,
+    title: permissionTitle(canEditLabConfig, 'Add new client', 'edit lab configuration')
   }, "+ Add new client ", clientQ ? `(code "${clientQ.toUpperCase()}")` : '')))), React.createElement(OrderSection, {
     title: "Patient"
   }, selectedPatient ? React.createElement(PatientChip, {
@@ -5652,7 +5718,8 @@ var NewOrderDrawer = ({
     draft: draftTest,
     setDraft: setDraftTest,
     onCancel: () => setDraftTest(null),
-    onCommit: commitNewTest
+    onCommit: commitNewTest,
+    canEditTestCatalog: canEditTestCatalog
   }) : React.createElement("div", null, React.createElement("input", {
     className: "input",
     placeholder: "Search test catalogue (code, name, LOINC)\u2026",
@@ -5676,7 +5743,9 @@ var NewOrderDrawer = ({
       color: 'var(--ink-400)'
     }
   }, t.units))), React.createElement(SuggestionAction, {
-    onClick: startNewTest
+    onClick: startNewTest,
+    disabled: !canEditTestCatalog,
+    title: permissionTitle(canEditTestCatalog, 'Add new test', 'edit the test catalog')
   }, "+ Add new test ", testQ ? `(code "${testQ}")` : '')))), React.createElement(OrderSection, {
     title: "Details"
   }, React.createElement(FieldRow, {
@@ -5795,7 +5864,8 @@ var NewOrderDrawer = ({
     "data-variant": "primary",
     "data-size": "sm",
     onClick: save,
-    disabled: saving
+    disabled: saving || !canCreateOrder,
+    title: permissionTitle(canCreateOrder, 'Create order', 'create orders')
   }, saving ? 'Saving…' : 'Create order'))));
 };
 var OrderSection = ({
@@ -5878,10 +5948,14 @@ var SuggestionEmpty = ({
 }, children);
 var SuggestionAction = ({
   onClick,
-  children
+  children,
+  disabled,
+  title
 }) => React.createElement("button", {
   type: "button",
   onClick: onClick,
+  disabled: disabled,
+  title: title,
   style: {
     display: 'block',
     width: '100%',
@@ -5892,7 +5966,8 @@ var SuggestionAction = ({
     fontSize: 12,
     color: 'var(--sage-700)',
     fontWeight: 500,
-    cursor: 'pointer'
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.55 : 1
   }
 }, children);
 var ClientChip = ({
@@ -6188,7 +6263,8 @@ var NewTestFields = ({
   draft,
   setDraft,
   onCancel,
-  onCommit
+  onCommit,
+  canEditTestCatalog
 }) => React.createElement("div", {
   style: {
     border: '1px solid var(--line)',
@@ -6219,7 +6295,9 @@ var NewTestFields = ({
   className: "btn",
   "data-variant": "primary",
   "data-size": "xs",
-  onClick: onCommit
+  onClick: onCommit,
+  disabled: !canEditTestCatalog,
+  title: permissionTitle(canEditTestCatalog, 'Add test', 'edit the test catalog')
 }, "Add")), React.createElement("div", {
   style: {
     display: 'grid',
@@ -6305,11 +6383,13 @@ var CriticalAlerts = () => {
   var specimenById = useMemoCA(() => Object.fromEntries(specimens.map(s => [s.id, s])), [specimens]);
   var patientById = useMemoCA(() => Object.fromEntries(patients.map(p => [p.id, p])), [patients]);
   var testById = useMemoCA(() => Object.fromEntries(tests.map(t => [t.id, t])), [tests]);
+  var canAckCritical = hasPermission('ACK_CRITICAL');
   var unacked = useMemoCA(() => {
     return results.filter(r => CRITICAL_FLAGS.includes(r.flag) && !r.criticalAckedAt).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [results]);
   var [collapsed, setCollapsed] = useStateCA(false);
   var ack = async r => {
+    if (!hasPermission('ACK_CRITICAL')) return;
     var spec = r.specimenId ? specimenById[r.specimenId] : null;
     var pat = spec && spec.patientId ? patientById[spec.patientId] : null;
     var test = r.testId ? testById[r.testId] : null;
@@ -6327,6 +6407,7 @@ var CriticalAlerts = () => {
       confirmLabel: 'Acknowledge'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('ACK_CRITICAL')) return;
     var fresh = await window.db.get('results', r.id);
     if (!fresh || fresh.criticalAckedAt) return;
     var actor = window.currentUser ? window.currentUser.id : 'unknown';
@@ -6348,6 +6429,7 @@ var CriticalAlerts = () => {
     });
   };
   var ackAll = async () => {
+    if (!hasPermission('ACK_CRITICAL')) return;
     var ask = await caConfirm({
       id: 'critical.ack.batch',
       tone: 'danger',
@@ -6366,6 +6448,7 @@ var CriticalAlerts = () => {
       confirmLabel: 'Acknowledge all'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('ACK_CRITICAL')) return;
     var actor = window.currentUser ? window.currentUser.id : 'unknown';
     for (var r of unacked) {
       var fresh = await window.db.get('results', r.id);
@@ -6454,6 +6537,8 @@ var CriticalAlerts = () => {
     }
   }, unacked.length, " critical ", unacked.length === 1 ? 'result' : 'results', " pending"), unacked.length > 1 && React.createElement("button", {
     onClick: ackAll,
+    disabled: !canAckCritical,
+    title: permissionTitle(canAckCritical, 'Acknowledge all critical results', 'acknowledge critical results'),
     style: {
       background: 'rgba(255,255,255,0.18)',
       color: '#fff',
@@ -6462,7 +6547,8 @@ var CriticalAlerts = () => {
       height: 22,
       padding: '0 8px',
       fontSize: 11,
-      cursor: 'pointer'
+      cursor: canAckCritical ? 'pointer' : 'not-allowed',
+      opacity: canAckCritical ? 1 : 0.55
     }
   }, "Ack all"), React.createElement("button", {
     onClick: () => setCollapsed(true),
@@ -6593,6 +6679,8 @@ var CriticalAlerts = () => {
       "data-variant": "primary",
       "data-size": "xs",
       onClick: () => ack(r),
+      disabled: !canAckCritical,
+      title: permissionTitle(canAckCritical, 'Acknowledge critical result', 'acknowledge critical results'),
       style: {
         flex: 1
       }
@@ -6658,6 +6746,7 @@ var ntConfirm = options => {
 };
 var NotificationToasts = () => {
   var [toasts, setToasts] = useStateNT([]);
+  var canAckCritical = hasPermission('ACK_CRITICAL');
   useEffectNT(() => {
     var onEvent = async evt => {
       var p = evt.payload || {};
@@ -6696,6 +6785,7 @@ var NotificationToasts = () => {
     if (ctx.resultId) window.openEntity('result', ctx.resultId);else if (ctx.specimenId) window.openEntity('specimen', ctx.specimenId);else if (ctx.orderId) window.openEntity('order', ctx.orderId);
   };
   var ackCritical = async t => {
+    if (!hasPermission('ACK_CRITICAL')) return;
     if (!t.ctx || !t.ctx.resultId) return;
     var r = await window.db.get('results', t.ctx.resultId);
     if (!r || r.criticalAckedAt) return;
@@ -6713,6 +6803,7 @@ var NotificationToasts = () => {
       confirmLabel: 'Acknowledge'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('ACK_CRITICAL')) return;
     var fresh = await window.db.get('results', r.id);
     if (!fresh || fresh.criticalAckedAt) return;
     var actor = window.currentUser ? window.currentUser.id : 'unknown';
@@ -6822,6 +6913,8 @@ var NotificationToasts = () => {
       className: "btn",
       "data-size": "xs",
       "data-variant": "primary",
+      disabled: !canAckCritical,
+      title: permissionTitle(canAckCritical, 'Acknowledge critical result', 'acknowledge critical results'),
       onClick: () => ackCritical(t)
     }, "Acknowledge"), hasCtx && React.createElement("button", {
       className: "btn",
@@ -7692,6 +7785,7 @@ var ManualResultEntry = ({
     }
   }), {}));
   var [saving, setSaving] = useStateED(false);
+  var canVerify = hasPermission('VERIFY_RESULT');
   var flagFor = (testId, raw) => {
     if (raw === '' || raw == null) return '';
     var v = Number(raw);
@@ -7729,7 +7823,7 @@ var ManualResultEntry = ({
           source: 'fallback',
           matchedRange: null
         };
-        var verifyNow = !!entry.verifyNow;
+        var verifyNow = !!entry.verifyNow && hasPermission('VERIFY_RESULT');
         var baseInit = {
           specimenId: specimen.id,
           testId: test.id,
@@ -7932,10 +8026,11 @@ var ManualResultEntry = ({
         fontSize: 11,
         color: 'var(--ink-700)'
       },
-      title: "Mark this result as final and stamp verified-by on save"
+      title: permissionTitle(canVerify, 'Mark this result as final and stamp verified-by on save', 'verify results')
     }, React.createElement("input", {
       type: "checkbox",
       checked: !!entry.verifyNow,
+      disabled: !canVerify,
       onChange: e => setVal(t.id, 'verifyNow', e.target.checked)
     }), "on save")));
   }))), React.createElement("div", {
@@ -8480,7 +8575,9 @@ var ResultOverview = ({
   }, [chain]);
   var isCorrection = !!result.correctionOf;
   var wasSuperseded = !!result.supersededByResultId;
+  var canCorrect = hasPermission('CORRECT_RESULT');
   var openCorrect = () => {
+    if (!hasPermission('CORRECT_RESULT')) return;
     if (window.openCorrectionFor) window.openCorrectionFor(result.id);else window.alert('Correction UI not available on this page.');
   };
   var correctable = (result.status === 'final' || result.status === 'corrected') && !wasSuperseded;
@@ -8657,7 +8754,9 @@ var ResultOverview = ({
     className: "btn",
     "data-size": "sm",
     "data-variant": "primary",
-    onClick: openCorrect
+    onClick: openCorrect,
+    disabled: !canCorrect,
+    title: permissionTitle(canCorrect, 'Correct this result', 'correct results')
   }, React.createElement(IconCorrect, null), " Correct this result")), (result.deliveryStatus || result.lastHl7Message) && React.createElement(DeliverySection, {
     result: result
   }));
@@ -9724,6 +9823,12 @@ var formatDateTime = ts => {
   });
 };
 var currentActorId = () => window.currentUser ? window.currentUser.id : 'unknown';
+var hasPermission = permission => !!(window.userRoles && window.userRoles.userHasPermission(window.currentUser && window.currentUser.id, permission));
+var permissionTitle = (can, allowedTitle, deniedAction) => can ? allowedTitle : `you don't have permission to ${deniedAction}`;
+Object.assign(window, {
+  hasPermission,
+  permissionTitle
+});
 var safetyFact = (label, value) => ({
   label,
   value: value == null || value === '' ? '-' : String(value)
@@ -11211,6 +11316,7 @@ var OrdersPage = ({
   var [q, setQ] = useStateOS('');
   var [status, setStatus] = useStateOS('all');
   var [copiedOrderId, setCopiedOrderId] = useStateOS(null);
+  var canCreateOrder = hasPermission('CREATE_ORDER');
   var pinnedClient = filterClientId ? clientById[filterClientId] : null;
   var copyOrderNumber = async (e, order) => {
     e.preventDefault();
@@ -11252,7 +11358,9 @@ var OrdersPage = ({
       className: "btn",
       "data-size": "sm",
       "data-variant": "primary",
-      onClick: () => window.openNewOrder && window.openNewOrder()
+      onClick: () => window.openNewOrder && window.openNewOrder(),
+      disabled: !canCreateOrder,
+      title: permissionTitle(canCreateOrder, 'Create new order', 'create orders')
     }, React.createElement(IconPlus, {
       size: 13
     }), " New order")]
@@ -11629,6 +11737,7 @@ var WorklistsPage = () => {
   var orderById = useMemoOS(() => Object.fromEntries(orders.map(o => [o.id, o])), [orders]);
   var patientById = useMemoOS(() => Object.fromEntries(patients.map(p => [p.id, p])), [patients]);
   var testById = useMemoOS(() => Object.fromEntries(tests.map(t => [t.id, t])), [tests]);
+  var canAccession = hasPermission('ACCESSION');
   var instrumentByKey = useMemoOS(() => {
     var out = {};
     for (var inst of instruments) {
@@ -11737,6 +11846,7 @@ var WorklistsPage = () => {
     }
   };
   var bulkRoute = async () => {
+    if (!hasPermission('ACCESSION')) return;
     if (checkedSpecimens.length === 0) return;
     if (routeOptions.length === 0) {
       await safetyNotice({
@@ -11760,6 +11870,7 @@ var WorklistsPage = () => {
       confirmLabel: 'Route batch'
     });
     if (!ask.confirmed || !ask.reason) return;
+    if (!hasPermission('ACCESSION')) return;
     var target = ask.reason;
     var actor = currentActorId();
     for (var s of checkedSpecimens) {
@@ -11769,6 +11880,7 @@ var WorklistsPage = () => {
     setChecked(new Set());
   };
   var bulkReject = async () => {
+    if (!hasPermission('ACCESSION')) return;
     if (checkedSpecimens.length === 0) return;
     var ask = await safetyConfirm({
       id: 'worklists.reject.batch',
@@ -11784,6 +11896,7 @@ var WorklistsPage = () => {
       confirmLabel: 'Reject batch'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('ACCESSION')) return;
     var actor = currentActorId();
     for (var s of checkedSpecimens) {
       var fresh = await window.db.get('specimens', s.id);
@@ -11792,6 +11905,7 @@ var WorklistsPage = () => {
     setChecked(new Set());
   };
   var releaseToInstrument = async specimen => {
+    if (!hasPermission('ACCESSION')) return;
     if (routeOptions.length === 0) {
       await safetyNotice({
         tone: 'danger',
@@ -11817,6 +11931,7 @@ var WorklistsPage = () => {
       audit: false
     });
     if (!ask.confirmed || !ask.reason) return;
+    if (!hasPermission('ACCESSION')) return;
     var fresh = await window.db.get('specimens', specimen.id);
     if (!fresh) return;
     var actor = currentActorId();
@@ -11953,12 +12068,16 @@ var WorklistsPage = () => {
     className: "btn",
     "data-variant": "primary",
     "data-size": "xs",
-    onClick: bulkRoute
+    onClick: bulkRoute,
+    disabled: !canAccession,
+    title: permissionTitle(canAccession, 'Route selected specimens', 'accession or route specimens')
   }, "Route\u2026"), React.createElement("button", {
     className: "btn",
     "data-variant": "danger",
     "data-size": "xs",
-    onClick: bulkReject
+    onClick: bulkReject,
+    disabled: !canAccession,
+    title: permissionTitle(canAccession, 'Reject selected specimens', 'accession or route specimens')
   }, "Reject\u2026"), React.createElement("button", {
     className: "btn",
     "data-variant": "ghost",
@@ -12064,7 +12183,9 @@ var WorklistsPage = () => {
       className: "btn",
       "data-variant": "primary",
       "data-size": "xs",
-      onClick: () => releaseToInstrument(s)
+      onClick: () => releaseToInstrument(s),
+      disabled: !canAccession,
+      title: permissionTitle(canAccession, 'Route specimen', 'accession or route specimens')
     }, "Route") : null));
   }))))))));
 };
@@ -12086,8 +12207,12 @@ var ResultsPage = () => {
   var [batchOutcome, setBatchOutcome] = useStateOS(null);
   var [showSuperseded, setShowSuperseded] = useStateOS(false);
   var [correcting, setCorrecting] = useStateOS(null);
+  var canVerify = hasPermission('VERIFY_RESULT');
+  var canRelease = hasPermission('RELEASE_RESULT');
+  var canCorrect = hasPermission('CORRECT_RESULT');
   useEffectOS(() => {
     window.openCorrectionFor = async resultId => {
+      if (!hasPermission('CORRECT_RESULT')) return;
       var r = await window.db.get('results', resultId);
       if (r) setCorrecting(r);
     };
@@ -12114,6 +12239,7 @@ var ResultsPage = () => {
     return [safetyFact('result id', r && r.id), safetyFact('patient', compactName(pat)), safetyFact('accession', spec ? spec.accessionNumber || spec.id : r && r.specimenId), safetyFact('test', test ? `${test.code || ''} ${test.name || ''}`.trim() : r && r.testId), safetyFact('value', r ? `${r.value == null ? '-' : r.value} ${r.units || ''}`.trim() : '-'), safetyFact('flag', r && r.flag || 'none'), safetyFact('status', r && r.status), safetyFact('released', r && r.releasedAt ? formatDateTime(r.releasedAt) : 'not released')];
   };
   var verify = async r => {
+    if (!hasPermission('VERIFY_RESULT')) return;
     var actor = currentActorId();
     var updated;
     try {
@@ -12137,6 +12263,7 @@ var ResultsPage = () => {
     });
   };
   var release = async r => {
+    if (!hasPermission('RELEASE_RESULT')) return;
     var ask = await safetyConfirm({
       id: 'results.release.single',
       tone: 'danger',
@@ -12148,6 +12275,7 @@ var ResultsPage = () => {
       confirmLabel: 'Release'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RELEASE_RESULT')) return;
     var fresh = await window.db.get('results', r.id);
     if (!fresh || fresh.releasedAt || fresh.status !== 'final') {
       await safetyNotice({
@@ -12213,6 +12341,7 @@ var ResultsPage = () => {
     }
   };
   var issueCorrection = async (priorResult, draft) => {
+    if (!hasPermission('CORRECT_RESULT')) return null;
     if (!priorResult || !draft.value) {
       await safetyNotice({
         tone: 'warning',
@@ -12240,6 +12369,7 @@ var ResultsPage = () => {
       confirmLabel: priorResult.releasedAt ? 'Issue amendment' : 'Issue correction'
     });
     if (!ask.confirmed) return null;
+    if (!hasPermission('CORRECT_RESULT')) return null;
     var freshPrior = await window.db.get('results', priorResult.id);
     if (!freshPrior || freshPrior.supersededByResultId) {
       await safetyNotice({
@@ -12324,6 +12454,7 @@ var ResultsPage = () => {
     return corrected;
   };
   var verifyAllPreliminary = async () => {
+    if (!hasPermission('VERIFY_RESULT')) return;
     var targets = results.filter(r => r.status === 'preliminary');
     if (targets.length === 0) return;
     var ask = await safetyConfirm({
@@ -12341,6 +12472,7 @@ var ResultsPage = () => {
       confirmLabel: 'Verify batch'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('VERIFY_RESULT')) return;
     for (var r of targets) {
       var fresh = await window.db.get('results', r.id);
       if (fresh && fresh.status === 'preliminary') await verify(fresh);
@@ -12361,6 +12493,7 @@ var ResultsPage = () => {
     }
   };
   var batchRelease = async () => {
+    if (!hasPermission('RELEASE_RESULT')) return;
     if (checkedReleasable.length === 0) return;
     var ask = await safetyConfirm({
       id: 'results.release.batch',
@@ -12377,6 +12510,7 @@ var ResultsPage = () => {
       confirmLabel: 'Release selected'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RELEASE_RESULT')) return;
     var actor = currentActorId();
     var outcome = {
       released: 0,
@@ -12454,12 +12588,16 @@ var ResultsPage = () => {
       className: "btn",
       "data-variant": "primary",
       "data-size": "sm",
-      onClick: batchRelease
+      onClick: batchRelease,
+      disabled: !canRelease,
+      title: permissionTitle(canRelease, 'Release selected results', 'release results')
     }, "Release ", checkedReleasable.length), pendingCount > 0 && React.createElement("button", {
       key: "va",
       className: "btn",
       "data-size": "sm",
-      onClick: verifyAllPreliminary
+      onClick: verifyAllPreliminary,
+      disabled: !canVerify,
+      title: permissionTitle(canVerify, 'Verify all preliminary results', 'verify results')
     }, React.createElement(IconCheck, {
       size: 13
     }), " Verify all ", pendingCount, " preliminary")].filter(Boolean)
@@ -12661,7 +12799,9 @@ var ResultsPage = () => {
       className: "btn",
       "data-variant": "primary",
       "data-size": "xs",
-      onClick: () => verify(r)
+      onClick: () => verify(r),
+      disabled: !canVerify,
+      title: permissionTitle(canVerify, 'Verify result', 'verify results')
     }, "Verify"), React.createElement("button", {
       className: "btn",
       "data-variant": "danger",
@@ -12676,7 +12816,9 @@ var ResultsPage = () => {
       className: "btn",
       "data-variant": "primary",
       "data-size": "xs",
-      onClick: () => release(r)
+      onClick: () => release(r),
+      disabled: !canRelease,
+      title: permissionTitle(canRelease, 'Release result', 'release results')
     }, "Release"), React.createElement("span", {
       style: {
         fontSize: 10.5,
@@ -12703,14 +12845,22 @@ var ResultsPage = () => {
       className: "btn",
       "data-size": "xs",
       "data-variant": "ghost",
-      onClick: () => setCorrecting(r),
-      title: "Issue a correction (creates an amended record; original preserved)"
+      onClick: () => {
+        if (!hasPermission('CORRECT_RESULT')) return;
+        setCorrecting(r);
+      },
+      disabled: !canCorrect,
+      title: permissionTitle(canCorrect, 'Issue a correction (creates an amended record; original preserved)', 'correct results')
     }, "Correct")) : (r.status === 'final' || r.status === 'corrected') && !r.supersededByResultId ? React.createElement("button", {
       className: "btn",
       "data-size": "xs",
       "data-variant": "ghost",
-      onClick: () => setCorrecting(r),
-      title: "Issue a correction"
+      onClick: () => {
+        if (!hasPermission('CORRECT_RESULT')) return;
+        setCorrecting(r);
+      },
+      disabled: !canCorrect,
+      title: permissionTitle(canCorrect, 'Issue a correction', 'correct results')
     }, "Correct") : null));
   }))), filtered.length > 0 && React.createElement(TablePagination, pager)), correcting && React.createElement(CorrectResultModal, {
     prior: correcting,
@@ -12740,6 +12890,7 @@ var CorrectResultModal = ({
     comments: prior.comments || ''
   });
   var [saving, setSaving] = useStateOS(false);
+  var canCorrect = hasPermission('CORRECT_RESULT');
   var resolvedRange = useMemoOS(() => {
     if (test && window.referenceRanges && typeof window.referenceRanges.pick === 'function') {
       try {
@@ -12764,6 +12915,7 @@ var CorrectResultModal = ({
   var valueChanged = String(draft.value) !== (prior.value != null ? String(prior.value) : '');
   var ready = !!draft.value && !!String(draft.reason || '').trim() && valueChanged;
   var submit = async () => {
+    if (!hasPermission('CORRECT_RESULT')) return;
     setSaving(true);
     try {
       await onSave(draft);
@@ -13001,7 +13153,8 @@ var CorrectResultModal = ({
     "data-variant": "primary",
     "data-size": "sm",
     onClick: submit,
-    disabled: saving || !ready
+    disabled: saving || !ready || !canCorrect,
+    title: permissionTitle(canCorrect, prior.releasedAt ? 'Issue correction and re-deliver' : 'Issue correction', 'correct results')
   }, saving ? 'Saving…' : prior.releasedAt ? 'Issue correction + re-deliver' : 'Issue correction'))));
 };
 var RESULT_FLAG_TONE = {
@@ -13218,6 +13371,7 @@ var PatientDetail = ({
 }) => {
   var locations = window.useEntities('locations');
   var locationById = useMemoOS(() => Object.fromEntries(locations.map(l => [l.id, l])), [locations]);
+  var canCreateOrder = hasPermission('CREATE_ORDER');
   return React.createElement("div", {
     style: {
       flex: 1,
@@ -13285,7 +13439,9 @@ var PatientDetail = ({
     className: "btn",
     "data-size": "sm",
     "data-variant": "primary",
-    onClick: () => window.openNewOrder && window.openNewOrder()
+    onClick: () => window.openNewOrder && window.openNewOrder(),
+    disabled: !canCreateOrder,
+    title: permissionTitle(canCreateOrder, 'Create new order', 'create orders')
   }, React.createElement(IconPlus, {
     size: 13
   }), " New order")))), React.createElement("div", {
@@ -13460,6 +13616,7 @@ var InstrumentsPage = ({
 }) => {
   var [simEnabled, setSimEnabled] = useStateOS(window.instrumentSim ? window.instrumentSim.isEnabled() : true);
   var [activity, setActivity] = useStateOS(() => window.instrumentSim ? window.instrumentSim.getRecent(40) : []);
+  var canEditInterfaces = hasPermission('EDIT_INTERFACES');
   React.useEffect(() => {
     if (!window.instrumentSim) return;
     setActivity(window.instrumentSim.getRecent(40));
@@ -13469,6 +13626,7 @@ var InstrumentsPage = ({
     return unsub;
   }, []);
   var toggleSim = () => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     var next = !simEnabled;
     if (window.instrumentSim) window.instrumentSim.setEnabled(next);
     setSimEnabled(next);
@@ -13502,14 +13660,20 @@ var InstrumentsPage = ({
       key: "r",
       className: "btn",
       "data-size": "sm",
-      onClick: () => window.instrumentSim && window.instrumentSim.catchUp('manual'),
-      title: "Re-scan all in-flight specimens for unfilled tests. Use after a page reload, after re-enabling the simulator, or to recover a stuck specimen."
+      onClick: () => {
+        if (!hasPermission('EDIT_INTERFACES')) return;
+        window.instrumentSim && window.instrumentSim.catchUp('manual');
+      },
+      disabled: !canEditInterfaces,
+      title: permissionTitle(canEditInterfaces, 'Re-scan all in-flight specimens for unfilled tests. Use after a page reload, after re-enabling the simulator, or to recover a stuck specimen.', 'edit interfaces')
     }, "Re-scan in-flight"), React.createElement("button", {
       key: "t",
       className: "btn",
       "data-size": "sm",
       "data-variant": simEnabled ? 'ghost' : 'primary',
-      onClick: toggleSim
+      onClick: toggleSim,
+      disabled: !canEditInterfaces,
+      title: permissionTitle(canEditInterfaces, 'Toggle simulator', 'edit interfaces')
     }, React.createElement("span", {
       className: "dot",
       "data-tone": simEnabled ? 'ok' : 'idle',
@@ -13519,7 +13683,9 @@ var InstrumentsPage = ({
     }), "Simulator: ", simEnabled ? 'enabled' : 'disabled'), React.createElement("button", {
       key: "n",
       className: "btn",
-      "data-size": "sm"
+      "data-size": "sm",
+      disabled: !canEditInterfaces,
+      title: permissionTitle(canEditInterfaces, 'Connect analyzer', 'edit interfaces')
     }, React.createElement(IconPlus, {
       size: 13
     }), " Connect analyzer")]
@@ -13659,6 +13825,7 @@ var InterfacesPage = ({
   onBack
 }) => {
   var interfaces = window.useEntities('interfaces');
+  var canEditInterfaces = hasPermission('EDIT_INTERFACES');
   var counts = useMemoOS(() => ({
     inbound: interfaces.filter(i => i.direction === 'inbound' || i.direction === 'bidirectional').length,
     outbound: interfaces.filter(i => i.direction === 'outbound' || i.direction === 'bidirectional').length,
@@ -13686,7 +13853,9 @@ var InterfacesPage = ({
       key: "n",
       className: "btn",
       "data-size": "sm",
-      "data-variant": "primary"
+      "data-variant": "primary",
+      disabled: !canEditInterfaces,
+      title: permissionTitle(canEditInterfaces, 'Add interface', 'edit interfaces')
     }, React.createElement(IconPlus, {
       size: 13
     }), " Add interface")]
@@ -13765,6 +13934,7 @@ var MapperIntakePanel = () => {
   var [preview, setPreview] = useStateOS(null);
   var [committing, setCommitting] = useStateOS(false);
   var [result, setResult] = useStateOS(null);
+  var canEditInterfaces = hasPermission('EDIT_INTERFACES');
   var mapperRecord = mapperId ? mappers.find(m => m.id === mapperId) : inboundMappers[0] || null;
   var parsedMapper = useMemoOS(() => mapperRecord ? window.mappers.parse(mapperRecord.text) : null, [mapperRecord]);
   var meta = parsedMapper && parsedMapper.meta;
@@ -13830,6 +14000,7 @@ var MapperIntakePanel = () => {
     }
   };
   var ingest = async () => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     if (!preview || !preview.rows) return;
     var check = validateMapperPreview(payload, preview.rows);
     if (!check.ok) {
@@ -13855,6 +14026,7 @@ var MapperIntakePanel = () => {
       confirmLabel: 'Ingest rows'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_INTERFACES')) return;
     var freshCheck = validateMapperPreview(payload, preview.rows);
     if (!freshCheck.ok) {
       await safetyNotice({
@@ -14016,7 +14188,8 @@ var MapperIntakePanel = () => {
     "data-variant": "primary",
     "data-size": "sm",
     onClick: ingest,
-    disabled: !preview || !preview.rows || preview.rows.length === 0 || committing
+    disabled: !preview || !preview.rows || preview.rows.length === 0 || committing || !canEditInterfaces,
+    title: permissionTitle(canEditInterfaces, 'Ingest mapped rows', 'edit interfaces')
   }, committing ? 'Ingesting…' : `Ingest ${preview && preview.rows ? preview.rows.length : 0} row(s)`))), React.createElement("div", {
     style: {
       padding: 14,
@@ -14118,6 +14291,7 @@ var Hl7IntakePanel = () => {
   var [parsed, setParsed] = useStateOS(null);
   var [committing, setCommitting] = useStateOS(false);
   var [result, setResult] = useStateOS(null);
+  var canEditInterfaces = hasPermission('EDIT_INTERFACES');
   var fillExample = () => {
     setText(window.hl7 && window.hl7.SAMPLE_ORM ? window.hl7.SAMPLE_ORM : '');
     setParsed(null);
@@ -14139,6 +14313,7 @@ var Hl7IntakePanel = () => {
     setParsed(out);
   };
   var ingest = async () => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     if (!parsed || !parsed.patient || !parsed.order || parsed.tests.length === 0) return;
     var check = validateHl7Intake(text, parsed);
     if (!check.ok) {
@@ -14163,6 +14338,7 @@ var Hl7IntakePanel = () => {
       confirmLabel: 'Ingest order'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_INTERFACES')) return;
     var freshCheck = validateHl7Intake(text, parsed);
     if (!freshCheck.ok) {
       await safetyNotice({
@@ -14336,7 +14512,8 @@ var Hl7IntakePanel = () => {
     "data-variant": "primary",
     "data-size": "sm",
     onClick: ingest,
-    disabled: !canIngest || committing
+    disabled: !canIngest || committing || !canEditInterfaces,
+    title: permissionTitle(canEditInterfaces, 'Ingest HL7 order', 'edit interfaces')
   }, committing ? 'Ingesting…' : 'Ingest order'))), React.createElement("div", {
     style: {
       padding: 14
@@ -14847,12 +15024,14 @@ var TestCatalogPage = ({
   var [editingId, setEditingId] = useStateOS(null);
   var [draft, setDraft] = useStateOS(null);
   var [q, setQ] = useStateOS('');
+  var canEditTestCatalog = hasPermission('EDIT_TEST_CATALOG');
   var filtered = useMemoOS(() => {
     var needle = q.trim().toLowerCase();
     return [...tests].filter(t => !needle || [t.code, t.name, t.shortName, t.loinc].filter(Boolean).join(' ').toLowerCase().includes(needle)).sort((a, b) => (a.code || '').localeCompare(b.code || ''));
   }, [tests, q]);
   var pager = usePagination(filtered);
   var startNew = () => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
     setEditingId(null);
     setDraft({
       code: '',
@@ -14870,6 +15049,7 @@ var TestCatalogPage = ({
     });
   };
   var startEdit = t => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
     setEditingId(t.id);
     setDraft({
       code: t.code || '',
@@ -14893,6 +15073,7 @@ var TestCatalogPage = ({
     setDraft(null);
   };
   var save = async () => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
     if (!draft || !draft.code || !draft.name) return;
     var parseSec = raw => {
       if (raw == null) return null;
@@ -14958,6 +15139,7 @@ var TestCatalogPage = ({
     });
   };
   var remove = async t => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
     var ask = await safetyConfirm({
       id: 'admin.test.delete',
       tone: 'danger',
@@ -14969,12 +15151,14 @@ var TestCatalogPage = ({
       confirmLabel: 'Delete test'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
     var fresh = await window.db.get('tests', t.id);
     if (!fresh) return;
     await window.db.delete('tests', t.id);
     if (editingId === t.id) cancel();
   };
   var toggleActive = async t => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
     var nextActive = t.active === false;
     var ask = await confirmConfigChange({
       id: nextActive ? 'admin.test.activate' : 'admin.test.deactivate',
@@ -14986,6 +15170,7 @@ var TestCatalogPage = ({
       confirmLabel: nextActive ? 'Activate test' : 'Deactivate test'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
     var fresh = await window.db.get('tests', t.id);
     if (!fresh) return;
     await window.db.put('tests', {
@@ -15014,7 +15199,9 @@ var TestCatalogPage = ({
       className: "btn",
       "data-size": "sm",
       "data-variant": "primary",
-      onClick: startNew
+      onClick: startNew,
+      disabled: !canEditTestCatalog,
+      title: permissionTitle(canEditTestCatalog, 'Create new test', 'edit the test catalog')
     }, React.createElement(IconPlus, {
       size: 13
     }), " New test")]
@@ -15093,9 +15280,9 @@ var TestCatalogPage = ({
   }, React.createElement("td", {
     onClick: () => toggleActive(t),
     style: {
-      cursor: 'pointer'
+      cursor: canEditTestCatalog ? 'pointer' : 'not-allowed'
     },
-    title: t.active === false ? 'Inactive — click to activate' : 'Active — click to deactivate'
+    title: permissionTitle(canEditTestCatalog, t.active === false ? 'Inactive - click to activate' : 'Active - click to deactivate', 'edit the test catalog')
   }, React.createElement("span", {
     className: "dot",
     "data-tone": t.active === false ? 'idle' : 'ok'
@@ -15131,12 +15318,16 @@ var TestCatalogPage = ({
   }, React.createElement("button", {
     className: "btn",
     "data-size": "xs",
-    onClick: () => startEdit(t)
+    onClick: () => startEdit(t),
+    disabled: !canEditTestCatalog,
+    title: permissionTitle(canEditTestCatalog, 'Edit test', 'edit the test catalog')
   }, "Edit"), React.createElement("button", {
     className: "btn",
     "data-variant": "danger",
     "data-size": "xs",
-    onClick: () => remove(t)
+    onClick: () => remove(t),
+    disabled: !canEditTestCatalog,
+    title: permissionTitle(canEditTestCatalog, 'Delete test', 'edit the test catalog')
   }, "Delete"))))))), filtered.length > 0 && React.createElement(TablePagination, pager))), draft && React.createElement("div", {
     className: "panel",
     style: {
@@ -15392,7 +15583,8 @@ var TestCatalogPage = ({
     "data-variant": "primary",
     "data-size": "sm",
     onClick: save,
-    disabled: !draft.code || !draft.name
+    disabled: !draft.code || !draft.name || !canEditTestCatalog,
+    title: permissionTitle(canEditTestCatalog, editingId ? 'Save test' : 'Create test', 'edit the test catalog')
   }, editingId ? 'Save' : 'Create')))));
 };
 var RefRangeRow = ({
@@ -15542,6 +15734,7 @@ var ClientsPage = ({
   var [editingId, setEditingId] = useStateOS(null);
   var [draft, setDraft] = useStateOS(null);
   var [q, setQ] = useStateOS('');
+  var canEditLabConfig = hasPermission('EDIT_LAB_CONFIG');
   var ordersByClient = useMemoOS(() => {
     var m = {};
     for (var o of orders) if (o.clientId) m[o.clientId] = (m[o.clientId] || 0) + 1;
@@ -15552,6 +15745,7 @@ var ClientsPage = ({
     return [...clients].filter(c => !needle || [c.code, c.name, c.contactName, c.type].filter(Boolean).join(' ').toLowerCase().includes(needle)).sort((a, b) => (a.code || '').localeCompare(b.code || ''));
   }, [clients, q]);
   var startNew = () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     setEditingId(null);
     setDraft({
       code: '',
@@ -15568,6 +15762,7 @@ var ClientsPage = ({
     });
   };
   var startEdit = c => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     setEditingId(c.id);
     setDraft({
       ...c
@@ -15578,6 +15773,7 @@ var ClientsPage = ({
     setDraft(null);
   };
   var save = async () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     if (!draft || !draft.code || !draft.name) return;
     if (editingId) {
       var existing = clients.find(c => c.id === editingId);
@@ -15592,6 +15788,7 @@ var ClientsPage = ({
     cancel();
   };
   var remove = async c => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     if ((ordersByClient[c.id] || 0) > 0) {
       await safetyNotice({
         tone: 'warning',
@@ -15612,12 +15809,14 @@ var ClientsPage = ({
       confirmLabel: 'Delete client'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     var fresh = await window.db.get('clients', c.id);
     if (!fresh) return;
     await window.db.delete('clients', c.id);
     if (editingId === c.id) cancel();
   };
   var toggleActive = async c => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     var nextActive = c.active === false;
     var ask = await confirmConfigChange({
       id: nextActive ? 'admin.client.activate' : 'admin.client.deactivate',
@@ -15629,6 +15828,7 @@ var ClientsPage = ({
       confirmLabel: nextActive ? 'Activate client' : 'Deactivate client'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     var fresh = await window.db.get('clients', c.id);
     if (!fresh) return;
     await window.db.put('clients', {
@@ -15657,7 +15857,9 @@ var ClientsPage = ({
       className: "btn",
       "data-size": "sm",
       "data-variant": "primary",
-      onClick: startNew
+      onClick: startNew,
+      disabled: !canEditLabConfig,
+      title: permissionTitle(canEditLabConfig, 'Create new client', 'edit lab configuration')
     }, React.createElement(IconPlus, {
       size: 13
     }), " New client")]
@@ -15734,9 +15936,9 @@ var ClientsPage = ({
   }, React.createElement("td", {
     onClick: () => toggleActive(c),
     style: {
-      cursor: 'pointer'
+      cursor: canEditLabConfig ? 'pointer' : 'not-allowed'
     },
-    title: c.active === false ? 'Inactive — click to activate' : 'Active — click to deactivate'
+    title: permissionTitle(canEditLabConfig, c.active === false ? 'Inactive - click to activate' : 'Active - click to deactivate', 'edit lab configuration')
   }, React.createElement("span", {
     className: "dot",
     "data-tone": c.active === false ? 'idle' : 'ok'
@@ -15769,12 +15971,16 @@ var ClientsPage = ({
   }, React.createElement("button", {
     className: "btn",
     "data-size": "xs",
-    onClick: () => startEdit(c)
+    onClick: () => startEdit(c),
+    disabled: !canEditLabConfig,
+    title: permissionTitle(canEditLabConfig, 'Edit client', 'edit lab configuration')
   }, "Edit"), React.createElement("button", {
     className: "btn",
     "data-variant": "danger",
     "data-size": "xs",
-    onClick: () => remove(c)
+    onClick: () => remove(c),
+    disabled: !canEditLabConfig,
+    title: permissionTitle(canEditLabConfig, 'Delete client', 'edit lab configuration')
   }, "Delete"))))))))), draft && React.createElement("div", {
     className: "panel",
     style: {
@@ -15983,7 +16189,8 @@ var ClientsPage = ({
     "data-variant": "primary",
     "data-size": "sm",
     onClick: save,
-    disabled: !draft.code || !draft.name
+    disabled: !draft.code || !draft.name || !canEditLabConfig,
+    title: permissionTitle(canEditLabConfig, editingId ? 'Save client' : 'Create client', 'edit lab configuration')
   }, editingId ? 'Save' : 'Create')))));
 };
 var LOCATION_TYPES = ['LAB', 'DRAW_STATION', 'HOSPITAL', 'CLINIC', 'OTHER'];
@@ -15996,6 +16203,7 @@ var LocationsPage = ({
   var [editingId, setEditingId] = useStateOS(null);
   var [draft, setDraft] = useStateOS(null);
   var [q, setQ] = useStateOS('');
+  var canEditLabConfig = hasPermission('EDIT_LAB_CONFIG');
   var ordersByLocId = useMemoOS(() => {
     var m = {};
     for (var o of orders) if (o.locationId) m[o.locationId] = (m[o.locationId] || 0) + 1;
@@ -16013,6 +16221,7 @@ var LocationsPage = ({
     return [...all].filter(l => !needle || [l.code, l.name, l.type, l.notes].filter(Boolean).join(' ').toLowerCase().includes(needle)).sort((a, b) => (a.code || '').localeCompare(b.code || ''));
   }, [all, q]);
   var startNew = () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     setEditingId(null);
     setDraft({
       code: '',
@@ -16027,6 +16236,7 @@ var LocationsPage = ({
     });
   };
   var startEdit = l => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     setEditingId(l.id);
     setDraft({
       code: l.code || '',
@@ -16045,6 +16255,7 @@ var LocationsPage = ({
     setDraft(null);
   };
   var save = async () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     if (!draft || !draft.code || !draft.name) return;
     var init = {
       ...draft,
@@ -16063,6 +16274,7 @@ var LocationsPage = ({
     cancel();
   };
   var remove = async l => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     var ask = await safetyConfirm({
       id: 'admin.location.delete',
       tone: 'danger',
@@ -16074,6 +16286,7 @@ var LocationsPage = ({
       confirmLabel: 'Delete location'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     var fresh = await window.db.get('locations', l.id);
     if (!fresh) return;
     await window.db.delete('locations', l.id);
@@ -16086,6 +16299,7 @@ var LocationsPage = ({
     }));
   };
   var toggleActive = async l => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     var nextActive = l.active === false;
     var ask = await confirmConfigChange({
       id: nextActive ? 'admin.location.activate' : 'admin.location.deactivate',
@@ -16097,6 +16311,7 @@ var LocationsPage = ({
       confirmLabel: nextActive ? 'Activate location' : 'Deactivate location'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     var fresh = await window.db.get('locations', l.id);
     if (!fresh) return;
     await window.db.put('locations', {
@@ -16126,7 +16341,9 @@ var LocationsPage = ({
       className: "btn",
       "data-size": "sm",
       "data-variant": "primary",
-      onClick: startNew
+      onClick: startNew,
+      disabled: !canEditLabConfig,
+      title: permissionTitle(canEditLabConfig, 'Create new location', 'edit lab configuration')
     }, React.createElement(IconPlus, {
       size: 13
     }), " New location")]
@@ -16208,9 +16425,9 @@ var LocationsPage = ({
   }, React.createElement("td", {
     onClick: () => toggleActive(l),
     style: {
-      cursor: 'pointer'
+      cursor: canEditLabConfig ? 'pointer' : 'not-allowed'
     },
-    title: l.active === false ? 'Inactive — click to activate' : 'Active — click to deactivate'
+    title: permissionTitle(canEditLabConfig, l.active === false ? 'Inactive - click to activate' : 'Active - click to deactivate', 'edit lab configuration')
   }, React.createElement("span", {
     className: "dot",
     "data-tone": l.active === false ? 'idle' : 'ok'
@@ -16254,12 +16471,16 @@ var LocationsPage = ({
   }, React.createElement("button", {
     className: "btn",
     "data-size": "xs",
-    onClick: () => startEdit(l)
+    onClick: () => startEdit(l),
+    disabled: !canEditLabConfig,
+    title: permissionTitle(canEditLabConfig, 'Edit location', 'edit lab configuration')
   }, "Edit"), React.createElement("button", {
     className: "btn",
     "data-variant": "danger",
     "data-size": "xs",
-    onClick: () => remove(l)
+    onClick: () => remove(l),
+    disabled: !canEditLabConfig,
+    title: permissionTitle(canEditLabConfig, 'Delete location', 'edit lab configuration')
   }, "Delete"))))))))), draft && React.createElement("div", {
     className: "panel",
     style: {
@@ -16461,7 +16682,8 @@ var LocationsPage = ({
     "data-variant": "primary",
     "data-size": "sm",
     onClick: save,
-    disabled: !draft.code || !draft.name
+    disabled: !draft.code || !draft.name || !canEditLabConfig,
+    title: permissionTitle(canEditLabConfig, editingId ? 'Save location' : 'Create location', 'edit lab configuration')
   }, editingId ? 'Save' : 'Create')))));
 };
 //# sourceURL=reference-pages.jsx
@@ -16489,11 +16711,13 @@ var LabelsPage = ({
   var [draft, setDraft] = useStateOS(null);
   var [q, setQ] = useStateOS('');
   var [preview, setPreview] = useStateOS(null);
+  var canEditLabelTemplates = hasPermission('EDIT_LABEL_TEMPLATES');
   var filtered = useMemoOS(() => {
     var needle = q.trim().toLowerCase();
     return [...all].filter(t => !needle || [t.code, t.name, t.specimenType, t.testCode].filter(Boolean).join(' ').toLowerCase().includes(needle)).sort((a, b) => (a.code || '').localeCompare(b.code || ''));
   }, [all, q]);
   var startNew = () => {
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     setEditingId(null);
     setDraft({
       code: '',
@@ -16510,6 +16734,7 @@ var LabelsPage = ({
     });
   };
   var startEdit = t => {
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     setEditingId(t.id);
     setDraft({
       code: t.code || '',
@@ -16530,6 +16755,7 @@ var LabelsPage = ({
     setDraft(null);
   };
   var save = async () => {
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     if (!draft || !draft.code || !draft.name) return;
     var init = {
       ...draft,
@@ -16558,6 +16784,7 @@ var LabelsPage = ({
       confirmLabel: editingId ? 'Save template' : 'Create template'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     if (editingId) {
       var existing = await window.db.get('label_templates', editingId);
       if (existing) await window.db.put('label_templates', {
@@ -16571,6 +16798,7 @@ var LabelsPage = ({
     cancel();
   };
   var remove = async t => {
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     var ask = await safetyConfirm({
       id: 'admin.label_template.delete',
       tone: 'danger',
@@ -16582,12 +16810,14 @@ var LabelsPage = ({
       confirmLabel: 'Delete template'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     var fresh = await window.db.get('label_templates', t.id);
     if (!fresh) return;
     await window.db.delete('label_templates', t.id);
     if (editingId === t.id) cancel();
   };
   var toggleActive = async t => {
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     var nextActive = t.active === false;
     var ask = await confirmConfigChange({
       id: nextActive ? 'admin.label.activate' : 'admin.label.deactivate',
@@ -16599,6 +16829,7 @@ var LabelsPage = ({
       confirmLabel: nextActive ? 'Activate template' : 'Deactivate template'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     var fresh = await window.db.get('label_templates', t.id);
     if (!fresh) return;
     await window.db.put('label_templates', {
@@ -16657,7 +16888,9 @@ var LabelsPage = ({
       className: "btn",
       "data-size": "sm",
       "data-variant": "primary",
-      onClick: startNew
+      onClick: startNew,
+      disabled: !canEditLabelTemplates,
+      title: permissionTitle(canEditLabelTemplates, 'Create new label template', 'edit label templates')
     }, React.createElement(IconPlus, {
       size: 13
     }), " New template")]
@@ -16738,9 +16971,9 @@ var LabelsPage = ({
   }, React.createElement("td", {
     onClick: () => toggleActive(t),
     style: {
-      cursor: 'pointer'
+      cursor: canEditLabelTemplates ? 'pointer' : 'not-allowed'
     },
-    title: t.active === false ? 'Inactive — click to activate' : 'Active — click to deactivate'
+    title: permissionTitle(canEditLabelTemplates, t.active === false ? 'Inactive - click to activate' : 'Active - click to deactivate', 'edit label templates')
   }, React.createElement("span", {
     className: "dot",
     "data-tone": t.active === false ? 'idle' : 'ok'
@@ -16789,12 +17022,16 @@ var LabelsPage = ({
   }, "Preview"), React.createElement("button", {
     className: "btn",
     "data-size": "xs",
-    onClick: () => startEdit(t)
+    onClick: () => startEdit(t),
+    disabled: !canEditLabelTemplates,
+    title: permissionTitle(canEditLabelTemplates, 'Edit label template', 'edit label templates')
   }, "Edit"), React.createElement("button", {
     className: "btn",
     "data-variant": "danger",
     "data-size": "xs",
-    onClick: () => remove(t)
+    onClick: () => remove(t),
+    disabled: !canEditLabelTemplates,
+    title: permissionTitle(canEditLabelTemplates, 'Delete label template', 'edit label templates')
   }, "Delete"))))))))), draft && React.createElement("div", {
     className: "panel",
     style: {
@@ -17076,7 +17313,8 @@ var LabelsPage = ({
     "data-variant": "primary",
     "data-size": "sm",
     onClick: save,
-    disabled: !draft.code || !draft.name
+    disabled: !draft.code || !draft.name || !canEditLabelTemplates,
+    title: permissionTitle(canEditLabelTemplates, editingId ? 'Save label template' : 'Create label template', 'edit label templates')
   }, editingId ? 'Save' : 'Create')))), preview && React.createElement("div", {
     onClick: () => setPreview(null),
     className: "backdrop-in",
@@ -17196,6 +17434,7 @@ var MappersPage = ({
   var [editingId, setEditingId] = useStateOS(null);
   var [draft, setDraft] = useStateOS(null);
   var [q, setQ] = useStateOS('');
+  var canEditInterfaces = hasPermission('EDIT_INTERFACES');
   var filtered = useMemoOS(() => {
     var needle = q.trim().toLowerCase();
     return [...all].filter(m => !needle || (m.name + ' ' + (m.text || '')).toLowerCase().includes(needle)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -17217,6 +17456,7 @@ order.testIds      = split(TestCodes, ";")
 order.priority     = map(Priority, S=stat, R=routine)
 `;
   var startNew = () => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     setEditingId(null);
     setDraft({
       id: 'mapper_' + Date.now().toString(36),
@@ -17227,6 +17467,7 @@ order.priority     = map(Priority, S=stat, R=routine)
     });
   };
   var startEdit = m => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     setEditingId(m.id);
     setDraft({
       ...m
@@ -17237,6 +17478,7 @@ order.priority     = map(Priority, S=stat, R=routine)
     setDraft(null);
   };
   var save = async () => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     if (!draft || !draft.text) return;
     var parsed = window.mappers.parse(draft.text);
     var name = parsed.meta && parsed.meta.name || draft.name || 'Untitled';
@@ -17259,6 +17501,7 @@ order.priority     = map(Priority, S=stat, R=routine)
     cancel();
   };
   var remove = async m => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     if (m.builtin) {
       await safetyNotice({
         tone: 'warning',
@@ -17279,12 +17522,14 @@ order.priority     = map(Priority, S=stat, R=routine)
       confirmLabel: 'Delete mapper'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_INTERFACES')) return;
     var fresh = await window.db.get('mappers', m.id);
     if (!fresh) return;
     await window.db.delete('mappers', m.id);
     if (editingId === m.id) cancel();
   };
   var toggleActive = async m => {
+    if (!hasPermission('EDIT_INTERFACES')) return;
     var nextActive = m.active === false;
     var ask = await confirmConfigChange({
       id: nextActive ? 'admin.mapper.activate' : 'admin.mapper.deactivate',
@@ -17296,6 +17541,7 @@ order.priority     = map(Priority, S=stat, R=routine)
       confirmLabel: nextActive ? 'Activate mapper' : 'Deactivate mapper'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_INTERFACES')) return;
     var fresh = await window.db.get('mappers', m.id);
     if (!fresh) return;
     await window.db.put('mappers', {
@@ -17328,7 +17574,9 @@ order.priority     = map(Priority, S=stat, R=routine)
       className: "btn",
       "data-size": "sm",
       "data-variant": "primary",
-      onClick: startNew
+      onClick: startNew,
+      disabled: !canEditInterfaces,
+      title: permissionTitle(canEditInterfaces, 'Create new mapper', 'edit interfaces')
     }, React.createElement(IconPlus, {
       size: 13
     }), " New mapper")]
@@ -17453,11 +17701,15 @@ order.priority     = map(Priority, S=stat, R=routine)
     className: "btn",
     "data-variant": "danger",
     "data-size": "xs",
-    onClick: () => remove(draft)
+    onClick: () => remove(draft),
+    disabled: !canEditInterfaces,
+    title: permissionTitle(canEditInterfaces, 'Delete mapper', 'edit interfaces')
   }, "Delete"), editingId && React.createElement("button", {
     className: "btn",
     "data-size": "xs",
-    onClick: () => toggleActive(draft)
+    onClick: () => toggleActive(draft),
+    disabled: !canEditInterfaces,
+    title: permissionTitle(canEditInterfaces, draft.active === false ? 'Activate mapper' : 'Deactivate mapper', 'edit interfaces')
   }, draft.active === false ? 'Activate' : 'Deactivate'), React.createElement("button", {
     className: "btn",
     "data-variant": "ghost",
@@ -17467,7 +17719,9 @@ order.priority     = map(Priority, S=stat, R=routine)
     className: "btn",
     "data-variant": "primary",
     "data-size": "xs",
-    onClick: save
+    onClick: save,
+    disabled: !canEditInterfaces,
+    title: permissionTitle(canEditInterfaces, 'Save mapper', 'edit interfaces')
   }, "Save")), React.createElement("div", {
     style: {
       flex: 1,
@@ -17727,9 +17981,11 @@ var WESTGARD_RULE_INFO = {
 };
 var WestgardRulesPanel = () => {
   var cfg = window.useEntity('lab_config', window.schema.LAB_CONFIG_ID);
+  var canEditLabConfig = hasPermission('EDIT_LAB_CONFIG');
   var disabledSet = useMemoOS(() => new Set(cfg && Array.isArray(cfg.qcDisabledRules) ? cfg.qcDisabledRules : []), [cfg]);
   var ruleIds = window.westgard ? window.westgard.RULES : Object.keys(WESTGARD_RULE_INFO);
   var toggle = async ruleId => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     var currentlyEnabled = !disabledSet.has(ruleId);
     var nextEnabled = !currentlyEnabled;
     var info = WESTGARD_RULE_INFO[ruleId] || {
@@ -17747,6 +18003,7 @@ var WestgardRulesPanel = () => {
       confirmLabel: nextEnabled ? 'Enable rule' : 'Disable rule'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     var next = new Set(disabledSet);
     if (next.has(ruleId)) next.delete(ruleId);else next.add(ruleId);
     var fresh = await window.db.get('lab_config', window.schema.LAB_CONFIG_ID);
@@ -17798,7 +18055,7 @@ var WestgardRulesPanel = () => {
     var enabled = !disabledSet.has(id);
     return React.createElement("label", {
       key: id,
-      title: info.summary,
+      title: permissionTitle(canEditLabConfig, info.summary, 'edit lab configuration'),
       style: {
         display: 'flex',
         alignItems: 'flex-start',
@@ -17807,12 +18064,13 @@ var WestgardRulesPanel = () => {
         background: enabled ? '#fff' : 'var(--ivory-100)',
         border: '1px solid var(--line)',
         borderRadius: 4,
-        cursor: 'pointer',
-        opacity: enabled ? 1 : 0.7
+        cursor: canEditLabConfig ? 'pointer' : 'not-allowed',
+        opacity: !canEditLabConfig ? 0.5 : enabled ? 1 : 0.7
       }
     }, React.createElement("input", {
       type: "checkbox",
       checked: enabled,
+      disabled: !canEditLabConfig,
       onChange: () => toggle(id),
       style: {
         marginTop: 2
@@ -17868,6 +18126,7 @@ var QcPage = ({
   var [entryValue, setEntryValue] = useStateOS('');
   var [entryInstrumentId, setEntryInstrumentId] = useStateOS('');
   var [chartInstrumentId, setChartInstrumentId] = useStateOS('__all');
+  var canResolveQc = hasPermission('RESOLVE_QC');
   var testById = useMemoOS(() => Object.fromEntries(tests.map(t => [t.id, t])), [tests]);
   var instrumentById = useMemoOS(() => Object.fromEntries(instruments.map(i => [i.id, i])), [instruments]);
   var activeLevel = activeLevelId ? levels.find(l => l.id === activeLevelId) : null;
@@ -17890,6 +18149,7 @@ var QcPage = ({
     setChartInstrumentId('__all');
   }, [activeLevelId]);
   var startNewLevel = () => {
+    if (!hasPermission('RESOLVE_QC')) return;
     setLevelDraft({
       testId: '',
       level: 'L1',
@@ -17903,6 +18163,7 @@ var QcPage = ({
     });
   };
   var startEditLevel = l => {
+    if (!hasPermission('RESOLVE_QC')) return;
     setLevelDraft({
       id: l.id,
       testId: l.testId || '',
@@ -17918,6 +18179,7 @@ var QcPage = ({
   };
   var cancelLevel = () => setLevelDraft(null);
   var saveLevel = async () => {
+    if (!hasPermission('RESOLVE_QC')) return;
     if (!levelDraft || !levelDraft.testId || levelDraft.mean === '' || levelDraft.sd === '') return;
     var lotExpiresAt = levelDraft.lotExpiresAt ? new Date(levelDraft.lotExpiresAt + 'T23:59:59').getTime() || null : null;
     var init = {
@@ -17940,6 +18202,7 @@ var QcPage = ({
     cancelLevel();
   };
   var removeLevel = async l => {
+    if (!hasPermission('RESOLVE_QC')) return;
     var test = testById[l.testId];
     var ask = await safetyConfirm({
       id: 'admin.qc_level.delete',
@@ -17952,12 +18215,14 @@ var QcPage = ({
       confirmLabel: 'Delete QC level'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESOLVE_QC')) return;
     var fresh = await window.db.get('qc_levels', l.id);
     if (!fresh) return;
     await window.db.delete('qc_levels', l.id);
     if (activeLevelId === l.id) setActiveLevelId(null);
   };
   var recordResult = async () => {
+    if (!hasPermission('RESOLVE_QC')) return;
     if (!activeLevel || entryValue === '') return;
     var value = Number(entryValue);
     if (Number.isNaN(value)) {
@@ -17984,6 +18249,7 @@ var QcPage = ({
     setEntryValue('');
   };
   var ackViolation = async v => {
+    if (!hasPermission('RESOLVE_QC')) return;
     var level = levels.find(l => l.id === v.qcLevelId) || activeLevel;
     var test = v.testId ? testById[v.testId] : level && testById[level.testId];
     var ask = await safetyConfirm({
@@ -18000,6 +18266,7 @@ var QcPage = ({
       confirmLabel: 'Resolve violation'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESOLVE_QC')) return;
     await window.qcGate.acknowledgeViolation(v.id, {
       actor: currentActorId(),
       reason: ask.reason
@@ -18046,7 +18313,9 @@ var QcPage = ({
       className: "btn",
       "data-size": "sm",
       "data-variant": "primary",
-      onClick: startNewLevel
+      onClick: startNewLevel,
+      disabled: !canResolveQc,
+      title: permissionTitle(canResolveQc, 'Create new QC level', 'resolve QC')
     }, React.createElement(IconPlus, {
       size: 13
     }), " New QC level")]
@@ -18259,7 +18528,9 @@ var QcPage = ({
     className: "btn",
     "data-variant": "primary",
     "data-size": "sm",
-    onClick: saveLevel
+    onClick: saveLevel,
+    disabled: !canResolveQc,
+    title: permissionTitle(canResolveQc, levelDraft.id ? 'Save QC level' : 'Create QC level', 'resolve QC')
   }, levelDraft.id ? 'Save' : 'Create'))), activeLevel ? React.createElement(React.Fragment, null, React.createElement("div", {
     className: "panel",
     style: {
@@ -18289,12 +18560,16 @@ var QcPage = ({
   }, activeLevel.sd), " \xB7 units ", activeLevel.units || (testById[activeLevel.testId] || {}).units || '—')), React.createElement("button", {
     className: "btn",
     "data-size": "xs",
-    onClick: () => startEditLevel(activeLevel)
+    onClick: () => startEditLevel(activeLevel),
+    disabled: !canResolveQc,
+    title: permissionTitle(canResolveQc, 'Edit QC level', 'resolve QC')
   }, "Edit"), React.createElement("button", {
     className: "btn",
     "data-variant": "danger",
     "data-size": "xs",
-    onClick: () => removeLevel(activeLevel)
+    onClick: () => removeLevel(activeLevel),
+    disabled: !canResolveQc,
+    title: permissionTitle(canResolveQc, 'Delete QC level', 'resolve QC')
   }, "Delete")), React.createElement("div", {
     className: "panel",
     style: {
@@ -18380,7 +18655,8 @@ var QcPage = ({
     "data-variant": "primary",
     "data-size": "sm",
     onClick: recordResult,
-    disabled: entryValue === ''
+    disabled: entryValue === '' || !canResolveQc,
+    title: permissionTitle(canResolveQc, 'Record QC run', 'resolve QC')
   }, "Record"))), levelResults.length > 0 && React.createElement("div", {
     className: "panel",
     style: {
@@ -18486,7 +18762,9 @@ var QcPage = ({
   }, "open")), React.createElement("td", null, !v.resolvedAt && v.severity === 'reject' && React.createElement("button", {
     className: "btn",
     "data-size": "xs",
-    onClick: () => ackViolation(v)
+    onClick: () => ackViolation(v),
+    disabled: !canResolveQc,
+    title: permissionTitle(canResolveQc, 'Acknowledge QC violation', 'resolve QC')
   }, "Acknowledge")))))))) : React.createElement("div", {
     className: "panel",
     style: {
@@ -18537,6 +18815,7 @@ var NotificationsPage = ({
   var patients = window.useEntities('patients');
   var events = window.useEntities('audit_events');
   var [draft, setDraft] = useStateOS(null);
+  var canEditLabConfig = hasPermission('EDIT_LAB_CONFIG');
   useEffectOS(() => {
     if (!cfg) return;
     var overrides = cfg.tatRecipientsByPriority && typeof cfg.tatRecipientsByPriority === 'object' ? cfg.tatRecipientsByPriority : {};
@@ -18619,6 +18898,7 @@ var NotificationsPage = ({
     return false;
   }, [cfg, draft]);
   var save = async () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     if (!draft || !cfg) return;
     var overrideSummary = ['stat', 'asap', 'routine'].map(p => {
       var list = Array.isArray(draft.tatRecipientsByPriority && draft.tatRecipientsByPriority[p]) ? draft.tatRecipientsByPriority[p] : [];
@@ -18634,6 +18914,7 @@ var NotificationsPage = ({
       confirmLabel: 'Save TAT controls'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     var fresh = await window.db.get('lab_config', window.schema.LAB_CONFIG_ID);
     var merged = window.schema.newLabConfig({
       ...(fresh || cfg),
@@ -18660,6 +18941,7 @@ var NotificationsPage = ({
     });
   };
   var runScanNow = async () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     if (!window.tatWatcher) {
       await safetyNotice({
         tone: 'danger',
@@ -18718,7 +19000,8 @@ var NotificationsPage = ({
       className: "btn",
       "data-size": "sm",
       onClick: runScanNow,
-      title: "Re-scan all active orders against current thresholds"
+      disabled: !canEditLabConfig,
+      title: permissionTitle(canEditLabConfig, 'Re-scan all active orders against current thresholds', 'edit lab configuration')
     }, "Run scan now"), React.createElement("button", {
       key: "rv",
       className: "btn",
@@ -18731,7 +19014,8 @@ var NotificationsPage = ({
       "data-size": "sm",
       "data-variant": "primary",
       onClick: save,
-      disabled: !dirty
+      disabled: !dirty || !canEditLabConfig,
+      title: permissionTitle(canEditLabConfig, 'Save TAT controls', 'edit lab configuration')
     }, "Save")]
   }), React.createElement("div", {
     className: "panel",
@@ -19189,6 +19473,7 @@ var UsersPage = ({
   var [q, setQ] = useStateOS('');
   var [statusFilter, setStatusFilter] = useStateOS('ALL');
   var [credInput, setCredInput] = useStateOS('');
+  var canEditUsers = hasPermission('EDIT_USERS');
   var auditCountByUser = useMemoOS(() => {
     var counts = {};
     for (var ev of audit) {
@@ -19226,6 +19511,7 @@ var UsersPage = ({
   }, [users]);
   var [showPw, setShowPw] = useStateOS(false);
   var startNew = () => {
+    if (!hasPermission('EDIT_USERS')) return;
     setEditingId(null);
     setDraft({
       firstName: '',
@@ -19243,6 +19529,7 @@ var UsersPage = ({
     setShowPw(false);
   };
   var startEdit = u => {
+    if (!hasPermission('EDIT_USERS')) return;
     setEditingId(u.id);
     setDraft({
       firstName: u.firstName || '',
@@ -19266,6 +19553,7 @@ var UsersPage = ({
     setShowPw(false);
   };
   var toggleRole = roleId => {
+    if (!hasPermission('EDIT_USERS')) return;
     setDraft(d => {
       var has = d.roles.includes(roleId);
       return {
@@ -19275,6 +19563,7 @@ var UsersPage = ({
     });
   };
   var toggleFacility = locId => {
+    if (!hasPermission('EDIT_USERS')) return;
     setDraft(d => {
       var has = d.facilityIds.includes(locId);
       return {
@@ -19284,6 +19573,7 @@ var UsersPage = ({
     });
   };
   var addCredential = () => {
+    if (!hasPermission('EDIT_USERS')) return;
     var v = credInput.trim();
     if (!v) return;
     setDraft(d => d.credentials.includes(v) ? d : {
@@ -19293,12 +19583,14 @@ var UsersPage = ({
     setCredInput('');
   };
   var removeCredential = c => {
+    if (!hasPermission('EDIT_USERS')) return;
     setDraft(d => ({
       ...d,
       credentials: d.credentials.filter(x => x !== c)
     }));
   };
   var save = async () => {
+    if (!hasPermission('EDIT_USERS')) return;
     if (!draft || !draft.firstName.trim() || !draft.lastName.trim()) return;
     if (!draft.username.trim()) {
       await safetyNotice({
@@ -19364,6 +19656,7 @@ var UsersPage = ({
       confirmLabel: editingId ? 'Save user' : 'Create user'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_USERS')) return;
     var {
       password,
       confirmPassword,
@@ -19396,6 +19689,7 @@ var UsersPage = ({
     cancel();
   };
   var clearPasswordFor = async u => {
+    if (!hasPermission('EDIT_USERS')) return;
     if (!u || !window.auth || !window.auth.clearPassword) return;
     var ask = await safetyConfirm({
       id: 'admin.users.clear_password',
@@ -19408,9 +19702,11 @@ var UsersPage = ({
       confirmLabel: 'Clear password'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_USERS')) return;
     await window.auth.clearPassword(u.id);
   };
   var deactivate = async u => {
+    if (!hasPermission('EDIT_USERS')) return;
     var ask = await safetyConfirm({
       id: 'admin.users.deactivate',
       tone: 'warning',
@@ -19422,6 +19718,7 @@ var UsersPage = ({
       confirmLabel: 'Deactivate user'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_USERS')) return;
     var fresh = await window.db.get('users', u.id);
     if (!fresh) return;
     await window.db.put('users', window.schema.newUser({
@@ -19430,6 +19727,7 @@ var UsersPage = ({
     }));
   };
   var reactivate = async u => {
+    if (!hasPermission('EDIT_USERS')) return;
     var fresh = await window.db.get('users', u.id);
     if (!fresh) return;
     await window.db.put('users', window.schema.newUser({
@@ -19438,6 +19736,7 @@ var UsersPage = ({
     }));
   };
   var hardDelete = async u => {
+    if (!hasPermission('EDIT_USERS')) return;
     var count = auditCountByUser[u.id] || 0;
     if (count > 0) {
       await safetyNotice({
@@ -19459,6 +19758,7 @@ var UsersPage = ({
       confirmLabel: 'Delete user'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_USERS')) return;
     await window.db.delete('users', u.id);
     if (editingId === u.id) cancel();
   };
@@ -19488,7 +19788,9 @@ var UsersPage = ({
       className: "btn",
       "data-size": "sm",
       "data-variant": "primary",
-      onClick: startNew
+      onClick: startNew,
+      disabled: !canEditUsers,
+      title: permissionTitle(canEditUsers, 'Create new user', 'edit users')
     }, "New user")]
   }), React.createElement("div", {
     className: "panel",
@@ -19622,8 +19924,9 @@ var UsersPage = ({
     return React.createElement("tr", {
       key: u.id,
       onClick: () => startEdit(u),
+      title: permissionTitle(canEditUsers, 'Edit user', 'edit users'),
       style: {
-        cursor: 'pointer',
+        cursor: canEditUsers ? 'pointer' : 'not-allowed',
         background: editingId === u.id ? 'var(--sage-50)' : 'transparent',
         opacity: inactive ? 0.65 : 1
       }
@@ -19854,6 +20157,7 @@ var UsersPage = ({
     type: showPw ? 'text' : 'password',
     placeholder: editingExisting ? '••••••••' : 'min 4 characters',
     value: draft.password,
+    disabled: !canEditUsers,
     autoComplete: "new-password",
     onChange: e => setDraft(d => ({
       ...d,
@@ -19886,6 +20190,7 @@ var UsersPage = ({
     type: showPw ? 'text' : 'password',
     placeholder: "confirm",
     value: draft.confirmPassword,
+    disabled: !canEditUsers,
     autoComplete: "new-password",
     onChange: e => setDraft(d => ({
       ...d,
@@ -19904,14 +20209,17 @@ var UsersPage = ({
   }, React.createElement("button", {
     type: "button",
     onClick: () => clearPasswordFor(editingUser),
+    disabled: !canEditUsers,
+    title: permissionTitle(canEditUsers, 'Clear password', 'edit users'),
     style: {
       border: 0,
       background: 'transparent',
-      cursor: 'pointer',
+      cursor: canEditUsers ? 'pointer' : 'not-allowed',
       padding: 0,
       fontSize: 10.5,
       color: 'var(--ink-500)',
-      textDecoration: 'underline'
+      textDecoration: 'underline',
+      opacity: canEditUsers ? 1 : 0.55
     }
   }, "Clear password (force admin reset before next sign-in)"))), React.createElement("div", {
     style: {
@@ -19939,11 +20247,13 @@ var UsersPage = ({
     }
   }, c, React.createElement("button", {
     onClick: () => removeCredential(c),
+    disabled: !canEditUsers,
+    title: permissionTitle(canEditUsers, 'Remove credential', 'edit users'),
     style: {
       marginLeft: 6,
       border: 0,
       background: 'transparent',
-      cursor: 'pointer',
+      cursor: canEditUsers ? 'pointer' : 'not-allowed',
       color: 'var(--ink-400)',
       padding: 0,
       fontSize: 11
@@ -19970,7 +20280,9 @@ var UsersPage = ({
   }), React.createElement("button", {
     className: "btn",
     "data-size": "sm",
-    onClick: addCredential
+    onClick: addCredential,
+    disabled: !canEditUsers,
+    title: permissionTitle(canEditUsers, 'Add credential', 'edit users')
   }, "Add"))), React.createElement("div", {
     style: {
       marginBottom: 10
@@ -19995,7 +20307,7 @@ var UsersPage = ({
     var enabled = draft.roles.includes(r.id);
     return React.createElement("label", {
       key: r.id,
-      title: r.description,
+      title: permissionTitle(canEditUsers, r.description, 'edit users'),
       style: {
         display: 'flex',
         alignItems: 'flex-start',
@@ -20004,12 +20316,13 @@ var UsersPage = ({
         background: enabled ? '#fff' : 'var(--ivory-100)',
         border: '1px solid var(--line)',
         borderRadius: 4,
-        cursor: 'pointer',
-        opacity: enabled ? 1 : 0.7
+        cursor: canEditUsers ? 'pointer' : 'not-allowed',
+        opacity: !canEditUsers ? 0.5 : enabled ? 1 : 0.7
       }
     }, React.createElement("input", {
       type: "checkbox",
       checked: enabled,
+      disabled: !canEditUsers,
       onChange: () => toggleRole(r.id),
       style: {
         marginTop: 2
@@ -20051,13 +20364,15 @@ var UsersPage = ({
     return React.createElement("button", {
       key: loc.id,
       onClick: () => toggleFacility(loc.id),
+      disabled: !canEditUsers,
+      title: permissionTitle(canEditUsers, 'Assign facility scope', 'edit users'),
       className: "pill",
       "data-tone": enabled ? 'sage' : 'ghost',
       style: {
         fontSize: 10,
-        cursor: 'pointer',
+        cursor: canEditUsers ? 'pointer' : 'not-allowed',
         border: 'none',
-        opacity: enabled ? 1 : 0.6
+        opacity: !canEditUsers ? 0.5 : enabled ? 1 : 0.6
       }
     }, enabled ? '✓ ' : '', loc.name || loc.code);
   }))), React.createElement("div", {
@@ -20077,12 +20392,15 @@ var UsersPage = ({
       ...d,
       status: d.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
     })),
+    disabled: !canEditUsers,
+    title: permissionTitle(canEditUsers, 'Toggle user status', 'edit users'),
     className: "pill",
     "data-tone": draft.status === 'ACTIVE' ? 'sage' : 'ghost',
     style: {
       fontSize: 10,
-      cursor: 'pointer',
-      border: 'none'
+      cursor: canEditUsers ? 'pointer' : 'not-allowed',
+      border: 'none',
+      opacity: canEditUsers ? 1 : 0.55
     }
   }, draft.status === 'ACTIVE' ? '✓ active' : 'inactive'), React.createElement("span", {
     style: {
@@ -20100,7 +20418,8 @@ var UsersPage = ({
     "data-size": "sm",
     "data-variant": "primary",
     onClick: save,
-    disabled: !draft.firstName.trim() || !draft.lastName.trim()
+    disabled: !draft.firstName.trim() || !draft.lastName.trim() || !canEditUsers,
+    title: permissionTitle(canEditUsers, editingExisting ? 'Save user' : 'Create user', 'edit users')
   }, editingExisting ? 'Save user' : 'Create user'), React.createElement("button", {
     className: "btn",
     "data-size": "sm",
@@ -20113,18 +20432,23 @@ var UsersPage = ({
     className: "btn",
     "data-size": "sm",
     "data-variant": "ghost",
-    onClick: () => deactivate(editingUser)
+    onClick: () => deactivate(editingUser),
+    disabled: !canEditUsers,
+    title: permissionTitle(canEditUsers, 'Deactivate user', 'edit users')
   }, "Deactivate"), editingExisting && editingUser && editingUser.status === 'INACTIVE' && React.createElement("button", {
     className: "btn",
     "data-size": "sm",
     "data-variant": "ghost",
-    onClick: () => reactivate(editingUser)
+    onClick: () => reactivate(editingUser),
+    disabled: !canEditUsers,
+    title: permissionTitle(canEditUsers, 'Reactivate user', 'edit users')
   }, "Reactivate"), editingExisting && editingUser && React.createElement("button", {
     className: "btn",
     "data-size": "sm",
     "data-variant": "danger",
     onClick: () => hardDelete(editingUser),
-    title: auditCountForEditing > 0 ? 'Blocked — user has audit history' : 'Hard delete (only safe with no audit history)'
+    disabled: !canEditUsers,
+    title: !canEditUsers ? "you don't have permission to edit users" : auditCountForEditing > 0 ? 'Blocked - user has audit history' : 'Hard delete (only safe with no audit history)'
   }, "Delete")))), React.createElement("div", {
     className: "panel",
     style: {
@@ -20305,6 +20629,7 @@ var AdminPage = ({
     if (!window.userRoles || !window.currentUser) return true;
     return window.userRoles.userHasPermission(window.currentUser.id, t.permission);
   });
+  var canRestoreSnapshot = hasPermission('RESTORE_SNAPSHOT');
   var exportSnapshot = async () => {
     var snap = await window.db.exportAll();
     var json = JSON.stringify(snap, null, 2);
@@ -20324,6 +20649,7 @@ var AdminPage = ({
   var [importPreview, setImportPreview] = useStateOS(null);
   useEffectOS(() => {
     window.__previewImport = async snap => {
+      if (!hasPermission('RESTORE_SNAPSHOT')) return;
       try {
         var diff = await window.db.diffSnapshot(snap);
         setImportPreview({
@@ -20344,10 +20670,12 @@ var AdminPage = ({
     };
   }, []);
   var importSnapshot = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     var input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json,application/json';
     input.onchange = async () => {
+      if (!hasPermission('RESTORE_SNAPSHOT')) return;
       var file = input.files && input.files[0];
       if (!file) return;
       var text = await file.text();
@@ -20380,6 +20708,7 @@ var AdminPage = ({
     input.click();
   };
   var confirmImport = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     if (!importPreview) return;
     var totalAdded = Object.values(importPreview.diff.collections || {}).reduce((n, c) => n + (c.added || 0), 0);
     var totalRemoved = Object.values(importPreview.diff.collections || {}).reduce((n, c) => n + (c.removed || 0), 0);
@@ -20396,6 +20725,7 @@ var AdminPage = ({
       confirmLabel: 'Restore database'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     try {
       var freshDiff = await window.db.diffSnapshot(importPreview.snap);
       setImportPreview({
@@ -20420,6 +20750,7 @@ var AdminPage = ({
     }
   };
   var resetDb = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     var snap = await window.db.exportAll();
     var counts = Object.entries(snap.collections || {}).map(([name, rows]) => `${name}:${(rows || []).length}`).join(' ');
     var ask = await safetyConfirm({
@@ -20435,6 +20766,7 @@ var AdminPage = ({
       audit: false
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     await window.db.dropAll();
     if (window.events) {
       window.events.publish('operator.safety.confirmed', {
@@ -20453,6 +20785,7 @@ var AdminPage = ({
   };
   var [seeding, setSeeding] = useStateOS(false);
   var seedDemo = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     if (!window.seed) {
       await safetyNotice({
         tone: 'danger',
@@ -20472,6 +20805,7 @@ var AdminPage = ({
       confirmLabel: 'Seed demo'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     setSeeding(true);
     try {
       var summary = await window.seed.demo();
@@ -20492,6 +20826,7 @@ var AdminPage = ({
     }
   };
   var clearDemo = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     if (!window.seed) {
       await safetyNotice({
         tone: 'danger',
@@ -20511,6 +20846,7 @@ var AdminPage = ({
       confirmLabel: 'Clear demo'
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     var removed = await window.seed.clear();
     await safetyNotice({
       tone: 'info',
@@ -20529,13 +20865,15 @@ var AdminPage = ({
       "data-size": "sm",
       "data-variant": "primary",
       onClick: seedDemo,
-      disabled: seeding
+      disabled: seeding || !canRestoreSnapshot,
+      title: permissionTitle(canRestoreSnapshot, 'Seed demo data', 'restore or reset data')
     }, seeding ? 'Seeding…' : 'Seed demo'), React.createElement("button", {
       key: "seedClr",
       className: "btn",
       "data-size": "sm",
       onClick: clearDemo,
-      disabled: seeding
+      disabled: seeding || !canRestoreSnapshot,
+      title: permissionTitle(canRestoreSnapshot, 'Clear demo data', 'restore or reset data')
     }, "Clear demo"), React.createElement("button", {
       key: "exp",
       className: "btn",
@@ -20545,13 +20883,17 @@ var AdminPage = ({
       key: "imp",
       className: "btn",
       "data-size": "sm",
-      onClick: importSnapshot
+      onClick: importSnapshot,
+      disabled: !canRestoreSnapshot,
+      title: permissionTitle(canRestoreSnapshot, 'Import snapshot', 'restore or reset data')
     }, "Import"), React.createElement("button", {
       key: "rst",
       className: "btn",
       "data-size": "sm",
       "data-variant": "danger",
-      onClick: resetDb
+      onClick: resetDb,
+      disabled: !canRestoreSnapshot,
+      title: permissionTitle(canRestoreSnapshot, 'Reset database', 'restore or reset data')
     }, "Reset")]
   }), React.createElement("div", {
     className: "panel",
@@ -20676,6 +21018,7 @@ var AdminPage = ({
     }));
   })), importPreview && React.createElement(ImportPreviewModal, {
     preview: importPreview,
+    canRestoreSnapshot: canRestoreSnapshot,
     onConfirm: confirmImport,
     onCancel: () => setImportPreview(null)
   }));
@@ -20683,7 +21026,8 @@ var AdminPage = ({
 var ImportPreviewModal = ({
   preview,
   onConfirm,
-  onCancel
+  onCancel,
+  canRestoreSnapshot
 }) => {
   var {
     snap,
@@ -20924,7 +21268,9 @@ var ImportPreviewModal = ({
     className: "btn",
     "data-size": "sm",
     "data-variant": "primary",
-    onClick: onConfirm
+    onClick: onConfirm,
+    disabled: !canRestoreSnapshot,
+    title: permissionTitle(canRestoreSnapshot, 'Restore snapshot', 'restore or reset data')
   }, "Restore now"))));
 };
 Object.assign(window, {
@@ -20984,6 +21330,7 @@ var AccessioningPage = () => {
   var [sessionStart] = useStateAC(Date.now());
   var [labelSpecId, setLabelSpecId] = useStateAC(null);
   var fieldRefs = useRefAC({});
+  var canAccession = hasPermission('ACCESSION');
   var allSpecimens = window.useEntities('specimens');
   var allPatients = window.useEntities('patients');
   var allOrders = window.useEntities('orders');
@@ -21093,6 +21440,7 @@ var AccessioningPage = () => {
     return ord;
   };
   var commitRow = async forcedState => {
+    if (!hasPermission('ACCESSION')) return;
     if (forcedState !== 'rejected' && !draft.barcode && !draft.order) return;
     var condDef = (window.schema.SPECIMEN_CONDITIONS || []).find(c => c.id === draft.condition);
     var condForcesReject = !!(condDef && condDef.reject);
@@ -21318,7 +21666,9 @@ var AccessioningPage = () => {
     className: "btn",
     "data-variant": "primary",
     "data-size": "sm",
-    onClick: () => commitRow('accessioned')
+    onClick: () => commitRow('accessioned'),
+    disabled: !canAccession,
+    title: permissionTitle(canAccession, 'Accession specimen', 'accession specimens')
   }, "Accession ", React.createElement("span", {
     className: "kbd",
     style: {
@@ -21331,7 +21681,9 @@ var AccessioningPage = () => {
     className: "btn",
     "data-size": "sm",
     "data-variant": "danger",
-    onClick: () => commitRow('rejected')
+    onClick: () => commitRow('rejected'),
+    disabled: !canAccession,
+    title: permissionTitle(canAccession, 'Reject specimen', 'accession specimens')
   }, "Reject ", React.createElement("span", {
     className: "kbd",
     style: {
@@ -21994,7 +22346,10 @@ var App = () => {
   var [ordersFilterClientId, setOrdersFilterClientId] = useStateApp(null);
   var [tweaks, setTweak] = window.useTweaks(TWEAK_DEFAULTS);
   useEffectApp(() => {
-    window.openNewOrder = () => setNewOrderOpen(true);
+    window.openNewOrder = () => {
+      if (!hasPermission('CREATE_ORDER')) return;
+      setNewOrderOpen(true);
+    };
     return () => {
       delete window.openNewOrder;
     };
@@ -22038,6 +22393,7 @@ var App = () => {
     })();
   }, []);
   var setRules = useCallbackApp(updater => {
+    if (!hasPermission('EDIT_RULES')) return;
     var next = typeof updater === 'function' ? updater(rules) : updater;
     var nextIds = new Set(next.map(r => r.id));
     var prevIds = new Set(rules.map(r => r.id));
@@ -22057,73 +22413,7 @@ var App = () => {
   var navStyle = tweaks.navStyle || 'sidebar';
   var showSidebar = navStyle === 'sidebar' || navStyle === 'hybrid';
   var showTopRail = navStyle === 'top';
-  var ROUTE_PERMISSIONS = {
-    accession: 'ACCESSION',
-    instruments: 'EDIT_INTERFACES',
-    interfaces: 'EDIT_INTERFACES',
-    rules: 'EDIT_RULES',
-    tests: 'EDIT_TEST_CATALOG',
-    clients: 'EDIT_LAB_CONFIG',
-    locations: 'EDIT_LAB_CONFIG',
-    labels: 'EDIT_LABEL_TEMPLATES',
-    mappers: 'EDIT_INTERFACES',
-    qc: 'RESOLVE_QC',
-    notifications: 'EDIT_LAB_CONFIG',
-    users: 'EDIT_USERS'
-  };
-  var Forbidden = ({
-    route,
-    perm
-  }) => React.createElement("div", {
-    style: {
-      flex: 1,
-      display: 'grid',
-      placeItems: 'center',
-      padding: 32
-    }
-  }, React.createElement("div", {
-    className: "panel",
-    style: {
-      padding: 32,
-      maxWidth: 440,
-      textAlign: 'center'
-    }
-  }, React.createElement("div", {
-    style: {
-      fontSize: 28,
-      marginBottom: 8
-    }
-  }, "\uD83D\uDD12"), React.createElement("div", {
-    style: {
-      fontSize: 16,
-      fontWeight: 500,
-      color: 'var(--ink-900)',
-      marginBottom: 8
-    }
-  }, "Your role doesn't allow this"), React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      color: 'var(--ink-500)',
-      lineHeight: 1.6,
-      marginBottom: 14
-    }
-  }, "The ", React.createElement("span", {
-    className: "mono"
-  }, route), " page requires the", React.createElement("span", {
-    className: "mono"
-  }, " ", perm), " permission. Talk to a Lab Director or IT Admin if you need access, or sign out and use an account that holds that permission."), React.createElement("button", {
-    className: "btn",
-    "data-size": "sm",
-    onClick: () => setActive('dashboard')
-  }, "Back to Dashboard")));
   var activePage = useMemoApp(() => {
-    var perm = ROUTE_PERMISSIONS[active];
-    if (perm && window.userRoles && window.currentUser && !window.userRoles.userHasPermission(window.currentUser.id, perm)) {
-      return React.createElement(Forbidden, {
-        route: active,
-        perm: perm
-      });
-    }
     switch (active) {
       case 'dashboard':
         return React.createElement(DashboardPage, null);

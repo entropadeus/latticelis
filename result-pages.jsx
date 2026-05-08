@@ -13,12 +13,16 @@ const ResultsPage = () => {
   const [batchOutcome, setBatchOutcome] = useStateOS(null);
   const [showSuperseded, setShowSuperseded] = useStateOS(false);
   const [correcting, setCorrecting] = useStateOS(null);  // result being corrected
+  const canVerify = hasPermission('VERIFY_RESULT');
+  const canRelease = hasPermission('RELEASE_RESULT');
+  const canCorrect = hasPermission('CORRECT_RESULT');
 
   // Expose a global hook so the entity drawer's "Correct this result" button
   // can open the modal regardless of the originating page. Cleared on unmount
   // so navigating away doesn't leave a stale handler bound.
   useEffectOS(() => {
     window.openCorrectionFor = async (resultId) => {
+      if (!hasPermission('CORRECT_RESULT')) return;
       const r = await window.db.get('results', resultId);
       if (r) setCorrecting(r);
     };
@@ -66,6 +70,7 @@ const ResultsPage = () => {
   };
 
   const verify = async (r) => {
+    if (!hasPermission('VERIFY_RESULT')) return;
     // Verify only — release is a separate explicit action so the workflow
     // mirrors a real lab (tech verifies; supervisor or auto-rule releases).
     const actor = currentActorId();
@@ -84,6 +89,7 @@ const ResultsPage = () => {
     });
   };
   const release = async (r) => {
+    if (!hasPermission('RELEASE_RESULT')) return;
     const ask = await safetyConfirm({
       id: 'results.release.single',
       tone: 'danger',
@@ -95,6 +101,7 @@ const ResultsPage = () => {
       confirmLabel: 'Release',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RELEASE_RESULT')) return;
 
     const fresh = await window.db.get('results', r.id);
     if (!fresh || fresh.releasedAt || fresh.status !== 'final') {
@@ -168,6 +175,7 @@ const ResultsPage = () => {
   // was already released — corrections to released results need to go out
   // as amendments to the same client.
   const issueCorrection = async (priorResult, draft) => {
+    if (!hasPermission('CORRECT_RESULT')) return null;
     if (!priorResult || !draft.value) {
       await safetyNotice({
         tone: 'warning',
@@ -201,6 +209,7 @@ const ResultsPage = () => {
       confirmLabel: priorResult.releasedAt ? 'Issue amendment' : 'Issue correction',
     });
     if (!ask.confirmed) return null;
+    if (!hasPermission('CORRECT_RESULT')) return null;
 
     const freshPrior = await window.db.get('results', priorResult.id);
     if (!freshPrior || freshPrior.supersededByResultId) {
@@ -289,6 +298,7 @@ const ResultsPage = () => {
     return corrected;
   };
   const verifyAllPreliminary = async () => {
+    if (!hasPermission('VERIFY_RESULT')) return;
     const targets = results.filter(r => r.status === 'preliminary');
     if (targets.length === 0) return;
     const ask = await safetyConfirm({
@@ -309,6 +319,7 @@ const ResultsPage = () => {
       confirmLabel: 'Verify batch',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('VERIFY_RESULT')) return;
     for (const r of targets) {
       const fresh = await window.db.get('results', r.id);
       if (fresh && fresh.status === 'preliminary') await verify(fresh);
@@ -341,6 +352,7 @@ const ResultsPage = () => {
   };
 
   const batchRelease = async () => {
+    if (!hasPermission('RELEASE_RESULT')) return;
     if (checkedReleasable.length === 0) return;
     const ask = await safetyConfirm({
       id: 'results.release.batch',
@@ -360,6 +372,7 @@ const ResultsPage = () => {
       confirmLabel: 'Release selected',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RELEASE_RESULT')) return;
     const actor = currentActorId();
     const outcome = { released: 0, blocked: [], errors: [] };
     for (const r of checkedReleasable) {
@@ -410,12 +423,16 @@ const ResultsPage = () => {
       <PageHeader title="Results" sub="Verified, pending, and amended results across all departments."
         actions={[
           checkedReleasable.length > 0 && (
-            <button key="br" className="btn" data-variant="primary" data-size="sm" onClick={batchRelease}>
+            <button key="br" className="btn" data-variant="primary" data-size="sm" onClick={batchRelease}
+              disabled={!canRelease}
+              title={permissionTitle(canRelease, 'Release selected results', 'release results')}>
               Release {checkedReleasable.length}
             </button>
           ),
           pendingCount > 0 && (
-            <button key="va" className="btn" data-size="sm" onClick={verifyAllPreliminary}>
+            <button key="va" className="btn" data-size="sm" onClick={verifyAllPreliminary}
+              disabled={!canVerify}
+              title={permissionTitle(canVerify, 'Verify all preliminary results', 'verify results')}>
               <IconCheck size={13}/> Verify all {pendingCount} preliminary
             </button>
           ),
@@ -516,12 +533,16 @@ const ResultsPage = () => {
                     <td onClick={e => e.stopPropagation()}>
                       {isPending ? (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="btn" data-variant="primary" data-size="xs" onClick={() => verify(r)}>Verify</button>
+                          <button className="btn" data-variant="primary" data-size="xs" onClick={() => verify(r)}
+                            disabled={!canVerify}
+                            title={permissionTitle(canVerify, 'Verify result', 'verify results')}>Verify</button>
                           <button className="btn" data-variant="danger" data-size="xs" onClick={() => reject(r)}>Reject</button>
                         </div>
                       ) : r.status === 'final' && !r.releasedAt ? (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="btn" data-variant="primary" data-size="xs" onClick={() => release(r)}>Release</button>
+                          <button className="btn" data-variant="primary" data-size="xs" onClick={() => release(r)}
+                            disabled={!canRelease}
+                            title={permissionTitle(canRelease, 'Release result', 'release results')}>Release</button>
                           <span style={{ fontSize: 10.5, color: 'var(--ink-400)', alignSelf: 'center' }}>
                             verified by {window.currentUserApi ? window.currentUserApi.displayName(r.verifiedBy) : r.verifiedBy}
                           </span>
@@ -538,16 +559,18 @@ const ResultsPage = () => {
                           </span>
                           {!r.supersededByResultId && (
                             <button className="btn" data-size="xs" data-variant="ghost"
-                              onClick={() => setCorrecting(r)}
-                              title="Issue a correction (creates an amended record; original preserved)">
+                              onClick={() => { if (!hasPermission('CORRECT_RESULT')) return; setCorrecting(r); }}
+                              disabled={!canCorrect}
+                              title={permissionTitle(canCorrect, 'Issue a correction (creates an amended record; original preserved)', 'correct results')}>
                               Correct
                             </button>
                           )}
                         </div>
                       ) : (r.status === 'final' || r.status === 'corrected') && !r.supersededByResultId ? (
                         <button className="btn" data-size="xs" data-variant="ghost"
-                          onClick={() => setCorrecting(r)}
-                          title="Issue a correction">
+                          onClick={() => { if (!hasPermission('CORRECT_RESULT')) return; setCorrecting(r); }}
+                          disabled={!canCorrect}
+                          title={permissionTitle(canCorrect, 'Issue a correction', 'correct results')}>
                           Correct
                         </button>
                       ) : null}
@@ -599,6 +622,7 @@ const CorrectResultModal = ({ prior, test, specimen, patient, onCancel, onSave }
     comments: prior.comments || '',
   });
   const [saving, setSaving] = useStateOS(false);
+  const canCorrect = hasPermission('CORRECT_RESULT');
 
   // Resolve the demographic-aware range so the live preview shows what flag
   // the corrected value will get — same logic the save path will run.
@@ -623,6 +647,7 @@ const CorrectResultModal = ({ prior, test, specimen, patient, onCancel, onSave }
   const ready = !!draft.value && !!String(draft.reason || '').trim() && valueChanged;
 
   const submit = async () => {
+    if (!hasPermission('CORRECT_RESULT')) return;
     setSaving(true);
     try { await onSave(draft); }
     finally { setSaving(false); }
@@ -705,7 +730,9 @@ const CorrectResultModal = ({ prior, test, specimen, patient, onCancel, onSave }
         </div>
         <div style={{ padding: '10px 16px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
           <button className="btn" data-size="sm" onClick={onCancel} disabled={saving}>Cancel</button>
-          <button className="btn" data-variant="primary" data-size="sm" onClick={submit} disabled={saving || !ready}>
+          <button className="btn" data-variant="primary" data-size="sm" onClick={submit}
+            disabled={saving || !ready || !canCorrect}
+            title={permissionTitle(canCorrect, prior.releasedAt ? 'Issue correction and re-deliver' : 'Issue correction', 'correct results')}>
             {saving ? 'Saving…' : (prior.releasedAt ? 'Issue correction + re-deliver' : 'Issue correction')}
           </button>
         </div>
@@ -856,6 +883,7 @@ const PatientsPage = () => {
 const PatientDetail = ({ patient, orders, results, testById, specimenById }) => {
   const locations = window.useEntities('locations');
   const locationById = useMemoOS(() => Object.fromEntries(locations.map(l => [l.id, l])), [locations]);
+  const canCreateOrder = hasPermission('CREATE_ORDER');
   return (
     <div style={{ flex: 1, overflow: 'auto' }}>
       {/* Demographics header */}
@@ -874,7 +902,9 @@ const PatientDetail = ({ patient, orders, results, testById, specimenById }) => 
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="btn" data-size="sm" data-variant="primary"
-              onClick={() => window.openNewOrder && window.openNewOrder()}>
+              onClick={() => window.openNewOrder && window.openNewOrder()}
+              disabled={!canCreateOrder}
+              title={permissionTitle(canCreateOrder, 'Create new order', 'create orders')}>
               <IconPlus size={13}/> New order
             </button>
           </div>

@@ -372,7 +372,7 @@ const CommandPalette = ({ open, onClose, onNav }) => {
       ...ADMIN_DESTINATIONS.filter(__navItemAllowed).map(n => ({ id: 'admnav-' + n.id, label: 'Go to ' + n.label, kind: 'Admin', target: n.id })),
       { id: 'a-new-accession', label: 'New accessioning session', kind: 'Action', target: 'accession' },
       { id: 'a-new-rule',      label: 'Create new rule',           kind: 'Action', target: 'rules' },
-      { id: 'a-new-order',     label: 'Create new order',          kind: 'Action', target: 'orders' },
+      { id: 'a-new-order',     label: 'Create new order',          kind: 'Action', target: 'orders', permission: 'CREATE_ORDER', deniedAction: 'create orders' },
       { id: 'a-search-patient',label: 'Find patient by MRN',       kind: 'Action', target: 'patients' },
       { id: 'd-shortcuts',     label: 'Keyboard shortcuts',        kind: 'Help' },
       { id: 'd-docs',          label: 'Documentation',             kind: 'Help' },
@@ -392,6 +392,7 @@ const CommandPalette = ({ open, onClose, onNav }) => {
   };
   const pick = (item) => {
     if (!item) return;
+    if (item.permission && !hasPermission(item.permission)) return;
     if (item.target) onNav(item.target);
     onClose();
     // Side-effect actions (open dialogs, etc.). Run after nav so the destination page
@@ -428,19 +429,25 @@ const CommandPalette = ({ open, onClose, onNav }) => {
             <div style={{ padding: 28, textAlign: 'center', color: 'var(--ink-400)', fontSize: 12.5 }}>
               No matches. Try a different query.
             </div>
-          ) : items.map((item, i) => (
+          ) : items.map((item, i) => {
+            const allowed = !item.permission || hasPermission(item.permission);
+            return (
             <button key={item.id} onClick={() => pick(item)} onMouseEnter={() => setIdx(i)}
+              disabled={!allowed}
+              title={allowed ? item.label : `you don't have permission to ${item.deniedAction || 'use this action'}`}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', gap: 10,
                 padding: '8px 10px', border: 'none',
                 background: idx === i ? 'var(--ivory-100)' : 'transparent',
-                borderRadius: 5, cursor: 'pointer', textAlign: 'left',
+                borderRadius: 5, cursor: allowed ? 'pointer' : 'not-allowed', textAlign: 'left',
+                opacity: allowed ? 1 : 0.5,
               }}>
               <span style={{ fontSize: 13, color: 'var(--ink-900)', flex: 1 }}>{item.label}</span>
               <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>{item.kind}</span>
               {idx === i && <IconArrowRight size={12} style={{ color: 'var(--ink-400)' }}/>}
             </button>
-          ))}
+            );
+          })}
         </div>
         <div style={{ borderTop: '1px solid var(--line)', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 14, fontSize: 11, color: 'var(--ink-400)' }}>
           <span><span className="kbd">↑↓</span> navigate</span>

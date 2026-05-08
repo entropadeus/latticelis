@@ -8,6 +8,7 @@ const NotificationsPage = ({ onBack }) => {
   // db round-trip. Saved on blur / Enter / explicit Save. We seed the draft
   // from cfg the moment it lands.
   const [draft, setDraft] = useStateOS(null);
+  const canEditLabConfig = hasPermission('EDIT_LAB_CONFIG');
   useEffectOS(() => {
     if (!cfg) return;
     const overrides = (cfg.tatRecipientsByPriority && typeof cfg.tatRecipientsByPriority === 'object')
@@ -77,6 +78,7 @@ const NotificationsPage = ({ onBack }) => {
   }, [cfg, draft]);
 
   const save = async () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     if (!draft || !cfg) return;
     // Summarize per-priority overrides for the safety modal so the operator
     // sees exactly what will change at confirm time. Empty per-priority list
@@ -105,6 +107,7 @@ const NotificationsPage = ({ onBack }) => {
       confirmLabel: 'Save TAT controls',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     const fresh = await window.db.get('lab_config', window.schema.LAB_CONFIG_ID);
     const merged = window.schema.newLabConfig({
       ...(fresh || cfg),
@@ -133,6 +136,7 @@ const NotificationsPage = ({ onBack }) => {
   };
 
   const runScanNow = async () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     if (!window.tatWatcher) {
       await safetyNotice({ tone: 'danger', title: 'TAT watcher unavailable', message: 'TAT watcher not loaded.' });
       return;
@@ -172,9 +176,13 @@ const NotificationsPage = ({ onBack }) => {
       <PageHeader title="Notifications" sub="TAT thresholds, alert routing, and recent breaches."
         actions={[
           <button key="b" className="btn" data-size="sm" data-variant="ghost" onClick={onBack}><IconChevRight size={13} style={{ transform: 'rotate(180deg)' }}/> Admin</button>,
-          <button key="scan" className="btn" data-size="sm" onClick={runScanNow} title="Re-scan all active orders against current thresholds">Run scan now</button>,
+          <button key="scan" className="btn" data-size="sm" onClick={runScanNow}
+            disabled={!canEditLabConfig}
+            title={permissionTitle(canEditLabConfig, 'Re-scan all active orders against current thresholds', 'edit lab configuration')}>Run scan now</button>,
           <button key="rv" className="btn" data-size="sm" onClick={revert} disabled={!dirty}>Revert</button>,
-          <button key="sv" className="btn" data-size="sm" data-variant="primary" onClick={save} disabled={!dirty}>Save</button>,
+          <button key="sv" className="btn" data-size="sm" data-variant="primary" onClick={save}
+            disabled={!dirty || !canEditLabConfig}
+            title={permissionTitle(canEditLabConfig, 'Save TAT controls', 'edit lab configuration')}>Save</button>,
         ]}/>
 
       {/* Status strip — at-a-glance count of in-flight breach / warn orders */}

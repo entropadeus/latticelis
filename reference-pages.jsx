@@ -3,6 +3,7 @@ const TestCatalogPage = ({ onBack }) => {
   const [editingId, setEditingId] = useStateOS(null);
   const [draft, setDraft] = useStateOS(null);
   const [q, setQ] = useStateOS('');
+  const canEditTestCatalog = hasPermission('EDIT_TEST_CATALOG');
 
   const filtered = useMemoOS(() => {
     const needle = q.trim().toLowerCase();
@@ -14,10 +15,12 @@ const TestCatalogPage = ({ onBack }) => {
   const pager = usePagination(filtered);
 
   const startNew = () => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
     setEditingId(null);
     setDraft({ code: '', name: '', shortName: '', loinc: '', units: '', refRangeLow: '', refRangeHigh: '', turnaroundMinutes: '', referenceRanges: [], criticalEscalationT1Sec: '', criticalEscalationT2Sec: '', active: true });
   };
   const startEdit = (t) => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
     setEditingId(t.id);
     setDraft({
       code: t.code || '', name: t.name || '', shortName: t.shortName || '',
@@ -33,6 +36,7 @@ const TestCatalogPage = ({ onBack }) => {
   };
   const cancel = () => { setEditingId(null); setDraft(null); };
   const save = async () => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
     if (!draft || !draft.code || !draft.name) return;
     // Empty input → null (use global default). Whitespace-only is also null.
     const parseSec = (raw) => {
@@ -84,6 +88,7 @@ const TestCatalogPage = ({ onBack }) => {
     setDraft({ ...draft, referenceRanges: next });
   };
   const remove = async (t) => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
     const ask = await safetyConfirm({
       id: 'admin.test.delete',
       tone: 'danger',
@@ -100,6 +105,7 @@ const TestCatalogPage = ({ onBack }) => {
       confirmLabel: 'Delete test',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
     const fresh = await window.db.get('tests', t.id);
     if (!fresh) return;
     await window.db.delete('tests', t.id);
@@ -107,6 +113,7 @@ const TestCatalogPage = ({ onBack }) => {
   };
 
   const toggleActive = async (t) => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
     const nextActive = t.active === false;
     const ask = await confirmConfigChange({
       id: nextActive ? 'admin.test.activate' : 'admin.test.deactivate',
@@ -123,6 +130,7 @@ const TestCatalogPage = ({ onBack }) => {
       confirmLabel: nextActive ? 'Activate test' : 'Deactivate test',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
     const fresh = await window.db.get('tests', t.id);
     if (!fresh) return;
     await window.db.put('tests', { ...fresh, active: nextActive });
@@ -133,7 +141,9 @@ const TestCatalogPage = ({ onBack }) => {
       <PageHeader title="Test Catalog" sub="Manage test definitions: codes, LOINC, units, default reference ranges."
         actions={[
           <button key="b" className="btn" data-size="sm" data-variant="ghost" onClick={onBack}><IconChevRight size={13} style={{ transform: 'rotate(180deg)' }}/> Admin</button>,
-          <button key="n" className="btn" data-size="sm" data-variant="primary" onClick={startNew}><IconPlus size={13}/> New test</button>,
+          <button key="n" className="btn" data-size="sm" data-variant="primary" onClick={startNew}
+            disabled={!canEditTestCatalog}
+            title={permissionTitle(canEditTestCatalog, 'Create new test', 'edit the test catalog')}><IconPlus size={13}/> New test</button>,
         ]}/>
 
       <div style={{ display: 'grid', gridTemplateColumns: draft ? '1fr 360px' : '1fr', gap: 12, height: 'calc(100% - 80px)' }}>
@@ -163,7 +173,9 @@ const TestCatalogPage = ({ onBack }) => {
                 <tbody>
                   {pager.slice.map(t => (
                     <tr key={t.id} style={{ opacity: t.active === false ? 0.5 : 1, background: editingId === t.id ? 'var(--sage-50)' : undefined }}>
-                      <td onClick={() => toggleActive(t)} style={{ cursor: 'pointer' }} title={t.active === false ? 'Inactive — click to activate' : 'Active — click to deactivate'}>
+                      <td onClick={() => toggleActive(t)}
+                        style={{ cursor: canEditTestCatalog ? 'pointer' : 'not-allowed' }}
+                        title={permissionTitle(canEditTestCatalog, t.active === false ? 'Inactive - click to activate' : 'Active - click to deactivate', 'edit the test catalog')}>
                         <span className="dot" data-tone={t.active === false ? 'idle' : 'ok'}/>
                       </td>
                       <td><span className="mono">{t.code}</span></td>
@@ -178,8 +190,12 @@ const TestCatalogPage = ({ onBack }) => {
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="btn" data-size="xs" onClick={() => startEdit(t)}>Edit</button>
-                          <button className="btn" data-variant="danger" data-size="xs" onClick={() => remove(t)}>Delete</button>
+                          <button className="btn" data-size="xs" onClick={() => startEdit(t)}
+                            disabled={!canEditTestCatalog}
+                            title={permissionTitle(canEditTestCatalog, 'Edit test', 'edit the test catalog')}>Edit</button>
+                          <button className="btn" data-variant="danger" data-size="xs" onClick={() => remove(t)}
+                            disabled={!canEditTestCatalog}
+                            title={permissionTitle(canEditTestCatalog, 'Delete test', 'edit the test catalog')}>Delete</button>
                         </div>
                       </td>
                     </tr>
@@ -282,7 +298,9 @@ const TestCatalogPage = ({ onBack }) => {
             </div>
             <div style={{ padding: '10px 14px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
               <button className="btn" data-size="sm" onClick={cancel}>Cancel</button>
-              <button className="btn" data-variant="primary" data-size="sm" onClick={save} disabled={!draft.code || !draft.name}>
+              <button className="btn" data-variant="primary" data-size="sm" onClick={save}
+                disabled={!draft.code || !draft.name || !canEditTestCatalog}
+                title={permissionTitle(canEditTestCatalog, editingId ? 'Save test' : 'Create test', 'edit the test catalog')}>
                 {editingId ? 'Save' : 'Create'}
               </button>
             </div>
@@ -347,6 +365,7 @@ const ClientsPage = ({ onBack }) => {
   const [editingId, setEditingId] = useStateOS(null);
   const [draft, setDraft] = useStateOS(null);
   const [q, setQ] = useStateOS('');
+  const canEditLabConfig = hasPermission('EDIT_LAB_CONFIG');
 
   const ordersByClient = useMemoOS(() => {
     const m = {};
@@ -362,12 +381,14 @@ const ClientsPage = ({ onBack }) => {
   }, [clients, q]);
 
   const startNew = () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     setEditingId(null);
     setDraft({ code: '', name: '', type: 'CLINIC', contactName: '', phone: '', fax: '', email: '', deliveryChannel: 'fax', deliveryEndpoint: '', billType: 'CLIENT', active: true });
   };
-  const startEdit = (c) => { setEditingId(c.id); setDraft({ ...c }); };
+  const startEdit = (c) => { if (!hasPermission('EDIT_LAB_CONFIG')) return; setEditingId(c.id); setDraft({ ...c }); };
   const cancel = () => { setEditingId(null); setDraft(null); };
   const save = async () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     if (!draft || !draft.code || !draft.name) return;
     if (editingId) {
       const existing = clients.find(c => c.id === editingId);
@@ -379,6 +400,7 @@ const ClientsPage = ({ onBack }) => {
     cancel();
   };
   const remove = async (c) => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     if ((ordersByClient[c.id] || 0) > 0) {
       await safetyNotice({
         tone: 'warning',
@@ -407,6 +429,7 @@ const ClientsPage = ({ onBack }) => {
       confirmLabel: 'Delete client',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     const fresh = await window.db.get('clients', c.id);
     if (!fresh) return;
     await window.db.delete('clients', c.id);
@@ -414,6 +437,7 @@ const ClientsPage = ({ onBack }) => {
   };
 
   const toggleActive = async (c) => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     const nextActive = c.active === false;
     const ask = await confirmConfigChange({
       id: nextActive ? 'admin.client.activate' : 'admin.client.deactivate',
@@ -430,6 +454,7 @@ const ClientsPage = ({ onBack }) => {
       confirmLabel: nextActive ? 'Activate client' : 'Deactivate client',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     const fresh = await window.db.get('clients', c.id);
     if (!fresh) return;
     await window.db.put('clients', { ...fresh, active: nextActive });
@@ -440,7 +465,9 @@ const ClientsPage = ({ onBack }) => {
       <PageHeader title="Clients" sub="Referring clinics and outreach customers — orders pin a client at intake."
         actions={[
           <button key="b" className="btn" data-size="sm" data-variant="ghost" onClick={onBack}><IconChevRight size={13} style={{ transform: 'rotate(180deg)' }}/> Admin</button>,
-          <button key="n" className="btn" data-size="sm" data-variant="primary" onClick={startNew}><IconPlus size={13}/> New client</button>,
+          <button key="n" className="btn" data-size="sm" data-variant="primary" onClick={startNew}
+            disabled={!canEditLabConfig}
+            title={permissionTitle(canEditLabConfig, 'Create new client', 'edit lab configuration')}><IconPlus size={13}/> New client</button>,
         ]}/>
 
       <div style={{ display: 'grid', gridTemplateColumns: draft ? '1fr 380px' : '1fr', gap: 12, height: 'calc(100% - 80px)' }}>
@@ -470,7 +497,9 @@ const ClientsPage = ({ onBack }) => {
                 <tbody>
                   {filtered.map(c => (
                     <tr key={c.id} style={{ opacity: c.active === false ? 0.5 : 1, background: editingId === c.id ? 'var(--sage-50)' : undefined }}>
-                      <td onClick={() => toggleActive(c)} style={{ cursor: 'pointer' }} title={c.active === false ? 'Inactive — click to activate' : 'Active — click to deactivate'}>
+                      <td onClick={() => toggleActive(c)}
+                        style={{ cursor: canEditLabConfig ? 'pointer' : 'not-allowed' }}
+                        title={permissionTitle(canEditLabConfig, c.active === false ? 'Inactive - click to activate' : 'Active - click to deactivate', 'edit lab configuration')}>
                         <span className="dot" data-tone={c.active === false ? 'idle' : 'ok'}/>
                       </td>
                       <td><span className="mono">{c.code}</span></td>
@@ -481,8 +510,12 @@ const ClientsPage = ({ onBack }) => {
                       <td className="mono tnum">{ordersByClient[c.id] || 0}</td>
                       <td>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="btn" data-size="xs" onClick={() => startEdit(c)}>Edit</button>
-                          <button className="btn" data-variant="danger" data-size="xs" onClick={() => remove(c)}>Delete</button>
+                          <button className="btn" data-size="xs" onClick={() => startEdit(c)}
+                            disabled={!canEditLabConfig}
+                            title={permissionTitle(canEditLabConfig, 'Edit client', 'edit lab configuration')}>Edit</button>
+                          <button className="btn" data-variant="danger" data-size="xs" onClick={() => remove(c)}
+                            disabled={!canEditLabConfig}
+                            title={permissionTitle(canEditLabConfig, 'Delete client', 'edit lab configuration')}>Delete</button>
                         </div>
                       </td>
                     </tr>
@@ -573,7 +606,9 @@ const ClientsPage = ({ onBack }) => {
             </div>
             <div style={{ padding: '10px 14px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
               <button className="btn" data-size="sm" onClick={cancel}>Cancel</button>
-              <button className="btn" data-variant="primary" data-size="sm" onClick={save} disabled={!draft.code || !draft.name}>
+              <button className="btn" data-variant="primary" data-size="sm" onClick={save}
+                disabled={!draft.code || !draft.name || !canEditLabConfig}
+                title={permissionTitle(canEditLabConfig, editingId ? 'Save client' : 'Create client', 'edit lab configuration')}>
                 {editingId ? 'Save' : 'Create'}
               </button>
             </div>
@@ -594,6 +629,7 @@ const LocationsPage = ({ onBack }) => {
   const [editingId, setEditingId] = useStateOS(null);
   const [draft, setDraft] = useStateOS(null);
   const [q, setQ] = useStateOS('');
+  const canEditLabConfig = hasPermission('EDIT_LAB_CONFIG');
 
   // Order counts by location: prefer the locationId FK, fall back to a string
   // match against `facility` (legacy / one-off orders). The display picks
@@ -619,10 +655,12 @@ const LocationsPage = ({ onBack }) => {
   }, [all, q]);
 
   const startNew = () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     setEditingId(null);
     setDraft({ code: '', name: '', type: 'LAB', parentId: '', phone: '', hours: '', departments: [], notes: '', active: true });
   };
   const startEdit = (l) => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     setEditingId(l.id);
     setDraft({
       code: l.code || '', name: l.name || '', type: l.type || 'LAB',
@@ -633,6 +671,7 @@ const LocationsPage = ({ onBack }) => {
   };
   const cancel = () => { setEditingId(null); setDraft(null); };
   const save = async () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     if (!draft || !draft.code || !draft.name) return;
     const init = { ...draft, parentId: draft.parentId || null };
     if (editingId) {
@@ -645,6 +684,7 @@ const LocationsPage = ({ onBack }) => {
     cancel();
   };
   const remove = async (l) => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     const ask = await safetyConfirm({
       id: 'admin.location.delete',
       tone: 'danger',
@@ -661,6 +701,7 @@ const LocationsPage = ({ onBack }) => {
       confirmLabel: 'Delete location',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     const fresh = await window.db.get('locations', l.id);
     if (!fresh) return;
     await window.db.delete('locations', l.id);
@@ -676,6 +717,7 @@ const LocationsPage = ({ onBack }) => {
     }));
   };
   const toggleActive = async (l) => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     const nextActive = l.active === false;
     const ask = await confirmConfigChange({
       id: nextActive ? 'admin.location.activate' : 'admin.location.deactivate',
@@ -693,6 +735,7 @@ const LocationsPage = ({ onBack }) => {
       confirmLabel: nextActive ? 'Activate location' : 'Deactivate location',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     const fresh = await window.db.get('locations', l.id);
     if (!fresh) return;
     await window.db.put('locations', { ...fresh, active: nextActive });
@@ -708,7 +751,9 @@ const LocationsPage = ({ onBack }) => {
       <PageHeader title="Locations" sub="Facilities, departments, and draw stations the lab serves."
         actions={[
           <button key="b" className="btn" data-size="sm" data-variant="ghost" onClick={onBack}><IconChevRight size={13} style={{ transform: 'rotate(180deg)' }}/> Admin</button>,
-          <button key="n" className="btn" data-size="sm" data-variant="primary" onClick={startNew}><IconPlus size={13}/> New location</button>,
+          <button key="n" className="btn" data-size="sm" data-variant="primary" onClick={startNew}
+            disabled={!canEditLabConfig}
+            title={permissionTitle(canEditLabConfig, 'Create new location', 'edit lab configuration')}><IconPlus size={13}/> New location</button>,
         ]}/>
 
       <div style={{ display: 'grid', gridTemplateColumns: draft ? '1fr 380px' : '1fr', gap: 12, height: 'calc(100% - 80px)' }}>
@@ -739,7 +784,9 @@ const LocationsPage = ({ onBack }) => {
                 <tbody>
                   {filtered.map(l => (
                     <tr key={l.id} style={{ opacity: l.active === false ? 0.5 : 1, background: editingId === l.id ? 'var(--sage-50)' : undefined }}>
-                      <td onClick={() => toggleActive(l)} style={{ cursor: 'pointer' }} title={l.active === false ? 'Inactive — click to activate' : 'Active — click to deactivate'}>
+                      <td onClick={() => toggleActive(l)}
+                        style={{ cursor: canEditLabConfig ? 'pointer' : 'not-allowed' }}
+                        title={permissionTitle(canEditLabConfig, l.active === false ? 'Inactive - click to activate' : 'Active - click to deactivate', 'edit lab configuration')}>
                         <span className="dot" data-tone={l.active === false ? 'idle' : 'ok'}/>
                       </td>
                       <td><span className="mono">{l.code}</span></td>
@@ -756,8 +803,12 @@ const LocationsPage = ({ onBack }) => {
                       <td className="mono tnum" style={{ textAlign: 'right', color: 'var(--ink-500)' }}>{(ordersByLocId[l.id] || 0) + (ordersByLocCode[l.code] || 0) + (ordersByLocCode[l.name] || 0)}</td>
                       <td>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="btn" data-size="xs" onClick={() => startEdit(l)}>Edit</button>
-                          <button className="btn" data-variant="danger" data-size="xs" onClick={() => remove(l)}>Delete</button>
+                          <button className="btn" data-size="xs" onClick={() => startEdit(l)}
+                            disabled={!canEditLabConfig}
+                            title={permissionTitle(canEditLabConfig, 'Edit location', 'edit lab configuration')}>Edit</button>
+                          <button className="btn" data-variant="danger" data-size="xs" onClick={() => remove(l)}
+                            disabled={!canEditLabConfig}
+                            title={permissionTitle(canEditLabConfig, 'Delete location', 'edit lab configuration')}>Delete</button>
                         </div>
                       </td>
                     </tr>
@@ -832,7 +883,9 @@ const LocationsPage = ({ onBack }) => {
             </div>
             <div style={{ padding: '10px 14px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
               <button className="btn" data-size="sm" onClick={cancel}>Cancel</button>
-              <button className="btn" data-variant="primary" data-size="sm" onClick={save} disabled={!draft.code || !draft.name}>
+              <button className="btn" data-variant="primary" data-size="sm" onClick={save}
+                disabled={!draft.code || !draft.name || !canEditLabConfig}
+                title={permissionTitle(canEditLabConfig, editingId ? 'Save location' : 'Create location', 'edit lab configuration')}>
                 {editingId ? 'Save' : 'Create'}
               </button>
             </div>
