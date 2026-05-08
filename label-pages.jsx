@@ -1,5 +1,8 @@
 const SPECIMEN_TYPE_OPTIONS = ['', 'serum', 'plasma', 'whole_blood', 'urine', 'csf', 'swab', 'tissue', 'other'];
-const DEFAULT_ZPL_BODY = '^XA\n^MMT\n^PW406\n^LL203\n^LH0,0\n^FT8,28^A0N,28,28^FD{patient_line}^FS\n^FT8,60^A0N,18,18^FDMRN: {mrn}^FS\n^FT8,84^A0N,16,16^FDDOB {dob} {sex} {age}y^FS\n^FT8,108^A0N,16,16^FD{type}/{container}^FS\n^FT8,132^A0N,16,16^FDTests: {tests}^FS\n^FT8,156^A0N,16,16^FDOrder {order_number}^FS\n^BY2,2,60\n^FT8,196^BCN,60,Y,N,N\n^FD{accession}^FS\n^XZ';
+// 2x1 @ 203 dpi default. Barcode at top, then patient line, then identifiers and order.
+// Mirrors the inline default in labels.js so a fresh template prints within ^LL203
+// instead of running 7+ dots past the configured length and wrapping to a second label.
+const DEFAULT_ZPL_BODY = '^XA\n^MMT\n^PW406\n^LL203\n^LH0,0\n^FO12,8\n^BY2,2.5,50\n^BCN,50,Y,N,N\n^FD{accession}^FS\n^FO12,75^A0N,22,22^FD{patient_line}^FS\n^FO12,103^A0N,18,18^FDMRN {mrn}  DOB {dob}  {sex}  {age}y^FS\n^FO12,125^A0N,18,18^FD{type}  ·  {container}^FS\n^FO12,147^A0N,18,18^FDTESTS: {tests}^FS\n^FO12,170^A0N,16,16^FDORD {order_number}^FS\n^XZ';
 
 const LabelsPage = ({ onBack }) => {
   const all = window.useEntities('label_templates');

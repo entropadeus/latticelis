@@ -44,6 +44,21 @@
     return seeded;
   };
 
+  // Resolve the recipient list for a given priority. Per-priority override
+  // wins when present and non-empty; otherwise falls back to the lab default
+  // (`tatRecipients`); finally the schema default. Defensive against missing
+  // map / non-array values from imported snapshots.
+  const recipientsFor = (cfg, priority) => {
+    const overrides = cfg && cfg.tatRecipientsByPriority;
+    if (overrides && Array.isArray(overrides[priority]) && overrides[priority].length > 0) {
+      return overrides[priority].filter(r => typeof r === 'string');
+    }
+    if (Array.isArray(cfg && cfg.tatRecipients) && cfg.tatRecipients.length > 0) {
+      return cfg.tatRecipients.filter(r => typeof r === 'string');
+    }
+    return (window.schema && window.schema.TAT_RECIPIENTS_DEFAULT) || ['LAB_SUPERVISOR'];
+  };
+
   const resolveThreshold = (order, cfg, testsById = {}) => {
     const candidates = ((order && order.testIds) || [])
       .map(id => testsById[id])
@@ -183,9 +198,6 @@
       if (!window.db || !window.schema) return;
       const cfg = await __readConfig();
       if (!cfg) return;
-      const recipients = Array.isArray(cfg.tatRecipients) && cfg.tatRecipients.length
-        ? cfg.tatRecipients
-        : (window.schema.TAT_RECIPIENTS_DEFAULT || ['LAB_SUPERVISOR']);
 
       const orders = await window.db.list('orders',
         o => o.status !== 'completed' && o.status !== 'cancelled');
@@ -255,7 +267,7 @@
         await window.db.put('orders', next);
 
         if (climbed && level !== 'ok') {
-          __notify(next, level, verdict, recipients);
+          __notify(next, level, verdict, recipientsFor(cfg, next.priority || 'routine'));
         }
       }
     } catch (e) {
@@ -288,6 +300,6 @@
   };
 
   // Expose for tests / admin manual-trigger / rules primitives.
-  window.tatWatcher = { start, stop, scan, classify, resolveThreshold, TICK_MS };
+  window.tatWatcher = { start, stop, scan, classify, resolveThreshold, recipientsFor, TICK_MS };
   start();
 })();

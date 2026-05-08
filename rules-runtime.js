@@ -272,8 +272,9 @@
         test = window.schema.newTest({ code: a.test, name: a.test });
         await window.db.put('tests', test);
       }
-      if (c.order.testIds.includes(test.id)) return { ok: true, alreadyPresent: true };
-      const updated = { ...c.order, testIds: [...c.order.testIds, test.id] };
+      const existingTestIds = Array.isArray(c.order.testIds) ? c.order.testIds : [];
+      if (existingTestIds.includes(test.id)) return { ok: true, alreadyPresent: true };
+      const updated = { ...c.order, testIds: [...existingTestIds, test.id] };
       await window.db.put('orders', updated);
       // Emit order.updated so the simulator can fan out to routed specimens
       // and emit results for the new test (closes the reflex cascade).
@@ -287,8 +288,9 @@
     'order.reflex.cancel': async (a, c) => {
       if (!c.order || !a.test) return { ok: false, reason: 'no order or test arg' };
       const test = (await window.db.list('tests', t => t.code === a.test))[0];
-      if (!test || !c.order.testIds.includes(test.id)) return { ok: true, notPresent: true };
-      const updated = { ...c.order, testIds: c.order.testIds.filter(id => id !== test.id) };
+      const existingTestIds = Array.isArray(c.order.testIds) ? c.order.testIds : [];
+      if (!test || !existingTestIds.includes(test.id)) return { ok: true, notPresent: true };
+      const updated = { ...c.order, testIds: existingTestIds.filter(id => id !== test.id) };
       await window.db.put('orders', updated);
       window.events.publish(window.EVENTS.ORDER_UPDATED, {
         entityType: 'order', entityId: updated.id, order: updated,

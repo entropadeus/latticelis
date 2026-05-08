@@ -460,15 +460,35 @@ const newLabelTemplate = (init = {}) => ({
 //   tatRecipients: notification target roles. The watcher publishes
 //     `notification` events with kind='role' and target=each entry, so the
 //     existing toast / drawer / bell surfaces light up without bespoke wiring.
+//   tatRecipientsByPriority: optional per-priority override map. Shape
+//     { stat?: string[], asap?: string[], routine?: string[] }. A priority
+//     missing from the map (or with an empty array, after coercion drops it)
+//     inherits from the default `tatRecipients` list. STAT can page Director
+//     + Pathologist while Routine pages only Supervisor — same lab, different
+//     escalation rosters.
 const LAB_CONFIG_ID = 'lab_config';
 const TAT_THRESHOLD_DEFAULTS = { stat: 60, asap: 240, routine: 1440 };
 const TAT_RECIPIENTS_DEFAULT = ['LAB_SUPERVISOR'];
+const TAT_PRIORITY_KEYS = ['stat', 'asap', 'routine'];
 const __coerceTatThresholds = (raw) => {
   const out = { ...TAT_THRESHOLD_DEFAULTS };
   if (!raw || typeof raw !== 'object') return out;
   for (const k of Object.keys(out)) {
     const v = Number(raw[k]);
     if (Number.isFinite(v) && v > 0) out[k] = v;
+  }
+  return out;
+};
+// Coerce per-priority overrides. Empty/non-array entries are dropped so the
+// resolver falls back to `tatRecipients`. Strings-only filter prevents weird
+// payloads from import/restore poisoning the UI.
+const __coerceTatRecipientsByPriority = (raw) => {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const pri of TAT_PRIORITY_KEYS) {
+    if (!Array.isArray(raw[pri])) continue;
+    const filtered = raw[pri].filter(r => typeof r === 'string');
+    if (filtered.length > 0) out[pri] = filtered;
   }
   return out;
 };
@@ -485,6 +505,7 @@ const newLabConfig = (init = {}) => ({
   tatRecipients: Array.isArray(init.tatRecipients) && init.tatRecipients.length
     ? init.tatRecipients.filter(r => typeof r === 'string')
     : [...TAT_RECIPIENTS_DEFAULT],
+  tatRecipientsByPriority: __coerceTatRecipientsByPriority(init.tatRecipientsByPriority),
   createdAt: init.createdAt || Date.now(),
   updatedAt: Date.now(),
 });
@@ -507,7 +528,7 @@ window.schema = {
   newLocation, newLabelTemplate,
   newQcLevel, newQcResult, newQcRuleViolation,
   newLabConfig, LAB_CONFIG_ID,
-  TAT_THRESHOLD_DEFAULTS, TAT_RECIPIENTS_DEFAULT,
+  TAT_THRESHOLD_DEFAULTS, TAT_RECIPIENTS_DEFAULT, TAT_PRIORITY_KEYS,
   nextAccessionNumber,
   SPECIMEN_CONDITIONS,
 };

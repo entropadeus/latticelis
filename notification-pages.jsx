@@ -10,11 +10,19 @@ const NotificationsPage = ({ onBack }) => {
   const [draft, setDraft] = useStateOS(null);
   useEffectOS(() => {
     if (!cfg) return;
+    const overrides = (cfg.tatRecipientsByPriority && typeof cfg.tatRecipientsByPriority === 'object')
+      ? cfg.tatRecipientsByPriority : {};
     setDraft({
       tatThresholds: { ...(cfg.tatThresholds || window.schema.TAT_THRESHOLD_DEFAULTS) },
       tatWarnAtPercent: Number.isFinite(cfg.tatWarnAtPercent) ? cfg.tatWarnAtPercent : 80,
       tatRecipients: Array.isArray(cfg.tatRecipients) && cfg.tatRecipients.length
         ? [...cfg.tatRecipients] : [...(window.schema.TAT_RECIPIENTS_DEFAULT || ['LAB_SUPERVISOR'])],
+      // Per-priority override map. Empty array = "inherit default". Missing key = same.
+      // Render unfolds 'stat' / 'asap' / 'routine' from the map (or [] if absent).
+      tatRecipientsByPriority: TAT_PRIORITIES.reduce((acc, p) => {
+        acc[p.id] = Array.isArray(overrides[p.id]) ? [...overrides[p.id]] : [];
+        return acc;
+      }, {}),
     });
   }, [cfg]);
 
@@ -32,6 +40,19 @@ const NotificationsPage = ({ onBack }) => {
       return { ...d, tatRecipients: next.length ? next : [role] };  // never let it empty
     });
   };
+  // Toggle a role on a specific priority's override list. Empty list = inherit default.
+  // No min-one-role guard here — empty IS the legitimate "inherit" state.
+  const togglePriorityRecipient = (pri, role) => {
+    setDraft(d => {
+      const cur = Array.isArray(d.tatRecipientsByPriority[pri]) ? d.tatRecipientsByPriority[pri] : [];
+      const has = cur.includes(role);
+      const next = has ? cur.filter(r => r !== role) : [...cur, role];
+      return { ...d, tatRecipientsByPriority: { ...d.tatRecipientsByPriority, [pri]: next } };
+    });
+  };
+  const clearPriorityOverride = (pri) => {
+    setDraft(d => ({ ...d, tatRecipientsByPriority: { ...d.tatRecipientsByPriority, [pri]: [] } }));
+  };
 
   const dirty = useMemoOS(() => {
     if (!cfg || !draft) return false;
@@ -44,11 +65,29 @@ const NotificationsPage = ({ onBack }) => {
     const aR = (cfg.tatRecipients || []).slice().sort().join(',');
     const bR = (draft.tatRecipients || []).slice().sort().join(',');
     if (aR !== bR) return true;
+    const aPri = (cfg.tatRecipientsByPriority && typeof cfg.tatRecipientsByPriority === 'object')
+      ? cfg.tatRecipientsByPriority : {};
+    const bPri = draft.tatRecipientsByPriority || {};
+    for (const p of ['stat','asap','routine']) {
+      const av = Array.isArray(aPri[p]) ? aPri[p].slice().sort().join(',') : '';
+      const bv = Array.isArray(bPri[p]) ? bPri[p].slice().sort().join(',') : '';
+      if (av !== bv) return true;
+    }
     return false;
   }, [cfg, draft]);
 
   const save = async () => {
     if (!draft || !cfg) return;
+    // Summarize per-priority overrides for the safety modal so the operator
+    // sees exactly what will change at confirm time. Empty per-priority list
+    // is rendered as "inherit" so they aren't surprised by a silent mute.
+    const overrideSummary = ['stat','asap','routine']
+      .map(p => {
+        const list = Array.isArray(draft.tatRecipientsByPriority && draft.tatRecipientsByPriority[p])
+          ? draft.tatRecipientsByPriority[p] : [];
+        return list.length === 0 ? `${p.toUpperCase()}: inherit` : `${p.toUpperCase()}: ${list.join(', ')}`;
+      })
+      .join(' · ');
     const ask = await confirmConfigChange({
       id: 'admin.tat_config.save',
       title: 'Save TAT controls',
@@ -58,7 +97,8 @@ const NotificationsPage = ({ onBack }) => {
         safetyFact('asap minutes', draft.tatThresholds && draft.tatThresholds.asap),
         safetyFact('routine minutes', draft.tatThresholds && draft.tatThresholds.routine),
         safetyFact('warning percent', draft.tatWarnAtPercent),
-        safetyFact('recipients', (draft.tatRecipients || []).join(', ') || 'none'),
+        safetyFact('default recipients', (draft.tatRecipients || []).join(', ') || 'none'),
+        safetyFact('per-priority routing', overrideSummary),
       ],
       entityType: 'lab_config',
       entityId: window.schema.LAB_CONFIG_ID,
@@ -71,17 +111,24 @@ const NotificationsPage = ({ onBack }) => {
       tatThresholds: draft.tatThresholds,
       tatWarnAtPercent: draft.tatWarnAtPercent,
       tatRecipients: draft.tatRecipients,
+      tatRecipientsByPriority: draft.tatRecipientsByPriority,
     });
     await window.db.put('lab_config', merged);
   };
 
   const revert = () => {
     if (!cfg) return;
+    const overrides = (cfg.tatRecipientsByPriority && typeof cfg.tatRecipientsByPriority === 'object')
+      ? cfg.tatRecipientsByPriority : {};
     setDraft({
       tatThresholds: { ...(cfg.tatThresholds || window.schema.TAT_THRESHOLD_DEFAULTS) },
       tatWarnAtPercent: Number.isFinite(cfg.tatWarnAtPercent) ? cfg.tatWarnAtPercent : 80,
       tatRecipients: Array.isArray(cfg.tatRecipients) && cfg.tatRecipients.length
         ? [...cfg.tatRecipients] : [...(window.schema.TAT_RECIPIENTS_DEFAULT || ['LAB_SUPERVISOR'])],
+      tatRecipientsByPriority: TAT_PRIORITIES.reduce((acc, p) => {
+        acc[p.id] = Array.isArray(overrides[p.id]) ? [...overrides[p.id]] : [];
+        return acc;
+      }, {}),
     });
   };
 
@@ -200,7 +247,10 @@ const NotificationsPage = ({ onBack }) => {
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
             <span style={{ fontSize: 12.5, fontWeight: 500 }}>Alert routing</span>
             <span style={{ flex: 1 }}/>
-            <span className="pill" data-tone="ghost" style={{ fontSize: 10 }}>{draft.tatRecipients.length} role{draft.tatRecipients.length === 1 ? '' : 's'}</span>
+            <span className="pill" data-tone="ghost" style={{ fontSize: 10 }}>{draft.tatRecipients.length} default role{draft.tatRecipients.length === 1 ? '' : 's'}</span>
+          </div>
+          <div style={{ fontSize: 10.5, color: 'var(--ink-500)', marginBottom: 6, fontWeight: 500 }}>
+            Default recipients
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
             {TAT_RECIPIENT_ROLES.map(role => {
@@ -222,8 +272,61 @@ const NotificationsPage = ({ onBack }) => {
               );
             })}
           </div>
-          <div style={{ fontSize: 10.5, color: 'var(--ink-400)', marginTop: 8 }}>
+          <div style={{ fontSize: 10.5, color: 'var(--ink-400)', marginTop: 8, marginBottom: 12 }}>
             Each TAT crossing fires one notification per role above. Toasts and the bell drawer surface these alongside critical-result notifications.
+          </div>
+
+          {/* Per-priority overrides — STAT can page Director + Path while Routine pages
+              only Supervisor. Empty override list = inherit the default list above. */}
+          <div style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 12, marginTop: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-700)' }}>Per-priority overrides</span>
+              <span style={{ flex: 1 }}/>
+              <span style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>Empty = inherit default</span>
+            </div>
+            {TAT_PRIORITIES.map(p => {
+              const list = Array.isArray(draft.tatRecipientsByPriority[p.id]) ? draft.tatRecipientsByPriority[p.id] : [];
+              const inherits = list.length === 0;
+              return (
+                <div key={p.id} style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <span className="pill" data-tone={p.tone} style={{ fontSize: 10, minWidth: 60, justifyContent: 'center' }}>{p.label}</span>
+                    <span style={{ fontSize: 10.5, color: inherits ? 'var(--ink-400)' : 'var(--ink-700)' }}>
+                      {inherits
+                        ? `Inherits default (${draft.tatRecipients.join(', ') || 'none'})`
+                        : `${list.length} custom role${list.length === 1 ? '' : 's'}`}
+                    </span>
+                    <span style={{ flex: 1 }}/>
+                    {!inherits && (
+                      <button className="btn" data-size="xs" data-variant="ghost"
+                        onClick={() => clearPriorityOverride(p.id)}
+                        title={`Reset ${p.label} to inherit the default list`}>
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {TAT_RECIPIENT_ROLES.map(role => {
+                      const enabled = list.includes(role);
+                      return (
+                        <button key={role}
+                          className="pill"
+                          data-tone={enabled ? p.tone : 'ghost'}
+                          onClick={() => togglePriorityRecipient(p.id, role)}
+                          style={{
+                            fontSize: 10, cursor: 'pointer', border: 'none',
+                            opacity: enabled ? 1 : 0.6,
+                            fontFamily: 'var(--font-mono)',
+                          }}
+                          title={enabled ? `Remove ${role} from ${p.label}` : `Page ${role} on ${p.label}`}>
+                          {enabled ? '✓ ' : ''}{role.replace(/_/g, ' ')}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
