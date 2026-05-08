@@ -52,6 +52,8 @@ const UsersPage = ({ onBack }) => {
       });
   }, [users, q, statusFilter]);
 
+  const pager = usePagination(filtered);
+
   const stats = useMemoOS(() => {
     const out = { total: users.length, active: 0, inactive: 0, byRole: {} };
     const roles = (window.schema && window.schema.ROLES) || [];
@@ -352,6 +354,7 @@ const UsersPage = ({ onBack }) => {
               <option value="INACTIVE">Inactive</option>
             </select>
           </div>
+          {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
           {filtered.length === 0 ? (
             <div className="empty" style={{ padding: '36px 24px' }}>
               <div className="empty-title">No users match</div>
@@ -371,7 +374,7 @@ const UsersPage = ({ onBack }) => {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(u => {
+                {pager.slice.map(u => {
                   const meta = window.userRoles ? window.userRoles.primaryRoleMeta(u.id) : null;
                   const userRoles = Array.isArray(u.roles) ? u.roles : [];
                   const inactive = u.status === 'INACTIVE';
@@ -434,6 +437,7 @@ const UsersPage = ({ onBack }) => {
               </tbody>
             </table>
           )}
+          {filtered.length > 0 && <TablePagination {...pager}/>}
         </div>
 
         {/* Edit form */}

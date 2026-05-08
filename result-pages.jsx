@@ -42,6 +42,8 @@ const ResultsPage = () => {
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [results, filter, showSuperseded]);
 
+  const pager = usePagination(filtered);
+
   const pendingCount = useMemoOS(
     () => results.filter(r => r.status === 'preliminary' || r.status === 'pending').length,
     [results]
@@ -456,6 +458,7 @@ const ResultsPage = () => {
           <div style={{ flex: 1 }}/>
           <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{filtered.length} results</span>
         </div>
+        {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
         {filtered.length === 0 ? (
           <EmptyTable
             columns={['Accession','Patient','Test','Value','Units','Ref range','Flag','Status','']}
@@ -478,7 +481,7 @@ const ResultsPage = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(r => {
+              {pager.slice.map(r => {
                 const spec = r.specimenId ? specimenById[r.specimenId] : null;
                 const pat = spec && spec.patientId ? patientById[spec.patientId] : null;
                 const test = r.testId ? testById[r.testId] : null;
@@ -555,6 +558,7 @@ const ResultsPage = () => {
             </tbody>
           </table>
         )}
+        {filtered.length > 0 && <TablePagination {...pager}/>}
       </div>
       {correcting && (
         <CorrectResultModal

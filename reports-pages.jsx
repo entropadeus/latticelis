@@ -54,6 +54,8 @@ const ReportsPage = () => {
       .slice(0, 500);
   }, [events, q, filter, eventType, actor, entityType, windowMs]);
 
+  const pager = usePagination(filtered);
+
   const resetFilters = () => {
     setQ(''); setFilter('all'); setEventType(''); setActor(''); setEntityType(''); setTimeWindow('all');
   };
@@ -171,6 +173,7 @@ const ReportsPage = () => {
           </div>
         </div>
         <div style={{ flex: 1, overflowY: 'auto' }}>
+          {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
           {filtered.length === 0 ? (
             <div className="empty" style={{ padding: '40px 24px' }}>
               <div className="empty-sub">{events.length === 0 ? 'No events yet.' : 'No events match the filter.'}</div>
@@ -187,7 +190,7 @@ const ReportsPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(e => {
+                {pager.slice.map(e => {
                   // The entity column becomes a click-through to the entity drawer
                   // when both entityType and entityId are present and the drawer
                   // supports that kind. Otherwise the raw id is shown un-linked.
@@ -240,6 +243,7 @@ const ReportsPage = () => {
               </tbody>
             </table>
           )}
+          {filtered.length > 0 && <TablePagination {...pager}/>}
         </div>
       </div>
     </Page>

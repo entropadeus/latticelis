@@ -160,6 +160,138 @@ const compactName = (patient) => {
   return [patient.mrn, name].filter(Boolean).join(' - ') || patient.id;
 };
 
+// ── Pagination — usePagination + TablePagination ──────────────────────────
+//
+// Drop-in pair for any list page that wants the standard "Show N entries /
+// Showing X to Y of Z" footer. The default page size is 10 across the LIS;
+// per-page state survives sort + filter changes via a stable identity ref
+// but resets to page 1 whenever the underlying item count drops below the
+// current page's start (which would otherwise show an empty page).
+//
+// Usage:
+//   const pager = usePagination(filteredOrders);
+//   const visible = pager.slice;
+//   ... <table>{visible.map(...)}</table>
+//   <TablePagination {...pager}/>
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250];
+
+const usePagination = (items, initialPageSize = 10) => {
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(initialPageSize);
+  const total = Array.isArray(items) ? items.length : 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  // If the current page falls past the end (e.g. filter shrank the list),
+  // snap back to the last available page. Doing this in render is safe
+  // because the useEffect below corrects state on the next tick — the
+  // slice math already clamps so we never render an out-of-bounds window.
+  React.useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+  const safePage = Math.min(page, totalPages);
+  const from = total === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const to = Math.min(total, safePage * pageSize);
+  const slice = Array.isArray(items)
+    ? items.slice((safePage - 1) * pageSize, safePage * pageSize)
+    : [];
+  return {
+    page: safePage,
+    pageSize,
+    total,
+    totalPages,
+    from,
+    to,
+    slice,
+    setPage: (n) => setPage(Math.max(1, Math.min(totalPages, Number(n) || 1))),
+    setPageSize: (n) => {
+      const next = Math.max(1, Number(n) || initialPageSize);
+      setPageSize(next);
+      // Re-anchor to page 1 when the size changes — keeping the user on
+      // page 5 of a now-huge or now-tiny window is disorienting.
+      setPage(1);
+    },
+  };
+};
+
+const TablePagination = ({
+  page, pageSize, total, totalPages, from, to,
+  setPage, setPageSize,
+  options = PAGE_SIZE_OPTIONS,
+  compact = false,
+  // 'top' renders the strip above the table (border-bottom);
+  // 'bottom' (default) renders below (border-top). Pages mount this twice
+  // to mirror DataTables' standard top + bottom layout.
+  pos = 'bottom',
+}) => {
+  const inputRef = React.useRef(null);
+  const [editing, setEditing] = React.useState(String(page));
+  React.useEffect(() => { setEditing(String(page)); }, [page]);
+
+  const submitPageInput = () => {
+    const n = Number(editing);
+    if (Number.isFinite(n) && n >= 1 && n <= totalPages) setPage(n);
+    else setEditing(String(page));
+  };
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10,
+      padding: compact ? '6px 10px' : '8px 12px',
+      borderTop: pos === 'bottom' ? '1px solid var(--line)' : 'none',
+      borderBottom: pos === 'top' ? '1px solid var(--line)' : 'none',
+      background: 'var(--ivory-50)',
+      fontSize: 11.5, color: 'var(--ink-500)',
+    }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span>Show</span>
+        <select
+          value={pageSize}
+          onChange={e => setPageSize(Number(e.target.value))}
+          className="input mono tnum"
+          style={{ width: 64, height: 24, padding: '0 4px', fontSize: 11.5 }}>
+          {options.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <span>entries</span>
+      </label>
+
+      <div style={{ flex: 1 }}/>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <button className="btn" data-size="xs" data-variant="ghost"
+          onClick={() => setPage(1)} disabled={page <= 1}
+          title="First page" style={{ minWidth: 24, padding: '0 6px' }}>«</button>
+        <button className="btn" data-size="xs" data-variant="ghost"
+          onClick={() => setPage(page - 1)} disabled={page <= 1}
+          title="Previous page" style={{ minWidth: 24, padding: '0 6px' }}>‹</button>
+        <input
+          ref={inputRef}
+          className="input mono tnum"
+          value={editing}
+          onChange={e => setEditing(e.target.value.replace(/[^\d]/g, ''))}
+          onBlur={submitPageInput}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitPageInput(); inputRef.current && inputRef.current.blur(); } }}
+          style={{ width: 44, height: 24, textAlign: 'center', padding: '0 4px', fontSize: 11.5 }}
+          aria-label="Page number"/>
+        <span style={{ color: 'var(--ink-400)' }}>/ {totalPages}</span>
+        <button className="btn" data-size="xs" data-variant="ghost"
+          onClick={() => setPage(page + 1)} disabled={page >= totalPages}
+          title="Next page" style={{ minWidth: 24, padding: '0 6px' }}>›</button>
+        <button className="btn" data-size="xs" data-variant="ghost"
+          onClick={() => setPage(totalPages)} disabled={page >= totalPages}
+          title="Last page" style={{ minWidth: 24, padding: '0 6px' }}>»</button>
+      </div>
+
+      <div style={{ flex: 1 }}/>
+
+      <span className="tnum" style={{ color: 'var(--ink-700)' }}>
+        {total === 0
+          ? 'No entries'
+          : `Showing ${from} to ${to} of ${total} ${total === 1 ? 'entry' : 'entries'}`}
+      </span>
+    </div>
+  );
+};
+
 // ===== Dashboard live panels =====
 // Three derived panels (TAT, specimen status, pending review) all read off
 // existing entity collections — no new state, no new events. Adding more

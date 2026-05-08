@@ -46,6 +46,8 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
       .sort((a, b) => (b.orderedAt || b.createdAt || 0) - (a.orderedAt || a.createdAt || 0));
   }, [orders, patientById, locationById, q, status, filterClientId]);
 
+  const pager = usePagination(filtered);
+
   return (
     <Page label="Orders">
       <PageHeader title="Orders" sub="All laboratory orders across the system."
@@ -73,6 +75,7 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
           <div style={{ flex:1 }}/>
           <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{filtered.length} orders</span>
         </div>
+        {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
         {filtered.length === 0 ? (
           <EmptyTable
             columns={['Order #','Patient','MRN','Tests','Priority','Status','TAT','Ordered','Facility']}
@@ -87,7 +90,7 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(o => {
+              {pager.slice.map(o => {
                 const pat = o.patientId ? patientById[o.patientId] : null;
                 const cli = o.clientId ? clientById[o.clientId] : null;
                 const loc = o.locationId ? locationById[o.locationId] : null;
@@ -148,6 +151,7 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
             </tbody>
           </table>
         )}
+        {filtered.length > 0 && <TablePagination {...pager}/>}
       </div>
     </Page>
   );
@@ -183,6 +187,8 @@ const SpecimensPage = () => {
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [specimens, q, filter]);
 
+  const pager = usePagination(filtered);
+
   return (
     <Page label="Specimens">
       <PageHeader title="Specimens" sub="Trace every specimen through collection, routing, accessioning, analysis, and disposition."
@@ -197,6 +203,7 @@ const SpecimensPage = () => {
           <div style={{ flex: 1 }}/>
           <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{filtered.length} specimens</span>
         </div>
+        {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
         {filtered.length === 0 ? (
           <EmptyTable
             columns={['Accession','Barcode','Patient','Order','Type','Container','Collected','Received','Flags','State']}
@@ -212,7 +219,7 @@ const SpecimensPage = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(s => {
+              {pager.slice.map(s => {
                 const pat = s.patientId ? patientById[s.patientId] : null;
                 const ord = s.orderId ? orderById[s.orderId] : null;
                 const flags = Array.isArray(s.flags) ? s.flags : [];
@@ -249,6 +256,7 @@ const SpecimensPage = () => {
             </tbody>
           </table>
         )}
+        {filtered.length > 0 && <TablePagination {...pager}/>}
       </div>
     </Page>
   );
