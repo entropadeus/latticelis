@@ -9221,6 +9221,7 @@ var SafetyConfirmHost = () => {
         reasonLabel: rawOptions.reasonLabel || 'Reason',
         reasonPlaceholder: rawOptions.reasonPlaceholder || '',
         reasonDefault: rawOptions.reasonDefault || '',
+        reasonOptions: Array.isArray(rawOptions.reasonOptions) ? rawOptions.reasonOptions.filter(o => o && typeof o.value === 'string') : null,
         requireTypedText: rawOptions.requireTypedText || '',
         confirmLabel: rawOptions.confirmLabel || 'Confirm',
         cancelLabel: rawOptions.cancelLabel === undefined ? 'Cancel' : rawOptions.cancelLabel,
@@ -9432,7 +9433,20 @@ var SafetyConfirmHost = () => {
     }
   }, React.createElement("span", {
     className: "field-label"
-  }, options.reasonLabel), React.createElement("input", {
+  }, options.reasonLabel), options.reasonOptions && options.reasonOptions.length > 0 ? React.createElement("select", {
+    ref: reasonRef,
+    className: "input",
+    value: reason,
+    onChange: e => setReason(e.target.value),
+    style: {
+      height: 32
+    }
+  }, React.createElement("option", {
+    value: ""
+  }, "\u2014 pick one \u2014"), options.reasonOptions.map(opt => React.createElement("option", {
+    key: opt.value,
+    value: opt.value
+  }, opt.label || opt.value))) : React.createElement("input", {
     ref: reasonRef,
     className: "input",
     value: reason,
@@ -11432,27 +11446,48 @@ var WorklistsPage = () => {
   var orders = window.useEntities('orders');
   var patients = window.useEntities('patients');
   var tests = window.useEntities('tests');
+  var instruments = window.useEntities('instruments');
   var orderById = useMemoOS(() => Object.fromEntries(orders.map(o => [o.id, o])), [orders]);
   var patientById = useMemoOS(() => Object.fromEntries(patients.map(p => [p.id, p])), [patients]);
   var testById = useMemoOS(() => Object.fromEntries(tests.map(t => [t.id, t])), [tests]);
+  var instrumentByKey = useMemoOS(() => {
+    var out = {};
+    for (var inst of instruments) {
+      if (inst.id) out[inst.id] = inst;
+      if (inst.code) out[inst.code] = inst;
+    }
+    return out;
+  }, [instruments]);
+  var labelForRouteKey = key => {
+    if (!key || key === '__unrouted') return 'Unrouted';
+    var inst = instrumentByKey[key];
+    if (inst) return inst.name || inst.code || key;
+    return key;
+  };
   var groups = useMemoOS(() => {
     var g = new Map();
     for (var s of specimens) {
       if (s.state === 'rejected' || s.state === 'completed') continue;
-      var key = s.routedTo || '__unrouted';
+      var raw = s.routedTo || '__unrouted';
+      var inst = instrumentByKey[raw];
+      var key = inst ? inst.id : raw;
       if (!g.has(key)) g.set(key, []);
       g.get(key).push(s);
     }
     return Array.from(g.entries()).map(([key, items]) => ({
       id: key,
-      label: key === '__unrouted' ? 'Unrouted' : key,
+      label: labelForRouteKey(key),
       items: items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
     })).sort((a, b) => {
       if (a.id === '__unrouted') return -1;
       if (b.id === '__unrouted') return 1;
       return a.label.localeCompare(b.label);
     });
-  }, [specimens]);
+  }, [specimens, instrumentByKey]);
+  var routeOptions = useMemoOS(() => [...instruments].filter(i => i.active !== false).sort((a, b) => (a.name || a.code || '').localeCompare(b.name || b.code || '')).map(i => ({
+    value: i.id,
+    label: (i.name || i.code) + (i.code ? ' (' + i.code + ')' : '')
+  })), [instruments]);
   var [selectedKey, setSelectedKey] = useStateOS(null);
   var [checked, setChecked] = useStateOS(() => new Set());
   var selected = groups.find(g => g.id === selectedKey) || groups[0] || null;
@@ -11524,6 +11559,14 @@ var WorklistsPage = () => {
   };
   var bulkRoute = async () => {
     if (checkedSpecimens.length === 0) return;
+    if (routeOptions.length === 0) {
+      await safetyNotice({
+        tone: 'danger',
+        title: 'No instruments configured',
+        message: 'Add at least one instrument in Admin > Instruments before routing specimens.'
+      });
+      return;
+    }
     var ask = await safetyConfirm({
       id: 'worklists.route.batch',
       tone: 'warning',
@@ -11532,7 +11575,7 @@ var WorklistsPage = () => {
       facts: [safetyFact('selected', checkedSpecimens.length), safetyFact('first accessions', checkedSpecimens.slice(0, 8).map(s => s.accessionNumber || s.id.slice(-6)).join(', '))],
       requireReason: true,
       reasonLabel: 'Route to',
-      reasonDefault: 'cobas-c303',
+      reasonOptions: routeOptions,
       entityType: 'specimen',
       entityId: 'batch',
       confirmLabel: 'Route batch'
@@ -11570,6 +11613,15 @@ var WorklistsPage = () => {
     setChecked(new Set());
   };
   var releaseToInstrument = async specimen => {
+    if (routeOptions.length === 0) {
+      await safetyNotice({
+        tone: 'danger',
+        title: 'No instruments configured',
+        message: 'Add at least one instrument in Admin > Instruments before routing specimens.'
+      });
+      return;
+    }
+    var currentInst = specimen.routedTo ? instrumentByKey[specimen.routedTo] : null;
     var ask = await safetyConfirm({
       id: 'worklists.route.single',
       tone: 'info',
@@ -11578,7 +11630,8 @@ var WorklistsPage = () => {
       facts: factsForSpecimen(specimen),
       requireReason: true,
       reasonLabel: 'Route to',
-      reasonDefault: specimen.routedTo || 'cobas-c303',
+      reasonOptions: routeOptions,
+      reasonDefault: currentInst ? currentInst.id : '',
       entityType: 'specimen',
       entityId: specimen.id,
       confirmLabel: 'Route',

@@ -264,30 +264,66 @@ const WorklistsPage = () => {
   const orders = window.useEntities('orders');
   const patients = window.useEntities('patients');
   const tests = window.useEntities('tests');
+  const instruments = window.useEntities('instruments');
   const orderById = useMemoOS(() => Object.fromEntries(orders.map(o => [o.id, o])), [orders]);
   const patientById = useMemoOS(() => Object.fromEntries(patients.map(p => [p.id, p])), [patients]);
   const testById = useMemoOS(() => Object.fromEntries(tests.map(t => [t.id, t])), [tests]);
 
-  // Group specimens by routedTo (analyzers/labs). The "Unrouted" bucket
-  // holds anything received but not yet routed.
+  // Build a routedTo → instrument lookup that handles BOTH key formats:
+  // some specimens were routed by id (`inst_xxx` from the seeder), others
+  // by code (`cobas-c303` from the route modal's old freeform input). Both
+  // resolve to the same instrument record so the worklist UI shows one
+  // queue per analyzer regardless of how the routing was authored.
+  const instrumentByKey = useMemoOS(() => {
+    const out = {};
+    for (const inst of instruments) {
+      if (inst.id) out[inst.id] = inst;
+      if (inst.code) out[inst.code] = inst;
+    }
+    return out;
+  }, [instruments]);
+
+  const labelForRouteKey = (key) => {
+    if (!key || key === '__unrouted') return 'Unrouted';
+    const inst = instrumentByKey[key];
+    if (inst) return inst.name || inst.code || key;
+    return key;  // fallback — operator-typed string we can't resolve
+  };
+
+  // Group specimens by routedTo (analyzers/labs). Specimens that share an
+  // instrument via either id or code are merged into a single bucket keyed
+  // by the canonical instrument id, so seeded + operator-routed specimens
+  // for the same analyzer don't fork into two queues.
   const groups = useMemoOS(() => {
     const g = new Map();
     for (const s of specimens) {
       if (s.state === 'rejected' || s.state === 'completed') continue;
-      const key = s.routedTo || '__unrouted';
+      const raw = s.routedTo || '__unrouted';
+      const inst = instrumentByKey[raw];
+      const key = inst ? inst.id : raw;  // canonicalize to instrument id
       if (!g.has(key)) g.set(key, []);
       g.get(key).push(s);
     }
     return Array.from(g.entries()).map(([key, items]) => ({
       id: key,
-      label: key === '__unrouted' ? 'Unrouted' : key,
+      label: labelForRouteKey(key),
       items: items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)),
     })).sort((a, b) => {
       if (a.id === '__unrouted') return -1;
       if (b.id === '__unrouted') return 1;
       return a.label.localeCompare(b.label);
     });
-  }, [specimens]);
+  }, [specimens, instrumentByKey]);
+
+  // Build the dropdown options once for the route modals — instrument records
+  // sorted by name. Submit value is the instrument id (canonical) so all
+  // future route operations land in the same bucket as the seeder.
+  const routeOptions = useMemoOS(() =>
+    [...instruments]
+      .filter(i => i.active !== false)
+      .sort((a, b) => (a.name || a.code || '').localeCompare(b.name || b.code || ''))
+      .map(i => ({ value: i.id, label: (i.name || i.code) + (i.code ? ' (' + i.code + ')' : '') })),
+    [instruments]);
 
   const [selectedKey, setSelectedKey] = useStateOS(null);
   const [checked, setChecked] = useStateOS(() => new Set());
@@ -358,6 +394,14 @@ const WorklistsPage = () => {
 
   const bulkRoute = async () => {
     if (checkedSpecimens.length === 0) return;
+    if (routeOptions.length === 0) {
+      await safetyNotice({
+        tone: 'danger',
+        title: 'No instruments configured',
+        message: 'Add at least one instrument in Admin > Instruments before routing specimens.',
+      });
+      return;
+    }
     const ask = await safetyConfirm({
       id: 'worklists.route.batch',
       tone: 'warning',
@@ -369,7 +413,7 @@ const WorklistsPage = () => {
       ],
       requireReason: true,
       reasonLabel: 'Route to',
-      reasonDefault: 'cobas-c303',
+      reasonOptions: routeOptions,
       entityType: 'specimen',
       entityId: 'batch',
       confirmLabel: 'Route batch',
@@ -412,6 +456,18 @@ const WorklistsPage = () => {
   };
 
   const releaseToInstrument = async (specimen) => {
+    if (routeOptions.length === 0) {
+      await safetyNotice({
+        tone: 'danger',
+        title: 'No instruments configured',
+        message: 'Add at least one instrument in Admin > Instruments before routing specimens.',
+      });
+      return;
+    }
+    // Pre-select the specimen's current routedTo if it resolves to a known
+    // instrument — handy for re-routes. Falls through to "— pick one —" if
+    // unresolvable so the operator can't accidentally re-confirm a stale id.
+    const currentInst = specimen.routedTo ? instrumentByKey[specimen.routedTo] : null;
     const ask = await safetyConfirm({
       id: 'worklists.route.single',
       tone: 'info',
@@ -420,7 +476,8 @@ const WorklistsPage = () => {
       facts: factsForSpecimen(specimen),
       requireReason: true,
       reasonLabel: 'Route to',
-      reasonDefault: specimen.routedTo || 'cobas-c303',
+      reasonOptions: routeOptions,
+      reasonDefault: currentInst ? currentInst.id : '',
       entityType: 'specimen',
       entityId: specimen.id,
       confirmLabel: 'Route',
