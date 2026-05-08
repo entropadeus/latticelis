@@ -65,13 +65,21 @@ const UsersPage = ({ onBack }) => {
     return out;
   }, [users]);
 
+  // Password fields are draft-only — never store plaintext on the user record.
+  // On save, auth.setPassword does the hashing + persistence to passwordHash/Salt.
+  // For new users: password is required (else they can't log in).
+  // For existing users: blank means "leave existing hash alone."
+  const [showPw, setShowPw] = useStateOS(false);
+
   const startNew = () => {
     setEditingId(null);
     setDraft({
       firstName: '', lastName: '', username: '', email: '',
       credentials: [], roles: [], facilityIds: [], status: 'ACTIVE',
+      password: '', confirmPassword: '',
     });
     setCredInput('');
+    setShowPw(false);
   };
   const startEdit = (u) => {
     setEditingId(u.id);
@@ -84,10 +92,12 @@ const UsersPage = ({ onBack }) => {
       roles: Array.isArray(u.roles) ? [...u.roles] : [],
       facilityIds: Array.isArray(u.facilityIds) ? [...u.facilityIds] : [],
       status: u.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+      password: '', confirmPassword: '',
     });
     setCredInput('');
+    setShowPw(false);
   };
-  const cancel = () => { setEditingId(null); setDraft(null); setCredInput(''); };
+  const cancel = () => { setEditingId(null); setDraft(null); setCredInput(''); setShowPw(false); };
 
   const toggleRole = (roleId) => {
     setDraft(d => {
@@ -113,8 +123,58 @@ const UsersPage = ({ onBack }) => {
 
   const save = async () => {
     if (!draft || !draft.firstName.trim() || !draft.lastName.trim()) return;
+    if (!draft.username.trim()) {
+      await safetyNotice({ tone: 'warning', title: 'Username required', message: 'Pick a username — it\'s what the operator types at sign-in.' });
+      return;
+    }
     if (draft.roles.length === 0) {
       await safetyNotice({ tone: 'warning', title: 'No roles selected', message: 'Pick at least one role so this user can do something.' });
+      return;
+    }
+    // Password rules:
+    //   New user: REQUIRED (otherwise they can't log in — login returns
+    //     `no_password` and the operator has no path forward).
+    //   Existing user: blank means "leave the current hash alone." Filled
+    //     means "rotate the password to this value." Both fields must
+    //     match when filled.
+    const wantsPasswordChange = !!draft.password;
+    if (!editingId && !wantsPasswordChange) {
+      await safetyNotice({
+        tone: 'warning',
+        title: 'Password required',
+        message: 'New users need a password set at create time, or they can\'t sign in. Use the field below the roster.',
+      });
+      return;
+    }
+    if (wantsPasswordChange) {
+      if (draft.password.length < 4) {
+        await safetyNotice({
+          tone: 'warning',
+          title: 'Password too short',
+          message: 'Set a password of at least 4 characters. Stronger is better — this is browser-prototype hashing.',
+        });
+        return;
+      }
+      if (draft.password !== draft.confirmPassword) {
+        await safetyNotice({
+          tone: 'warning',
+          title: 'Passwords don\'t match',
+          message: 'The password and confirm fields differ — retype them so they line up.',
+        });
+        return;
+      }
+    }
+    // Username uniqueness — case-insensitive, since auth.verify is case-insensitive.
+    const usernameLower = draft.username.trim().toLowerCase();
+    const conflict = users.find(u =>
+      (u.username || '').toLowerCase() === usernameLower &&
+      (!editingId || u.id !== editingId));
+    if (conflict) {
+      await safetyNotice({
+        tone: 'danger',
+        title: 'Username already taken',
+        message: `Another user (${conflict.firstName} ${conflict.lastName}) already uses ${draft.username}. Pick a different one.`,
+      });
       return;
     }
     const ask = await safetyConfirm({
@@ -130,20 +190,61 @@ const UsersPage = ({ onBack }) => {
         safetyFact('roles', (draft.roles || []).join(', ') || 'none'),
         safetyFact('credentials', (draft.credentials || []).join(', ') || 'none'),
         safetyFact('status', draft.status),
+        safetyFact('password', wantsPasswordChange
+          ? (editingId ? 'rotating to a new password' : 'setting initial password')
+          : 'unchanged'),
       ],
       entityType: 'user',
       entityId: editingId || 'new',
       confirmLabel: editingId ? 'Save user' : 'Create user',
     });
     if (!ask.confirmed) return;
-    let init = { ...draft };
+
+    // Strip the plaintext draft fields so they never reach the user record.
+    const { password, confirmPassword, ...persistable } = draft;
+    let init = persistable;
     if (editingId) {
       const fresh = await window.db.get('users', editingId);
-      init = { ...(fresh || {}), ...draft, id: editingId };
+      init = { ...(fresh || {}), ...persistable, id: editingId };
     }
     const record = window.schema.newUser(init);
     await window.db.put('users', record);
+
+    // Hash + persist the password AFTER the record exists, since auth.setPassword
+    // reads the user back via window.db.get to set the hash on a known-real record.
+    if (wantsPasswordChange && window.auth && window.auth.setPassword) {
+      try {
+        await window.auth.setPassword(record.id, password);
+      } catch (e) {
+        console.error('[users] setPassword failed', e);
+        await safetyNotice({
+          tone: 'danger',
+          title: 'Password not set',
+          message: 'The user record saved, but hashing the password failed: ' + (e.message || 'unknown error') + '. Edit and retry.',
+        });
+        return;
+      }
+    }
     cancel();
+  };
+
+  const clearPasswordFor = async (u) => {
+    if (!u || !window.auth || !window.auth.clearPassword) return;
+    const ask = await safetyConfirm({
+      id: 'admin.users.clear_password',
+      tone: 'warning',
+      title: 'Clear password',
+      message: 'After clearing, this user cannot sign in until an admin sets a new password. Use this when an account is compromised or the password needs reset.',
+      facts: [
+        safetyFact('name', `${u.firstName} ${u.lastName}`),
+        safetyFact('username', u.username),
+      ],
+      entityType: 'user',
+      entityId: u.id,
+      confirmLabel: 'Clear password',
+    });
+    if (!ask.confirmed) return;
+    await window.auth.clearPassword(u.id);
   };
 
   const deactivate = async (u) => {
@@ -374,6 +475,70 @@ const UsersPage = ({ onBack }) => {
                   onChange={e => setDraft(d => ({ ...d, email: e.target.value }))}
                   placeholder="alex@lab.example"/>
               </div>
+            </div>
+
+            {/* Password — required at create, optional at edit (blank keeps existing).
+                Stored only in draft state; auth.setPassword does the hashing on save. */}
+            <div style={{ marginBottom: 10, padding: '10px 12px', background: 'var(--ivory-50)', border: '1px solid var(--line-soft)', borderRadius: 5 }}>
+              <div className="section-title" style={{ fontSize: 10, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>{editingExisting ? 'Reset password' : 'Set password'}</span>
+                {!editingExisting && <span style={{ color: 'var(--rust, #B5462E)', textTransform: 'none', letterSpacing: 0 }}>· required</span>}
+                {editingExisting && (
+                  <span style={{ color: 'var(--ink-300)', textTransform: 'none', letterSpacing: 0 }}>
+                    · leave blank to keep current
+                  </span>
+                )}
+                <span style={{ flex: 1 }}/>
+                {editingExisting && editingUser && window.auth && window.auth.hasPassword(editingUser) && (
+                  <span className="pill" data-tone="sage" style={{ fontSize: 9.5 }}>password set</span>
+                )}
+                {editingExisting && editingUser && window.auth && !window.auth.hasPassword(editingUser) && (
+                  <span className="pill" data-tone="amber" style={{ fontSize: 9.5 }}>no password</span>
+                )}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div style={{ position: 'relative' }}>
+                  <input className="input" type={showPw ? 'text' : 'password'}
+                    placeholder={editingExisting ? '••••••••' : 'min 4 characters'}
+                    value={draft.password}
+                    autoComplete="new-password"
+                    onChange={e => setDraft(d => ({ ...d, password: e.target.value }))}
+                    style={{ width: '100%', paddingRight: 50 }}/>
+                  <button type="button"
+                    onClick={() => setShowPw(s => !s)}
+                    style={{
+                      position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                      border: 0, background: 'transparent', cursor: 'pointer',
+                      color: 'var(--ink-400)', fontSize: 10.5, padding: 4, lineHeight: 1,
+                    }}
+                    tabIndex={-1}
+                    title={showPw ? 'Hide' : 'Show'}>
+                    {showPw ? 'hide' : 'show'}
+                  </button>
+                </div>
+                <input className="input" type={showPw ? 'text' : 'password'}
+                  placeholder="confirm"
+                  value={draft.confirmPassword}
+                  autoComplete="new-password"
+                  onChange={e => setDraft(d => ({ ...d, confirmPassword: e.target.value }))}/>
+              </div>
+              {draft.password && draft.confirmPassword && draft.password !== draft.confirmPassword && (
+                <div style={{ fontSize: 10.5, color: 'var(--err-700, #B5462E)', marginTop: 4 }}>
+                  passwords don't match yet
+                </div>
+              )}
+              {editingExisting && editingUser && window.auth && window.auth.hasPassword(editingUser) && (
+                <div style={{ marginTop: 6 }}>
+                  <button type="button"
+                    onClick={() => clearPasswordFor(editingUser)}
+                    style={{
+                      border: 0, background: 'transparent', cursor: 'pointer', padding: 0,
+                      fontSize: 10.5, color: 'var(--ink-500)', textDecoration: 'underline',
+                    }}>
+                    Clear password (force admin reset before next sign-in)
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Credentials chip input */}
