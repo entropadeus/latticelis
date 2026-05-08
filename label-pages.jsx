@@ -1,8 +1,41 @@
 const SPECIMEN_TYPE_OPTIONS = ['', 'serum', 'plasma', 'whole_blood', 'urine', 'csf', 'swab', 'tissue', 'other'];
-// 2x1 @ 203 dpi default. Barcode at top, then patient line, then identifiers and order.
-// Mirrors the inline default in labels.js so a fresh template prints within ^LL203
-// instead of running 7+ dots past the configured length and wrapping to a second label.
-const DEFAULT_ZPL_BODY = '^XA\n^MMT\n^PW406\n^LL203\n^LH0,0\n^FO12,8\n^BY2,2.5,50\n^BCN,50,Y,N,N\n^FD{accession}^FS\n^FO12,75^A0N,22,22^FD{patient_line}^FS\n^FO12,103^A0N,18,18^FDMRN {mrn}  DOB {dob}  {sex}  {age}y^FS\n^FO12,125^A0N,18,18^FD{type}  ·  {container}^FS\n^FO12,147^A0N,18,18^FDTESTS: {tests}^FS\n^FO12,170^A0N,16,16^FDORD {order_number}^FS\n^XZ';
+
+// Default ZPL bodies, one per orientation. Coordinates inside each body are
+// orientation-specific — flipping width↔height alone does NOT rotate the
+// design, so we keep two canonical layouts and let the operator pick.
+//
+// `__forceLabelDimensions` in labels.js overwrites the ^PW / ^LL in either
+// body with `template.width * dpi` / `template.height * dpi` at print time,
+// so the strings below carry the dimensions just for human-readability and
+// for the in-form preview. The actual print boundary is the form values.
+
+// Landscape 2×1 @ 203 dpi. Barcode left, text rows climbing on the right.
+// Bottom of last text baseline at y=186, comfortably inside ^LL203.
+const LANDSCAPE_DEFAULT_ZPL_BODY = '^XA\n^MMT\n^PW406\n^LL203\n^LH0,0\n^FO12,8\n^BY2,2.5,50\n^BCN,50,Y,N,N\n^FD{accession}^FS\n^FO12,75^A0N,22,22^FD{patient_line}^FS\n^FO12,103^A0N,18,18^FDMRN {mrn}  DOB {dob}  {sex}  {age}y^FS\n^FO12,125^A0N,18,18^FD{type}  ·  {container}^FS\n^FO12,147^A0N,18,18^FDTESTS: {tests}^FS\n^FO12,170^A0N,16,16^FDORD {order_number}^FS\n^XZ';
+
+// Portrait 1×2 @ 203 dpi. Barcode at top, patient block, IDs, specimen,
+// tests, order at the bottom. Coordinates target 203w × 406h dots; last
+// baseline at y=390, inside ^LL406.
+const PORTRAIT_DEFAULT_ZPL_BODY = '^XA\n^MMT\n^PW203\n^LL406\n^LH0,0\n^FO8,8\n^BY2,2.5,80\n^BCN,80,Y,N,N\n^FD{accession}^FS\n^FO8,118^A0N,18,18^FD{patient_line}^FS\n^FO8,148^A0N,14,14^FDMRN {mrn}^FS\n^FO8,168^A0N,14,14^FD{dob} {sex} {age}y^FS\n^FO8,196^A0N,16,16^FD{type}^FS\n^FO8,218^A0N,14,14^FD{container}^FS\n^FO8,250^A0N,12,12^FDTESTS^FS\n^FO8,268^A0N,16,16^FD{tests}^FS\n^FO8,378^A0N,12,12^FDORD {order_number}^FS\n^XZ';
+
+// Portrait is the new default for new templates — most lab tubes are read
+// vertically, and a portrait label sticks straight on the front of a tube
+// without the "wrap-around then rotate-the-tube-to-read" workflow.
+const DEFAULT_ZPL_BODY = PORTRAIT_DEFAULT_ZPL_BODY;
+
+// Derive orientation from current dimensions. Used to pick the matching
+// default body when the operator clicks "Reset layout."
+const __orientationOf = (width, height) => {
+  const w = Number(width) || 0;
+  const h = Number(height) || 0;
+  if (h > w) return 'portrait';
+  if (w > h) return 'landscape';
+  return 'square';  // edge case — neither default fits perfectly; keep current body
+};
+const __defaultBodyFor = (orientation) =>
+  orientation === 'portrait' ? PORTRAIT_DEFAULT_ZPL_BODY :
+  orientation === 'landscape' ? LANDSCAPE_DEFAULT_ZPL_BODY :
+  PORTRAIT_DEFAULT_ZPL_BODY;
 
 const LabelsPage = ({ onBack }) => {
   const all = window.useEntities('label_templates');
@@ -21,7 +54,8 @@ const LabelsPage = ({ onBack }) => {
 
   const startNew = () => {
     setEditingId(null);
-    setDraft({ code: '', name: '', specimenType: '', testCode: '', width: 2.0, height: 1.0, dpi: 203, zpl: DEFAULT_ZPL_BODY, printerEndpoint: '', notes: '', active: true });
+    // Portrait by default — width 1.0", height 2.0".
+    setDraft({ code: '', name: '', specimenType: '', testCode: '', width: 1.0, height: 2.0, dpi: 203, zpl: PORTRAIT_DEFAULT_ZPL_BODY, printerEndpoint: '', notes: '', active: true });
   };
   const startEdit = (t) => {
     setEditingId(t.id);
@@ -224,6 +258,51 @@ const LabelsPage = ({ onBack }) => {
                   <input className="input mono" value={draft.testCode} onChange={e => setDraft({ ...draft, testCode: e.target.value.toUpperCase() })} placeholder="empty = all tests"/>
                 </CatalogField>
               </div>
+              {/* Orientation toggle: derives current orientation from width/height
+                  and lets the operator flip with a click (swaps the two values).
+                  After a flip, the existing ZPL body's coords almost certainly
+                  don't fit the new dims — the "Reset layout" link below the
+                  template body offers the matching default. */}
+              {(() => {
+                const current = __orientationOf(draft.width, draft.height);
+                const flip = () => {
+                  setDraft({ ...draft, width: draft.height, height: draft.width });
+                };
+                return (
+                  <CatalogField label="Orientation">
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                      <button type="button"
+                        onClick={current === 'portrait' ? null : flip}
+                        className="pill"
+                        data-tone={current === 'portrait' ? 'sage' : 'ghost'}
+                        style={{
+                          fontSize: 11, padding: '4px 10px',
+                          cursor: current === 'portrait' ? 'default' : 'pointer',
+                          border: 'none',
+                          opacity: current === 'portrait' ? 1 : 0.7,
+                        }}>
+                        {current === 'portrait' ? '✓ Portrait' : 'Portrait'}
+                      </button>
+                      <button type="button"
+                        onClick={current === 'landscape' ? null : flip}
+                        className="pill"
+                        data-tone={current === 'landscape' ? 'sage' : 'ghost'}
+                        style={{
+                          fontSize: 11, padding: '4px 10px',
+                          cursor: current === 'landscape' ? 'default' : 'pointer',
+                          border: 'none',
+                          opacity: current === 'landscape' ? 1 : 0.7,
+                        }}>
+                        {current === 'landscape' ? '✓ Landscape' : 'Landscape'}
+                      </button>
+                      <span style={{ flex: 1 }}/>
+                      <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>
+                        {Number(draft.width || 0)}″ × {Number(draft.height || 0)}″
+                      </span>
+                    </div>
+                  </CatalogField>
+                );
+              })()}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                 <CatalogField label="Width (in)">
                   <input className="input mono tnum" type="number" step="0.1" value={draft.width} onChange={e => setDraft({ ...draft, width: e.target.value })}/>
@@ -243,9 +322,46 @@ const LabelsPage = ({ onBack }) => {
                   onChange={e => setDraft({ ...draft, zpl: e.target.value })}
                   style={{ height: 'auto', padding: 8, resize: 'vertical', fontSize: 11.5 }}/>
               </CatalogField>
-              <div style={{ fontSize: 10.5, color: 'var(--ink-400)', marginTop: -6, marginBottom: 10 }}>
-                Placeholders: <span className="mono">{'{patient_line} {mrn} {dob} {sex} {age} {type} {container} {tests} {order_number} {accession}'}</span>
-              </div>
+              {/* Body-vs-orientation heuristic: parse ^PW / ^LL out of the body
+                  and compare to current dimensions. When they don't match, the
+                  body was designed for a different aspect ratio and the print
+                  output will likely truncate or overflow (on top of the
+                  __forceLabelDimensions override which only fixes the boundary
+                  marker, not the field coordinates). Surfaces a "Reset layout"
+                  link that swaps in the matching default. */}
+              {(() => {
+                const orient = __orientationOf(draft.width, draft.height);
+                const bodyMatch = /\^PW(\d+).*?\^LL(\d+)/s.exec(draft.zpl || '');
+                const bodyW = bodyMatch ? Number(bodyMatch[1]) : null;
+                const bodyH = bodyMatch ? Number(bodyMatch[2]) : null;
+                const expectedW = Math.round(Number(draft.width || 0) * Number(draft.dpi || 0));
+                const expectedH = Math.round(Number(draft.height || 0) * Number(draft.dpi || 0));
+                const mismatch = bodyW != null && bodyH != null
+                  && (bodyW !== expectedW || bodyH !== expectedH);
+                const applyDefault = () => {
+                  const next = __defaultBodyFor(orient);
+                  setDraft({ ...draft, zpl: next });
+                };
+                return (
+                  <div style={{ marginTop: -6, marginBottom: 10, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <div style={{ flex: 1, fontSize: 10.5, color: 'var(--ink-400)' }}>
+                      Placeholders: <span className="mono">{'{patient_line} {mrn} {dob} {sex} {age} {type} {container} {tests} {order_number} {accession}'}</span>
+                      {mismatch && (
+                        <div style={{ marginTop: 4, color: 'var(--warn-700, #B5462E)', fontSize: 10.5 }}>
+                          Body ^PW{bodyW}/^LL{bodyH} doesn't match {expectedW}×{expectedH}. The ZPL output forces the dimensions but field coords will likely fall outside the printable region — reset to the {orient} default if you don't have a custom layout.
+                        </div>
+                      )}
+                    </div>
+                    <button type="button"
+                      onClick={applyDefault}
+                      className="btn" data-size="xs"
+                      style={{ flexShrink: 0 }}
+                      title={`Replace body with the canonical ${orient} default`}>
+                      Reset to {orient} default
+                    </button>
+                  </div>
+                );
+              })()}
               <CatalogField label="Active">
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--ink-700)' }}>
                   <input type="checkbox" checked={draft.active} onChange={e => setDraft({ ...draft, active: e.target.checked })}/>

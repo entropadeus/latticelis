@@ -16225,7 +16225,17 @@ var LocationsPage = ({
 
 // ---- label-pages.jsx ----
 var SPECIMEN_TYPE_OPTIONS = ['', 'serum', 'plasma', 'whole_blood', 'urine', 'csf', 'swab', 'tissue', 'other'];
-var DEFAULT_ZPL_BODY = '^XA\n^MMT\n^PW406\n^LL203\n^LH0,0\n^FO12,8\n^BY2,2.5,50\n^BCN,50,Y,N,N\n^FD{accession}^FS\n^FO12,75^A0N,22,22^FD{patient_line}^FS\n^FO12,103^A0N,18,18^FDMRN {mrn}  DOB {dob}  {sex}  {age}y^FS\n^FO12,125^A0N,18,18^FD{type}  ·  {container}^FS\n^FO12,147^A0N,18,18^FDTESTS: {tests}^FS\n^FO12,170^A0N,16,16^FDORD {order_number}^FS\n^XZ';
+var LANDSCAPE_DEFAULT_ZPL_BODY = '^XA\n^MMT\n^PW406\n^LL203\n^LH0,0\n^FO12,8\n^BY2,2.5,50\n^BCN,50,Y,N,N\n^FD{accession}^FS\n^FO12,75^A0N,22,22^FD{patient_line}^FS\n^FO12,103^A0N,18,18^FDMRN {mrn}  DOB {dob}  {sex}  {age}y^FS\n^FO12,125^A0N,18,18^FD{type}  ·  {container}^FS\n^FO12,147^A0N,18,18^FDTESTS: {tests}^FS\n^FO12,170^A0N,16,16^FDORD {order_number}^FS\n^XZ';
+var PORTRAIT_DEFAULT_ZPL_BODY = '^XA\n^MMT\n^PW203\n^LL406\n^LH0,0\n^FO8,8\n^BY2,2.5,80\n^BCN,80,Y,N,N\n^FD{accession}^FS\n^FO8,118^A0N,18,18^FD{patient_line}^FS\n^FO8,148^A0N,14,14^FDMRN {mrn}^FS\n^FO8,168^A0N,14,14^FD{dob} {sex} {age}y^FS\n^FO8,196^A0N,16,16^FD{type}^FS\n^FO8,218^A0N,14,14^FD{container}^FS\n^FO8,250^A0N,12,12^FDTESTS^FS\n^FO8,268^A0N,16,16^FD{tests}^FS\n^FO8,378^A0N,12,12^FDORD {order_number}^FS\n^XZ';
+var DEFAULT_ZPL_BODY = PORTRAIT_DEFAULT_ZPL_BODY;
+var __orientationOf = (width, height) => {
+  var w = Number(width) || 0;
+  var h = Number(height) || 0;
+  if (h > w) return 'portrait';
+  if (w > h) return 'landscape';
+  return 'square';
+};
+var __defaultBodyFor = orientation => orientation === 'portrait' ? PORTRAIT_DEFAULT_ZPL_BODY : orientation === 'landscape' ? LANDSCAPE_DEFAULT_ZPL_BODY : PORTRAIT_DEFAULT_ZPL_BODY;
 var LabelsPage = ({
   onBack
 }) => {
@@ -16246,10 +16256,10 @@ var LabelsPage = ({
       name: '',
       specimenType: '',
       testCode: '',
-      width: 2.0,
-      height: 1.0,
+      width: 1.0,
+      height: 2.0,
       dpi: 203,
-      zpl: DEFAULT_ZPL_BODY,
+      zpl: PORTRAIT_DEFAULT_ZPL_BODY,
       printerEndpoint: '',
       notes: '',
       active: true
@@ -16626,7 +16636,59 @@ var LabelsPage = ({
       testCode: e.target.value.toUpperCase()
     }),
     placeholder: "empty = all tests"
-  }))), React.createElement("div", {
+  }))), (() => {
+    var current = __orientationOf(draft.width, draft.height);
+    var flip = () => {
+      setDraft({
+        ...draft,
+        width: draft.height,
+        height: draft.width
+      });
+    };
+    return React.createElement(CatalogField, {
+      label: "Orientation"
+    }, React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 4,
+        alignItems: 'center'
+      }
+    }, React.createElement("button", {
+      type: "button",
+      onClick: current === 'portrait' ? null : flip,
+      className: "pill",
+      "data-tone": current === 'portrait' ? 'sage' : 'ghost',
+      style: {
+        fontSize: 11,
+        padding: '4px 10px',
+        cursor: current === 'portrait' ? 'default' : 'pointer',
+        border: 'none',
+        opacity: current === 'portrait' ? 1 : 0.7
+      }
+    }, current === 'portrait' ? '✓ Portrait' : 'Portrait'), React.createElement("button", {
+      type: "button",
+      onClick: current === 'landscape' ? null : flip,
+      className: "pill",
+      "data-tone": current === 'landscape' ? 'sage' : 'ghost',
+      style: {
+        fontSize: 11,
+        padding: '4px 10px',
+        cursor: current === 'landscape' ? 'default' : 'pointer',
+        border: 'none',
+        opacity: current === 'landscape' ? 1 : 0.7
+      }
+    }, current === 'landscape' ? '✓ Landscape' : 'Landscape'), React.createElement("span", {
+      style: {
+        flex: 1
+      }
+    }), React.createElement("span", {
+      className: "mono",
+      style: {
+        fontSize: 10.5,
+        color: 'var(--ink-400)'
+      }
+    }, Number(draft.width || 0), "\u2033 \xD7 ", Number(draft.height || 0), "\u2033")));
+  })(), React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: '1fr 1fr 1fr',
@@ -16690,16 +16752,54 @@ var LabelsPage = ({
       resize: 'vertical',
       fontSize: 11.5
     }
-  })), React.createElement("div", {
-    style: {
-      fontSize: 10.5,
-      color: 'var(--ink-400)',
-      marginTop: -6,
-      marginBottom: 10
-    }
-  }, "Placeholders: ", React.createElement("span", {
-    className: "mono"
-  }, '{patient_line} {mrn} {dob} {sex} {age} {type} {container} {tests} {order_number} {accession}')), React.createElement(CatalogField, {
+  })), (() => {
+    var orient = __orientationOf(draft.width, draft.height);
+    var bodyMatch = /\^PW(\d+).*?\^LL(\d+)/s.exec(draft.zpl || '');
+    var bodyW = bodyMatch ? Number(bodyMatch[1]) : null;
+    var bodyH = bodyMatch ? Number(bodyMatch[2]) : null;
+    var expectedW = Math.round(Number(draft.width || 0) * Number(draft.dpi || 0));
+    var expectedH = Math.round(Number(draft.height || 0) * Number(draft.dpi || 0));
+    var mismatch = bodyW != null && bodyH != null && (bodyW !== expectedW || bodyH !== expectedH);
+    var applyDefault = () => {
+      var next = __defaultBodyFor(orient);
+      setDraft({
+        ...draft,
+        zpl: next
+      });
+    };
+    return React.createElement("div", {
+      style: {
+        marginTop: -6,
+        marginBottom: 10,
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 8
+      }
+    }, React.createElement("div", {
+      style: {
+        flex: 1,
+        fontSize: 10.5,
+        color: 'var(--ink-400)'
+      }
+    }, "Placeholders: ", React.createElement("span", {
+      className: "mono"
+    }, '{patient_line} {mrn} {dob} {sex} {age} {type} {container} {tests} {order_number} {accession}'), mismatch && React.createElement("div", {
+      style: {
+        marginTop: 4,
+        color: 'var(--warn-700, #B5462E)',
+        fontSize: 10.5
+      }
+    }, "Body ^PW", bodyW, "/^LL", bodyH, " doesn't match ", expectedW, "\xD7", expectedH, ". The ZPL output forces the dimensions but field coords will likely fall outside the printable region \u2014 reset to the ", orient, " default if you don't have a custom layout.")), React.createElement("button", {
+      type: "button",
+      onClick: applyDefault,
+      className: "btn",
+      "data-size": "xs",
+      style: {
+        flexShrink: 0
+      },
+      title: `Replace body with the canonical ${orient} default`
+    }, "Reset to ", orient, " default"));
+  })(), React.createElement(CatalogField, {
     label: "Active"
   }, React.createElement("label", {
     style: {
