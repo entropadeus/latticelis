@@ -205,7 +205,25 @@ const ReportsPage = () => {
                         title={canOpen ? `Open ${e.entityType} drawer` : undefined}>
                       <td><span className="mono" style={{ fontSize: 11, color: 'var(--ink-400)' }}>{formatDateTime(e.ts)}</span></td>
                       <td><span className="pill" data-tone={EVENT_TONE[e.type] || 'ghost'}>{EVENT_LABEL[e.type] || e.type}</span></td>
-                      <td><span style={{ fontSize: 11, color: 'var(--ink-500)' }}>{e.actor || 'system'}</span></td>
+                      <td>
+                        <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>
+                          {window.currentUserApi ? window.currentUserApi.displayName(e.actor) : (e.actor || 'system')}
+                        </span>
+                        {/* Frozen role snapshot — shows what the actor was authorized as
+                            at the moment of the event, not what they're authorized as now. */}
+                        {Array.isArray(e.actorRoles) && e.actorRoles.length > 0 && (() => {
+                          const primary = e.actorRoles[0];
+                          const meta = (window.schema && window.schema.ROLE_BY_ID && window.schema.ROLE_BY_ID[primary])
+                            || { tone: 'ghost', label: primary };
+                          return (
+                            <span className="pill" data-tone={meta.tone}
+                              style={{ fontSize: 9.5, marginLeft: 4 }}
+                              title={e.actorRoles.length > 1 ? `+${e.actorRoles.length - 1} more: ${e.actorRoles.slice(1).join(', ')}` : meta.description}>
+                              {meta.label}
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td><span style={{ fontSize: 11.5, color: 'var(--ink-700)' }}>{summarizeEvent(e)}</span></td>
                       <td>
                         {e.entityId ? (

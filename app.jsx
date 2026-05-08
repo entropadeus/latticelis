@@ -120,6 +120,7 @@ const App = () => {
       case 'mappers':     return <MappersPage onBack={() => setActive('admin')}/>;
       case 'qc':          return <QcPage onBack={() => setActive('admin')}/>;
       case 'notifications': return <NotificationsPage onBack={() => setActive('admin')}/>;
+      case 'users':       return <UsersPage onBack={() => setActive('admin')}/>;
       default:            return <DashboardPage/>;
     }
   }, [active, rules, ordersFilterClientId]);

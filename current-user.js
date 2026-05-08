@@ -22,25 +22,38 @@
   // something other than "no user". Both have role hints that align with
   // Appendix A's Role enum (LAB_ASSISTANT, MEDICAL_TECHNOLOGIST).
 
+  // Seed a starter roster on first install. Goes through schema.newUser so
+  // role coercion + status normalization apply consistently with admin-page
+  // creates. Fixed ids (`usr_seed_…`) so existing localStorage `currentUserId`
+  // selections survive and so audit history pre-dating a fresh install
+  // continues to resolve. Roles are spread across the catalog to give the
+  // TAT recipient picker / Users admin page realistic rosters out of the box
+  // without anyone having to hand-create users to see the routing work.
   const seedUsers = async () => {
     const existing = await window.db.list('users').catch(() => []);
-    if (existing.length > 0) return existing;
+    if (existing.length > 0) {
+      // Backfill: if pre-newUser-factory records exist without a status field
+      // or with stale roles, we don't rewrite — admin can edit. Same shape on
+      // either side; callers read defensively.
+      return existing;
+    }
+    const newUser = (window.schema && window.schema.newUser) || ((init) => init);
     const now = Date.now();
-    const u1 = {
-      id: 'usr_seed_alex', username: 'alex', firstName: 'Alex', lastName: 'Tran',
-      credentials: ['MLT'], roles: ['LAB_ASSISTANT'],
-      facilityIds: [], status: 'ACTIVE',
-      createdAt: now, updatedAt: now,
-    };
-    const u2 = {
-      id: 'usr_seed_morgan', username: 'morgan', firstName: 'Morgan', lastName: 'Lee',
-      credentials: ['MT(ASCP)'], roles: ['MEDICAL_TECHNOLOGIST'],
-      facilityIds: [], status: 'ACTIVE',
-      createdAt: now, updatedAt: now,
-    };
-    await window.db.put('users', u1);
-    await window.db.put('users', u2);
-    return [u1, u2];
+    const seeds = [
+      { id: 'usr_seed_director', username: 'rivera', firstName: 'Sam',     lastName: 'Rivera',
+        credentials: ['MD', 'FCAP'], roles: ['LAB_DIRECTOR', 'PATHOLOGIST'], createdAt: now },
+      { id: 'usr_seed_super',    username: 'morgan',  firstName: 'Morgan', lastName: 'Lee',
+        credentials: ['MT(ASCP)'],   roles: ['LAB_SUPERVISOR'],             createdAt: now },
+      { id: 'usr_seed_tech',     username: 'alex',    firstName: 'Alex',   lastName: 'Tran',
+        credentials: ['MLT'],        roles: ['MEDICAL_TECHNOLOGIST'],       createdAt: now },
+      { id: 'usr_seed_assist',   username: 'priya',   firstName: 'Priya',  lastName: 'Patel',
+        credentials: [],             roles: ['LAB_ASSISTANT'],              createdAt: now },
+      { id: 'usr_seed_it',       username: 'jordan',  firstName: 'Jordan', lastName: 'Kim',
+        credentials: [],             roles: ['IT_ADMIN'],                   createdAt: now },
+    ];
+    const records = seeds.map(s => newUser(s));
+    for (const u of records) await window.db.put('users', u);
+    return records;
   };
 
   const refresh = async () => {

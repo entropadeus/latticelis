@@ -599,10 +599,13 @@ const TAT_PRIORITIES = [
   { id: 'routine', label: 'Routine', tone: 'sage',  hint: 'Standard priority — daily ambulatory workflows.' },
 ];
 
-const TAT_RECIPIENT_ROLES = [
-  'LAB_DIRECTOR', 'LAB_SUPERVISOR', 'MEDICAL_TECHNOLOGIST',
-  'LAB_ASSISTANT', 'PATHOLOGIST', 'IT_ADMIN',
-];
+// Source of truth is `window.schema.ROLE_IDS` (populated by schema.js before
+// any JSX executes). Falling back to a hardcoded copy keeps the page from
+// crashing if schema fails to load — the value is a flat array, so a stale
+// list is preferable to a TypeError on first paint.
+const TAT_RECIPIENT_ROLES = (window.schema && Array.isArray(window.schema.ROLE_IDS) && window.schema.ROLE_IDS.length)
+  ? window.schema.ROLE_IDS
+  : ['LAB_DIRECTOR', 'LAB_SUPERVISOR', 'MEDICAL_TECHNOLOGIST', 'LAB_ASSISTANT', 'PATHOLOGIST', 'IT_ADMIN'];
 
 const formatMinutes = (m) => {
   if (m == null || !Number.isFinite(m)) return '—';

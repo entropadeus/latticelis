@@ -486,7 +486,9 @@ const ActivityRow = ({ ev }) => {
         )}
       </div>
       {ev.actor && ev.actor !== 'system' && (
-        <span style={{ fontSize: 10.5, color: 'var(--ink-300)' }}>{ev.actor}</span>
+        <span style={{ fontSize: 10.5, color: 'var(--ink-300)' }}>
+          {window.currentUserApi ? window.currentUserApi.displayName(ev.actor) : ev.actor}
+        </span>
       )}
     </div>
   );

@@ -33,6 +33,7 @@ const jsxFiles = [
   'mapper-pages.jsx',
   'quality-pages.jsx',
   'notification-pages.jsx',
+  'users-pages.jsx',
   'admin-pages.jsx',
   'accessioning.jsx',
   'app.jsx',
