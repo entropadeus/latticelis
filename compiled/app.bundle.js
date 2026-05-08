@@ -14829,6 +14829,7 @@ var TestCatalogPage = ({
       referenceRanges: [],
       criticalEscalationT1Sec: '',
       criticalEscalationT2Sec: '',
+      lotExpirationAmberDays: '',
       active: true
     });
   };
@@ -14848,6 +14849,7 @@ var TestCatalogPage = ({
       })) : [],
       criticalEscalationT1Sec: t.criticalEscalationT1Sec == null ? '' : t.criticalEscalationT1Sec,
       criticalEscalationT2Sec: t.criticalEscalationT2Sec == null ? '' : t.criticalEscalationT2Sec,
+      lotExpirationAmberDays: t.lotExpirationAmberDays == null ? '' : t.lotExpirationAmberDays,
       active: t.active !== false
     });
   };
@@ -14871,6 +14873,7 @@ var TestCatalogPage = ({
       turnaroundMinutes: draft.turnaroundMinutes === '' ? null : Number(draft.turnaroundMinutes),
       criticalEscalationT1Sec: parseSec(draft.criticalEscalationT1Sec),
       criticalEscalationT2Sec: parseSec(draft.criticalEscalationT2Sec),
+      lotExpirationAmberDays: parseSec(draft.lotExpirationAmberDays),
       referenceRanges: (draft.referenceRanges || []).map(r => window.schema.newReferenceRange(r))
     };
     if (editingId) {
@@ -15321,7 +15324,37 @@ var TestCatalogPage = ({
       fontSize: 10.5,
       color: 'var(--ink-400)'
     }
-  }, "Per-test override for unacknowledged critical results. Empty = use global default. T2 must be greater than T1; otherwise both fall back to defaults.")), React.createElement(CatalogField, {
+  }, "Per-test override for unacknowledged critical results. Empty = use global default. T2 must be greater than T1; otherwise both fall back to defaults.")), React.createElement("div", {
+    style: {
+      marginTop: 6,
+      marginBottom: 10,
+      padding: 10,
+      background: 'var(--ivory-50)',
+      border: '1px solid var(--line)',
+      borderRadius: 5
+    }
+  }, React.createElement("div", {
+    className: "section-title",
+    style: {
+      fontSize: 9.5,
+      marginBottom: 6
+    }
+  }, "QC lot expiration warning"), React.createElement(CatalogField, {
+    label: "Amber threshold (days)"
+  }, React.createElement("input", {
+    className: "input mono tnum",
+    placeholder: "default 14",
+    value: draft.lotExpirationAmberDays,
+    onChange: e => setDraft({
+      ...draft,
+      lotExpirationAmberDays: e.target.value
+    })
+  })), React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: 'var(--ink-400)'
+    }
+  }, "Days before a QC lot expires when the watcher should fire the \"expiring soon\" notification. Empty = use global default (14). Useful when this test's reagent has a tighter shelf life than most and the lab wants earlier warning.")), React.createElement(CatalogField, {
     label: "Active"
   }, React.createElement("label", {
     style: {
@@ -17968,9 +18001,10 @@ var QcPage = ({
       reason: ask.reason
     });
   };
-  var lotStatus = level => {
+  var lotStatus = (level, test) => {
     if (!level || !level.lotExpiresAt) return null;
     var days = Math.ceil((level.lotExpiresAt - Date.now()) / (24 * 60 * 60 * 1000));
+    var soonDays = window.lotExpiryWatcher ? window.lotExpiryWatcher.resolveSoonDays(test) : 14;
     if (days < 0) return {
       label: 'Lot EXPIRED ' + -days + 'd ago',
       tone: 'rust',
@@ -17981,7 +18015,7 @@ var QcPage = ({
       tone: 'rust',
       days
     };
-    if (days <= 14) return {
+    if (days <= soonDays) return {
       label: 'Expires in ' + days + 'd',
       tone: 'amber',
       days
@@ -18053,7 +18087,7 @@ var QcPage = ({
     var isSel = activeLevelId === l.id;
     var recent = allResults.filter(r => r.qcLevelId === l.id).sort((a, b) => (b.ranAt || 0) - (a.ranAt || 0))[0];
     var tone = recent ? recent.status === 'out_of_control' ? 'err' : recent.status === 'warn' ? 'warn' : 'ok' : 'idle';
-    var lot = lotStatus(l);
+    var lot = lotStatus(l, t);
     return React.createElement("button", {
       key: l.id,
       type: "button",

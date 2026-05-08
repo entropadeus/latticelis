@@ -339,13 +339,19 @@ const QcPage = ({ onBack }) => {
   };
 
   // Lot expiry status — used to render a per-row pill.
-  // Returns null when the level has no lotExpiresAt set.
-  const lotStatus = (level) => {
+  // Returns null when the level has no lotExpiresAt set, OR when the lot
+  // is comfortably outside the per-test (or default) amber threshold.
+  // Threshold resolution mirrors `lot-expiry-watcher.js __resolveSoonDays`
+  // so the pill and the notification fire on the same boundary.
+  const lotStatus = (level, test) => {
     if (!level || !level.lotExpiresAt) return null;
     const days = Math.ceil((level.lotExpiresAt - Date.now()) / (24 * 60 * 60 * 1000));
+    const soonDays = window.lotExpiryWatcher
+      ? window.lotExpiryWatcher.resolveSoonDays(test)
+      : 14;
     if (days < 0)  return { label: 'Lot EXPIRED ' + (-days) + 'd ago', tone: 'rust',  days };
     if (days === 0) return { label: 'Lot expires today',                tone: 'rust',  days };
-    if (days <= 14) return { label: 'Expires in ' + days + 'd',         tone: 'amber', days };
+    if (days <= soonDays) return { label: 'Expires in ' + days + 'd',   tone: 'amber', days };
     return null;
   };
 
@@ -374,7 +380,7 @@ const QcPage = ({ onBack }) => {
               const isSel = activeLevelId === l.id;
               const recent = allResults.filter(r => r.qcLevelId === l.id).sort((a,b)=>(b.ranAt||0)-(a.ranAt||0))[0];
               const tone = recent ? (recent.status === 'out_of_control' ? 'err' : recent.status === 'warn' ? 'warn' : 'ok') : 'idle';
-              const lot = lotStatus(l);
+              const lot = lotStatus(l, t);
               return (
                 <button key={l.id} type="button" onClick={() => setActiveLevelId(l.id)}
                   style={{
