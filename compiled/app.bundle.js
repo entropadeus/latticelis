@@ -6308,7 +6308,25 @@ var CriticalAlerts = () => {
   var unacked = useMemoCA(() => {
     return results.filter(r => CRITICAL_FLAGS.includes(r.flag) && !r.criticalAckedAt).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [results]);
-  var [collapsed, setCollapsed] = useStateCA(false);
+  var [collapsed, setCollapsed] = useStateCA(() => {
+    try {
+      var saved = window.localStorage.getItem('lattice.criticalAlertsCollapsed');
+      if (saved === 'true') return true;
+      if (saved === 'false') return false;
+    } catch (e) {}
+    return null;
+  });
+  useEffectCA(() => {
+    if (collapsed === null && unacked.length > 0) {
+      setCollapsed(unacked.length > 4);
+    }
+  }, [unacked.length, collapsed]);
+  var setCollapsedPersisted = v => {
+    setCollapsed(v);
+    try {
+      window.localStorage.setItem('lattice.criticalAlertsCollapsed', String(v));
+    } catch (e) {}
+  };
   var ack = async r => {
     var spec = r.specimenId ? specimenById[r.specimenId] : null;
     var pat = spec && spec.patientId ? patientById[spec.patientId] : null;
@@ -6390,9 +6408,10 @@ var CriticalAlerts = () => {
     }
   };
   if (unacked.length === 0) return null;
+  if (collapsed === null) return null;
   if (collapsed) {
     return React.createElement("button", {
-      onClick: () => setCollapsed(false),
+      onClick: () => setCollapsedPersisted(false),
       className: "slide-down",
       style: {
         position: 'fixed',
@@ -6465,7 +6484,7 @@ var CriticalAlerts = () => {
       cursor: 'pointer'
     }
   }, "Ack all"), React.createElement("button", {
-    onClick: () => setCollapsed(true),
+    onClick: () => setCollapsedPersisted(true),
     style: {
       background: 'transparent',
       color: '#fff',
@@ -9952,7 +9971,6 @@ var LoginPage = ({
   var [busy, setBusy] = useStateLP(false);
   var [error, setError] = useStateLP(null);
   var [shakeKey, setShakeKey] = useStateLP(0);
-  var [seedOpen, setSeedOpen] = useStateLP(false);
   var usernameRef = useRefLP(null);
   useEffectLP(() => {
     if (usernameRef.current) usernameRef.current.focus();
@@ -10182,70 +10200,7 @@ var LoginPage = ({
   }), " Signing in\u2026") : 'Sign in'), error && React.createElement("div", {
     className: "login-error",
     role: "alert"
-  }, error)), React.createElement("div", {
-    style: {
-      marginTop: 28,
-      paddingTop: 18,
-      borderTop: '1px solid var(--line-soft)'
-    }
-  }, React.createElement("button", {
-    type: "button",
-    onClick: () => setSeedOpen(o => !o),
-    style: {
-      background: 'transparent',
-      border: 0,
-      cursor: 'pointer',
-      padding: 0,
-      fontSize: 11,
-      color: 'var(--ink-500)',
-      letterSpacing: '0.04em',
-      textTransform: 'uppercase',
-      fontWeight: 500
-    }
-  }, seedOpen ? '− Hide' : '+ Show', " dev seed credentials"), seedOpen && React.createElement("div", {
-    style: {
-      marginTop: 10,
-      padding: '10px 12px',
-      background: 'var(--ivory-100)',
-      border: '1px solid var(--line)',
-      borderRadius: 6,
-      fontSize: 11.5,
-      color: 'var(--ink-500)',
-      lineHeight: 1.7
-    }
-  }, "Each seeded user's default password equals their username:", React.createElement("div", {
-    style: {
-      marginTop: 6,
-      fontFamily: 'var(--font-mono, monospace)',
-      color: 'var(--ink-700)'
-    }
-  }, "rivera / rivera ", React.createElement("span", {
-    style: {
-      color: 'var(--ink-300)'
-    }
-  }, "\xB7 Lab Director + Pathologist"), React.createElement("br", null), "morgan / morgan ", React.createElement("span", {
-    style: {
-      color: 'var(--ink-300)'
-    }
-  }, "\xB7 Lab Supervisor"), React.createElement("br", null), "alex / alex ", React.createElement("span", {
-    style: {
-      color: 'var(--ink-300)'
-    }
-  }, "\xB7 Medical Technologist"), React.createElement("br", null), "priya / priya ", React.createElement("span", {
-    style: {
-      color: 'var(--ink-300)'
-    }
-  }, "\xB7 Lab Assistant"), React.createElement("br", null), "jordan / jordan ", React.createElement("span", {
-    style: {
-      color: 'var(--ink-300)'
-    }
-  }, "\xB7 IT Admin")), React.createElement("div", {
-    style: {
-      marginTop: 8,
-      fontSize: 10.5,
-      color: 'var(--ink-400)'
-    }
-  }, "Change defaults via the Users & Roles admin page."))))));
+  }, error)))));
 };
 window.LoginPage = LoginPage;
 //# sourceURL=login-page.jsx
@@ -10270,25 +10225,33 @@ var DashboardPage = () => {
     return [{
       l: 'Orders today',
       v: ordersToday,
-      i: 'IconOrder'
+      i: 'IconOrder',
+      zeroCaption: 'No orders yet today'
     }, {
       l: 'Specimens in transit',
       v: specimensInTransit,
-      i: 'IconTube'
+      i: 'IconTube',
+      zeroCaption: 'None in transit'
     }, {
       l: 'Results to verify',
       v: resultsToVerify,
-      i: 'IconResults'
+      i: 'IconResults',
+      zeroCaption: 'Queue is clear',
+      zeroIsGood: true
     }, {
       l: 'Critical results',
       v: criticalResults,
       i: 'IconFlag',
-      tone: criticalResults > 0 ? 'rust' : null
+      tone: criticalResults > 0 ? 'rust' : null,
+      zeroCaption: 'All clear',
+      zeroIsGood: true
     }, {
       l: 'Interface alerts',
       v: interfaceAlerts,
       i: 'IconInterface',
-      tone: interfaceAlerts > 0 ? 'amber' : null
+      tone: interfaceAlerts > 0 ? 'amber' : null,
+      zeroCaption: 'All systems healthy',
+      zeroIsGood: true
     }];
   }, [orders, specimens, results, interfaces]);
   return React.createElement(Page, {
@@ -10314,7 +10277,9 @@ var DashboardPage = () => {
   }, kpis.map(k => {
     var Ico = window[k.i];
     var isZero = k.v === 0;
-    var valueColor = isZero ? 'var(--ink-300)' : k.tone === 'rust' ? 'var(--err-700)' : k.tone === 'amber' ? 'var(--warn-700)' : 'var(--ink-900)';
+    var valueColor = isZero ? k.zeroIsGood ? 'var(--sage-600)' : 'var(--ink-300)' : k.tone === 'rust' ? 'var(--err-700)' : k.tone === 'amber' ? 'var(--warn-700)' : 'var(--ink-900)';
+    var captionColor = isZero && k.zeroIsGood ? 'var(--sage-700)' : 'var(--ink-300)';
+    var caption = isZero ? k.zeroCaption || 'No data' : 'Live';
     return React.createElement("div", {
       key: k.l,
       className: "panel",
@@ -10349,10 +10314,10 @@ var DashboardPage = () => {
     }, isZero ? '0' : k.v), React.createElement("div", {
       style: {
         fontSize: 11,
-        color: 'var(--ink-300)',
+        color: captionColor,
         marginTop: 2
       }
-    }, isZero ? 'No data' : 'Live'));
+    }, caption));
   })), React.createElement("div", {
     style: {
       display: 'grid',
@@ -10839,6 +10804,7 @@ var ClientVolumePanel = ({
       key: row.client.id,
       onClick: onClick,
       title: `Open Orders filtered to ${row.client.code} — ${row.client.name}`,
+      className: "dashboard-bar-row",
       style: {
         display: 'grid',
         gridTemplateColumns: '90px 1fr 60px 60px',
@@ -10849,12 +10815,6 @@ var ClientVolumePanel = ({
         borderRadius: 4,
         cursor: 'pointer',
         transition: 'background 80ms linear'
-      },
-      onMouseEnter: e => {
-        e.currentTarget.style.background = 'var(--ivory-100)';
-      },
-      onMouseLeave: e => {
-        e.currentTarget.style.background = 'transparent';
       }
     }, React.createElement("span", {
       className: "mono",
@@ -10866,20 +10826,23 @@ var ClientVolumePanel = ({
       }
     }, row.client.code), React.createElement("div", {
       style: {
-        height: 14,
-        background: 'var(--ivory-200)',
-        borderRadius: 3,
-        position: 'relative'
+        height: 10,
+        background: 'var(--sage-50)',
+        borderRadius: 999,
+        position: 'relative',
+        overflow: 'hidden'
       }
     }, React.createElement("div", {
+      className: "dashboard-bar-fill",
       style: {
         position: 'absolute',
         left: 0,
         top: 0,
         bottom: 0,
         width: widthPct + '%',
-        background: 'var(--info)',
-        borderRadius: 3
+        background: 'var(--sage-600)',
+        borderRadius: 999,
+        transition: 'background 120ms linear, width 240ms var(--ease-out)'
       }
     })), React.createElement("span", {
       className: "mono tnum",
@@ -14866,6 +14829,7 @@ var TestCatalogPage = ({
       referenceRanges: [],
       criticalEscalationT1Sec: '',
       criticalEscalationT2Sec: '',
+      lotExpirationAmberDays: '',
       active: true
     });
   };
@@ -14885,6 +14849,7 @@ var TestCatalogPage = ({
       })) : [],
       criticalEscalationT1Sec: t.criticalEscalationT1Sec == null ? '' : t.criticalEscalationT1Sec,
       criticalEscalationT2Sec: t.criticalEscalationT2Sec == null ? '' : t.criticalEscalationT2Sec,
+      lotExpirationAmberDays: t.lotExpirationAmberDays == null ? '' : t.lotExpirationAmberDays,
       active: t.active !== false
     });
   };
@@ -14908,6 +14873,7 @@ var TestCatalogPage = ({
       turnaroundMinutes: draft.turnaroundMinutes === '' ? null : Number(draft.turnaroundMinutes),
       criticalEscalationT1Sec: parseSec(draft.criticalEscalationT1Sec),
       criticalEscalationT2Sec: parseSec(draft.criticalEscalationT2Sec),
+      lotExpirationAmberDays: parseSec(draft.lotExpirationAmberDays),
       referenceRanges: (draft.referenceRanges || []).map(r => window.schema.newReferenceRange(r))
     };
     if (editingId) {
@@ -15358,7 +15324,37 @@ var TestCatalogPage = ({
       fontSize: 10.5,
       color: 'var(--ink-400)'
     }
-  }, "Per-test override for unacknowledged critical results. Empty = use global default. T2 must be greater than T1; otherwise both fall back to defaults.")), React.createElement(CatalogField, {
+  }, "Per-test override for unacknowledged critical results. Empty = use global default. T2 must be greater than T1; otherwise both fall back to defaults.")), React.createElement("div", {
+    style: {
+      marginTop: 6,
+      marginBottom: 10,
+      padding: 10,
+      background: 'var(--ivory-50)',
+      border: '1px solid var(--line)',
+      borderRadius: 5
+    }
+  }, React.createElement("div", {
+    className: "section-title",
+    style: {
+      fontSize: 9.5,
+      marginBottom: 6
+    }
+  }, "QC lot expiration warning"), React.createElement(CatalogField, {
+    label: "Amber threshold (days)"
+  }, React.createElement("input", {
+    className: "input mono tnum",
+    placeholder: "default 14",
+    value: draft.lotExpirationAmberDays,
+    onChange: e => setDraft({
+      ...draft,
+      lotExpirationAmberDays: e.target.value
+    })
+  })), React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: 'var(--ink-400)'
+    }
+  }, "Days before a QC lot expires when the watcher should fire the \"expiring soon\" notification. Empty = use global default (14). Useful when this test's reagent has a tighter shelf life than most and the lab wants earlier warning.")), React.createElement(CatalogField, {
     label: "Active"
   }, React.createElement("label", {
     style: {
@@ -18005,9 +18001,10 @@ var QcPage = ({
       reason: ask.reason
     });
   };
-  var lotStatus = level => {
+  var lotStatus = (level, test) => {
     if (!level || !level.lotExpiresAt) return null;
     var days = Math.ceil((level.lotExpiresAt - Date.now()) / (24 * 60 * 60 * 1000));
+    var soonDays = window.lotExpiryWatcher ? window.lotExpiryWatcher.resolveSoonDays(test) : 14;
     if (days < 0) return {
       label: 'Lot EXPIRED ' + -days + 'd ago',
       tone: 'rust',
@@ -18018,7 +18015,7 @@ var QcPage = ({
       tone: 'rust',
       days
     };
-    if (days <= 14) return {
+    if (days <= soonDays) return {
       label: 'Expires in ' + days + 'd',
       tone: 'amber',
       days
@@ -18090,7 +18087,7 @@ var QcPage = ({
     var isSel = activeLevelId === l.id;
     var recent = allResults.filter(r => r.qcLevelId === l.id).sort((a, b) => (b.ranAt || 0) - (a.ranAt || 0))[0];
     var tone = recent ? recent.status === 'out_of_control' ? 'err' : recent.status === 'warn' ? 'warn' : 'ok' : 'idle';
-    var lot = lotStatus(l);
+    var lot = lotStatus(l, t);
     return React.createElement("button", {
       key: l.id,
       type: "button",

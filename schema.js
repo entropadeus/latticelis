@@ -251,6 +251,12 @@ const newTest = (init = {}) => ({
   // per-test: STAT troponin escalates faster than routine glucose.
   criticalEscalationT1Sec: init.criticalEscalationT1Sec == null ? null : Number(init.criticalEscalationT1Sec),
   criticalEscalationT2Sec: init.criticalEscalationT2Sec == null ? null : Number(init.criticalEscalationT2Sec),
+  // Per-test "lot expiring soon" amber threshold, in days. `null` (or any
+  // non-finite / non-positive value) falls back to the watcher's global
+  // default (see lot-expiry-watcher.js SOON_DAYS = 14). Useful when a test's
+  // QC reagent has a tighter shelf life than 14 days (e.g. some coag and
+  // urine chemistries) and the lab wants earlier warning.
+  lotExpirationAmberDays: init.lotExpirationAmberDays == null ? null : Number(init.lotExpirationAmberDays),
   active: init.active === undefined ? true : init.active,
   createdAt: init.createdAt || Date.now(),
   updatedAt: Date.now(),

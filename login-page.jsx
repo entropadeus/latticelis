@@ -26,7 +26,6 @@ const LoginPage = ({ onSuccess }) => {
   const [busy, setBusy]         = useStateLP(false);
   const [error, setError]       = useStateLP(null);
   const [shakeKey, setShakeKey] = useStateLP(0);  // bump to retrigger CSS animation
-  const [seedOpen, setSeedOpen] = useStateLP(false);
   const usernameRef = useRefLP(null);
 
   useEffectLP(() => {
@@ -185,37 +184,6 @@ const LoginPage = ({ onSuccess }) => {
             )}
           </form>
 
-          {/* ── Dev seed credentials disclosure ───────────────────────
-              The prototype ships with hashed default passwords (= username)
-              for the 5 seeded operators. Surfacing them here makes the LIS
-              self-service for testing — close before any pilot/demo. */}
-          <div style={{ marginTop: 28, paddingTop: 18, borderTop: '1px solid var(--line-soft)' }}>
-            <button
-              type="button"
-              onClick={() => setSeedOpen(o => !o)}
-              style={{
-                background: 'transparent', border: 0, cursor: 'pointer', padding: 0,
-                fontSize: 11, color: 'var(--ink-500)', letterSpacing: '0.04em',
-                textTransform: 'uppercase', fontWeight: 500,
-              }}>
-              {seedOpen ? '− Hide' : '+ Show'} dev seed credentials
-            </button>
-            {seedOpen && (
-              <div style={{ marginTop: 10, padding: '10px 12px', background: 'var(--ivory-100)', border: '1px solid var(--line)', borderRadius: 6, fontSize: 11.5, color: 'var(--ink-500)', lineHeight: 1.7 }}>
-                Each seeded user's default password equals their username:
-                <div style={{ marginTop: 6, fontFamily: 'var(--font-mono, monospace)', color: 'var(--ink-700)' }}>
-                  rivera / rivera <span style={{ color: 'var(--ink-300)' }}>· Lab Director + Pathologist</span><br/>
-                  morgan / morgan <span style={{ color: 'var(--ink-300)' }}>· Lab Supervisor</span><br/>
-                  alex / alex <span style={{ color: 'var(--ink-300)' }}>· Medical Technologist</span><br/>
-                  priya / priya <span style={{ color: 'var(--ink-300)' }}>· Lab Assistant</span><br/>
-                  jordan / jordan <span style={{ color: 'var(--ink-300)' }}>· IT Admin</span>
-                </div>
-                <div style={{ marginTop: 8, fontSize: 10.5, color: 'var(--ink-400)' }}>
-                  Change defaults via the Users & Roles admin page.
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>
