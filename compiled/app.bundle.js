@@ -15785,7 +15785,7 @@ var LocationsPage = ({
 
 // ---- label-pages.jsx ----
 var SPECIMEN_TYPE_OPTIONS = ['', 'serum', 'plasma', 'whole_blood', 'urine', 'csf', 'swab', 'tissue', 'other'];
-var DEFAULT_ZPL_BODY = '^XA\n^MMT\n^PW406\n^LL203\n^LH0,0\n^FT8,28^A0N,28,28^FD{patient_line}^FS\n^FT8,60^A0N,18,18^FDMRN: {mrn}^FS\n^FT8,84^A0N,16,16^FDDOB {dob} {sex} {age}y^FS\n^FT8,108^A0N,16,16^FD{type}/{container}^FS\n^FT8,132^A0N,16,16^FDTests: {tests}^FS\n^FT8,156^A0N,16,16^FDOrder {order_number}^FS\n^BY2,2,60\n^FT8,196^BCN,60,Y,N,N\n^FD{accession}^FS\n^XZ';
+var DEFAULT_ZPL_BODY = '^XA\n^MMT\n^PW406\n^LL203\n^LH0,0\n^FO12,8\n^BY2,2.5,50\n^BCN,50,Y,N,N\n^FD{accession}^FS\n^FO12,75^A0N,22,22^FD{patient_line}^FS\n^FO12,103^A0N,18,18^FDMRN {mrn}  DOB {dob}  {sex}  {age}y^FS\n^FO12,125^A0N,18,18^FD{type}  ·  {container}^FS\n^FO12,147^A0N,18,18^FDTESTS: {tests}^FS\n^FO12,170^A0N,16,16^FDORD {order_number}^FS\n^XZ';
 var LabelsPage = ({
   onBack
 }) => {
@@ -17756,12 +17756,17 @@ var NotificationsPage = ({
   var [draft, setDraft] = useStateOS(null);
   useEffectOS(() => {
     if (!cfg) return;
+    var overrides = cfg.tatRecipientsByPriority && typeof cfg.tatRecipientsByPriority === 'object' ? cfg.tatRecipientsByPriority : {};
     setDraft({
       tatThresholds: {
         ...(cfg.tatThresholds || window.schema.TAT_THRESHOLD_DEFAULTS)
       },
       tatWarnAtPercent: Number.isFinite(cfg.tatWarnAtPercent) ? cfg.tatWarnAtPercent : 80,
-      tatRecipients: Array.isArray(cfg.tatRecipients) && cfg.tatRecipients.length ? [...cfg.tatRecipients] : [...(window.schema.TAT_RECIPIENTS_DEFAULT || ['LAB_SUPERVISOR'])]
+      tatRecipients: Array.isArray(cfg.tatRecipients) && cfg.tatRecipients.length ? [...cfg.tatRecipients] : [...(window.schema.TAT_RECIPIENTS_DEFAULT || ['LAB_SUPERVISOR'])],
+      tatRecipientsByPriority: TAT_PRIORITIES.reduce((acc, p) => {
+        acc[p.id] = Array.isArray(overrides[p.id]) ? [...overrides[p.id]] : [];
+        return acc;
+      }, {})
     });
   }, [cfg]);
   var setThreshold = (pri, raw) => {
@@ -17787,6 +17792,29 @@ var NotificationsPage = ({
       };
     });
   };
+  var togglePriorityRecipient = (pri, role) => {
+    setDraft(d => {
+      var cur = Array.isArray(d.tatRecipientsByPriority[pri]) ? d.tatRecipientsByPriority[pri] : [];
+      var has = cur.includes(role);
+      var next = has ? cur.filter(r => r !== role) : [...cur, role];
+      return {
+        ...d,
+        tatRecipientsByPriority: {
+          ...d.tatRecipientsByPriority,
+          [pri]: next
+        }
+      };
+    });
+  };
+  var clearPriorityOverride = pri => {
+    setDraft(d => ({
+      ...d,
+      tatRecipientsByPriority: {
+        ...d.tatRecipientsByPriority,
+        [pri]: []
+      }
+    }));
+  };
   var dirty = useMemoOS(() => {
     if (!cfg || !draft) return false;
     var a = cfg.tatThresholds || {};
@@ -17798,15 +17826,26 @@ var NotificationsPage = ({
     var aR = (cfg.tatRecipients || []).slice().sort().join(',');
     var bR = (draft.tatRecipients || []).slice().sort().join(',');
     if (aR !== bR) return true;
+    var aPri = cfg.tatRecipientsByPriority && typeof cfg.tatRecipientsByPriority === 'object' ? cfg.tatRecipientsByPriority : {};
+    var bPri = draft.tatRecipientsByPriority || {};
+    for (var _p of ['stat', 'asap', 'routine']) {
+      var av = Array.isArray(aPri[_p]) ? aPri[_p].slice().sort().join(',') : '';
+      var bv = Array.isArray(bPri[_p]) ? bPri[_p].slice().sort().join(',') : '';
+      if (av !== bv) return true;
+    }
     return false;
   }, [cfg, draft]);
   var save = async () => {
     if (!draft || !cfg) return;
+    var overrideSummary = ['stat', 'asap', 'routine'].map(p => {
+      var list = Array.isArray(draft.tatRecipientsByPriority && draft.tatRecipientsByPriority[p]) ? draft.tatRecipientsByPriority[p] : [];
+      return list.length === 0 ? `${p.toUpperCase()}: inherit` : `${p.toUpperCase()}: ${list.join(', ')}`;
+    }).join(' · ');
     var ask = await confirmConfigChange({
       id: 'admin.tat_config.save',
       title: 'Save TAT controls',
       message: 'This changes overdue classification and escalation recipients.',
-      facts: [safetyFact('stat minutes', draft.tatThresholds && draft.tatThresholds.stat), safetyFact('asap minutes', draft.tatThresholds && draft.tatThresholds.asap), safetyFact('routine minutes', draft.tatThresholds && draft.tatThresholds.routine), safetyFact('warning percent', draft.tatWarnAtPercent), safetyFact('recipients', (draft.tatRecipients || []).join(', ') || 'none')],
+      facts: [safetyFact('stat minutes', draft.tatThresholds && draft.tatThresholds.stat), safetyFact('asap minutes', draft.tatThresholds && draft.tatThresholds.asap), safetyFact('routine minutes', draft.tatThresholds && draft.tatThresholds.routine), safetyFact('warning percent', draft.tatWarnAtPercent), safetyFact('default recipients', (draft.tatRecipients || []).join(', ') || 'none'), safetyFact('per-priority routing', overrideSummary)],
       entityType: 'lab_config',
       entityId: window.schema.LAB_CONFIG_ID,
       confirmLabel: 'Save TAT controls'
@@ -17817,18 +17856,24 @@ var NotificationsPage = ({
       ...(fresh || cfg),
       tatThresholds: draft.tatThresholds,
       tatWarnAtPercent: draft.tatWarnAtPercent,
-      tatRecipients: draft.tatRecipients
+      tatRecipients: draft.tatRecipients,
+      tatRecipientsByPriority: draft.tatRecipientsByPriority
     });
     await window.db.put('lab_config', merged);
   };
   var revert = () => {
     if (!cfg) return;
+    var overrides = cfg.tatRecipientsByPriority && typeof cfg.tatRecipientsByPriority === 'object' ? cfg.tatRecipientsByPriority : {};
     setDraft({
       tatThresholds: {
         ...(cfg.tatThresholds || window.schema.TAT_THRESHOLD_DEFAULTS)
       },
       tatWarnAtPercent: Number.isFinite(cfg.tatWarnAtPercent) ? cfg.tatWarnAtPercent : 80,
-      tatRecipients: Array.isArray(cfg.tatRecipients) && cfg.tatRecipients.length ? [...cfg.tatRecipients] : [...(window.schema.TAT_RECIPIENTS_DEFAULT || ['LAB_SUPERVISOR'])]
+      tatRecipients: Array.isArray(cfg.tatRecipients) && cfg.tatRecipients.length ? [...cfg.tatRecipients] : [...(window.schema.TAT_RECIPIENTS_DEFAULT || ['LAB_SUPERVISOR'])],
+      tatRecipientsByPriority: TAT_PRIORITIES.reduce((acc, p) => {
+        acc[p.id] = Array.isArray(overrides[p.id]) ? [...overrides[p.id]] : [];
+        return acc;
+      }, {})
     });
   };
   var runScanNow = async () => {
@@ -18104,7 +18149,14 @@ var NotificationsPage = ({
     style: {
       fontSize: 10
     }
-  }, draft.tatRecipients.length, " role", draft.tatRecipients.length === 1 ? '' : 's')), React.createElement("div", {
+  }, draft.tatRecipients.length, " default role", draft.tatRecipients.length === 1 ? '' : 's')), React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: 'var(--ink-500)',
+      marginBottom: 6,
+      fontWeight: 500
+    }
+  }, "Default recipients"), React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: 'repeat(2, 1fr)',
@@ -18139,9 +18191,98 @@ var NotificationsPage = ({
     style: {
       fontSize: 10.5,
       color: 'var(--ink-400)',
-      marginTop: 8
+      marginTop: 8,
+      marginBottom: 12
     }
-  }, "Each TAT crossing fires one notification per role above. Toasts and the bell drawer surface these alongside critical-result notifications."))), React.createElement("div", {
+  }, "Each TAT crossing fires one notification per role above. Toasts and the bell drawer surface these alongside critical-result notifications."), React.createElement("div", {
+    style: {
+      borderTop: '1px solid var(--line-soft)',
+      paddingTop: 12,
+      marginTop: 4
+    }
+  }, React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      marginBottom: 8
+    }
+  }, React.createElement("span", {
+    style: {
+      fontSize: 11.5,
+      fontWeight: 500,
+      color: 'var(--ink-700)'
+    }
+  }, "Per-priority overrides"), React.createElement("span", {
+    style: {
+      flex: 1
+    }
+  }), React.createElement("span", {
+    style: {
+      fontSize: 10.5,
+      color: 'var(--ink-400)'
+    }
+  }, "Empty = inherit default")), TAT_PRIORITIES.map(p => {
+    var list = Array.isArray(draft.tatRecipientsByPriority[p.id]) ? draft.tatRecipientsByPriority[p.id] : [];
+    var inherits = list.length === 0;
+    return React.createElement("div", {
+      key: p.id,
+      style: {
+        marginBottom: 10
+      }
+    }, React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 4
+      }
+    }, React.createElement("span", {
+      className: "pill",
+      "data-tone": p.tone,
+      style: {
+        fontSize: 10,
+        minWidth: 60,
+        justifyContent: 'center'
+      }
+    }, p.label), React.createElement("span", {
+      style: {
+        fontSize: 10.5,
+        color: inherits ? 'var(--ink-400)' : 'var(--ink-700)'
+      }
+    }, inherits ? `Inherits default (${draft.tatRecipients.join(', ') || 'none'})` : `${list.length} custom role${list.length === 1 ? '' : 's'}`), React.createElement("span", {
+      style: {
+        flex: 1
+      }
+    }), !inherits && React.createElement("button", {
+      className: "btn",
+      "data-size": "xs",
+      "data-variant": "ghost",
+      onClick: () => clearPriorityOverride(p.id),
+      title: `Reset ${p.label} to inherit the default list`
+    }, "Reset")), React.createElement("div", {
+      style: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 4
+      }
+    }, TAT_RECIPIENT_ROLES.map(role => {
+      var enabled = list.includes(role);
+      return React.createElement("button", {
+        key: role,
+        className: "pill",
+        "data-tone": enabled ? p.tone : 'ghost',
+        onClick: () => togglePriorityRecipient(p.id, role),
+        style: {
+          fontSize: 10,
+          cursor: 'pointer',
+          border: 'none',
+          opacity: enabled ? 1 : 0.6,
+          fontFamily: 'var(--font-mono)'
+        },
+        title: enabled ? `Remove ${role} from ${p.label}` : `Page ${role} on ${p.label}`
+      }, enabled ? '✓ ' : '', role.replace(/_/g, ' '));
+    })));
+  })))), React.createElement("div", {
     className: "panel"
   }, React.createElement("div", {
     style: {
