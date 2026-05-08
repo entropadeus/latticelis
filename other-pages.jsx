@@ -139,8 +139,23 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
 
   const [q, setQ] = useStateOS('');
   const [status, setStatus] = useStateOS('all');
+  const [copiedOrderId, setCopiedOrderId] = useStateOS(null);
 
   const pinnedClient = filterClientId ? clientById[filterClientId] : null;
+
+  const copyOrderNumber = async (e, order) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const text = order && order.orderNumber;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedOrderId(order.id);
+      window.setTimeout(() => setCopiedOrderId(cur => cur === order.id ? null : cur), 1300);
+    } catch (err) {
+      console.warn('[orders] copy order number failed', err);
+    }
+  };
 
   const filtered = useMemoOS(() => {
     return orders
@@ -210,7 +225,27 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
                 return (
                   <tr key={o.id} style={{ cursor: 'pointer' }}
                       onClick={() => window.openEntity && window.openEntity('order', o.id)}>
-                    <td><span className="mono" style={{ color: 'var(--sage-700)' }}>{o.orderNumber || '—'}</span></td>
+                    <td>
+                      {o.orderNumber ? (
+                        <button className="mono"
+                          onClick={e => copyOrderNumber(e, o)}
+                          title={copiedOrderId === o.id ? 'Copied' : 'Copy order number'}
+                          style={{
+                            border: 'none',
+                            background: 'transparent',
+                            color: copiedOrderId === o.id ? 'var(--ok-700)' : 'var(--sage-700)',
+                            padding: 0,
+                            textDecoration: 'underline',
+                            textUnderlineOffset: 3,
+                            cursor: 'copy',
+                            font: 'inherit',
+                          }}>
+                          {copiedOrderId === o.id ? 'copied' : o.orderNumber}
+                        </button>
+                      ) : (
+                        <span className="mono" style={{ color: 'var(--ink-300)' }}>-</span>
+                      )}
+                    </td>
                     <td>
                       {cli ? <span className="pill" data-tone="info" style={{ height: 18, padding: '0 6px', fontSize: 10.5 }}>
                         <span className="mono">{cli.code}</span>

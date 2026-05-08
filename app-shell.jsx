@@ -43,17 +43,8 @@ const ADMIN_DESTINATIONS = [
 // ----- Logo -----
 const LatticeLogo = ({ collapsed }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 32, padding: '0 4px' }}>
-    {/* "L" stroke that develops into a lattice — corner anchor + crossing rails */}
-    <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
-      {/* L stem (vertical) */}
-      <path d="M6 4 V20" stroke="#3F4F3D" strokeWidth="2.4" strokeLinecap="round"/>
-      {/* L base (horizontal) */}
-      <path d="M6 20 H22" stroke="#3F4F3D" strokeWidth="2.4" strokeLinecap="round"/>
-      {/* Lattice rails crossing the base */}
-      <path d="M14 14 V28" stroke="#556B53" strokeWidth="2.4" strokeLinecap="round"/>
-      <path d="M22 12 V28" stroke="#556B53" strokeWidth="2.4" strokeLinecap="round"/>
-      <path d="M10 26 H28" stroke="#87987F" strokeWidth="2.4" strokeLinecap="round"/>
-    </svg>
+    <img src="assets/lattice-logo.png" alt="" width="30" height="30"
+      style={{ display: 'block', objectFit: 'contain', flex: '0 0 auto' }}/>
     {!collapsed && (
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, letterSpacing: '0.04em' }}>
         <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--ink-900)' }}>LATTICE</span>

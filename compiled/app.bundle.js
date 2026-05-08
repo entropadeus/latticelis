@@ -1868,37 +1868,17 @@ var LatticeLogo = ({
     height: 32,
     padding: '0 4px'
   }
-}, React.createElement("svg", {
-  width: "22",
-  height: "22",
-  viewBox: "0 0 32 32",
-  fill: "none"
-}, React.createElement("path", {
-  d: "M6 4 V20",
-  stroke: "#3F4F3D",
-  strokeWidth: "2.4",
-  strokeLinecap: "round"
-}), React.createElement("path", {
-  d: "M6 20 H22",
-  stroke: "#3F4F3D",
-  strokeWidth: "2.4",
-  strokeLinecap: "round"
-}), React.createElement("path", {
-  d: "M14 14 V28",
-  stroke: "#556B53",
-  strokeWidth: "2.4",
-  strokeLinecap: "round"
-}), React.createElement("path", {
-  d: "M22 12 V28",
-  stroke: "#556B53",
-  strokeWidth: "2.4",
-  strokeLinecap: "round"
-}), React.createElement("path", {
-  d: "M10 26 H28",
-  stroke: "#87987F",
-  strokeWidth: "2.4",
-  strokeLinecap: "round"
-})), !collapsed && React.createElement("div", {
+}, React.createElement("img", {
+  src: "assets/lattice-logo.png",
+  alt: "",
+  width: "30",
+  height: "30",
+  style: {
+    display: 'block',
+    objectFit: 'contain',
+    flex: '0 0 auto'
+  }
+}), !collapsed && React.createElement("div", {
   style: {
     display: 'flex',
     alignItems: 'baseline',
@@ -9661,7 +9641,21 @@ var OrdersPage = ({
   var locationById = useMemoOS(() => Object.fromEntries(locations.map(l => [l.id, l])), [locations]);
   var [q, setQ] = useStateOS('');
   var [status, setStatus] = useStateOS('all');
+  var [copiedOrderId, setCopiedOrderId] = useStateOS(null);
   var pinnedClient = filterClientId ? clientById[filterClientId] : null;
+  var copyOrderNumber = async (e, order) => {
+    e.preventDefault();
+    e.stopPropagation();
+    var text = order && order.orderNumber;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedOrderId(order.id);
+      window.setTimeout(() => setCopiedOrderId(cur => cur === order.id ? null : cur), 1300);
+    } catch (err) {
+      console.warn('[orders] copy order number failed', err);
+    }
+  };
   var filtered = useMemoOS(() => {
     return orders.filter(o => !filterClientId || o.clientId === filterClientId).filter(o => status === 'all' || o.status === status).filter(o => {
       if (!q) return true;
@@ -9784,12 +9778,26 @@ var OrdersPage = ({
         cursor: 'pointer'
       },
       onClick: () => window.openEntity && window.openEntity('order', o.id)
-    }, React.createElement("td", null, React.createElement("span", {
+    }, React.createElement("td", null, o.orderNumber ? React.createElement("button", {
+      className: "mono",
+      onClick: e => copyOrderNumber(e, o),
+      title: copiedOrderId === o.id ? 'Copied' : 'Copy order number',
+      style: {
+        border: 'none',
+        background: 'transparent',
+        color: copiedOrderId === o.id ? 'var(--ok-700)' : 'var(--sage-700)',
+        padding: 0,
+        textDecoration: 'underline',
+        textUnderlineOffset: 3,
+        cursor: 'copy',
+        font: 'inherit'
+      }
+    }, copiedOrderId === o.id ? 'copied' : o.orderNumber) : React.createElement("span", {
       className: "mono",
       style: {
-        color: 'var(--sage-700)'
+        color: 'var(--ink-300)'
       }
-    }, o.orderNumber || '—')), React.createElement("td", null, cli ? React.createElement("span", {
+    }, "-")), React.createElement("td", null, cli ? React.createElement("span", {
       className: "pill",
       "data-tone": "info",
       style: {
