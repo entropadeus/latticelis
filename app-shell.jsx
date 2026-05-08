@@ -12,33 +12,53 @@ const { useState, useEffect, useRef, useMemo, useCallback } = React;
 // QC, Clients, Locations, Labels, Mappers, Notifications) live ONLY under the
 // Admin page so the operator's daily nav stays focused. They remain reachable
 // via the command palette (⌘K) — see ADMIN_DESTINATIONS below.
+// NAV items each declare which permission gates their visibility. Items
+// without a `permission` field are unrestricted (any signed-in user sees
+// them). The Admin parent uses `anyPermission`: shown if the user holds
+// at least one of the listed admin sub-permissions; the page itself
+// re-filters its tile grid against the user's permissions.
 const NAV = [
   { id: 'dashboard',  label: 'Dashboard',         icon: 'IconDashboard',  group: 'Operations' },
-  { id: 'accession',  label: 'Accessioning',      icon: 'IconAccession',  group: 'Operations', shortcut: 'A' },
+  { id: 'accession',  label: 'Accessioning',      icon: 'IconAccession',  group: 'Operations', shortcut: 'A', permission: 'ACCESSION' },
   { id: 'orders',     label: 'Orders',            icon: 'IconOrder',      group: 'Operations' },
   { id: 'specimens',  label: 'Specimens',         icon: 'IconTube',       group: 'Operations' },
   { id: 'worklists',  label: 'Worklists',         icon: 'IconList',       group: 'Operations' },
   { id: 'results',    label: 'Results',           icon: 'IconResults',    group: 'Operations' },
   { id: 'patients',   label: 'Patient Search',    icon: 'IconSearch',     group: 'Operations' },
   { id: 'reports',    label: 'Activity log',      icon: 'IconReports',    group: 'Review' },
-  { id: 'admin',      label: 'Admin',             icon: 'IconAdmin',      group: 'System' },
+  { id: 'admin',      label: 'Admin',             icon: 'IconAdmin',      group: 'System', anyPermission: ['EDIT_USERS', 'EDIT_RULES', 'EDIT_LAB_CONFIG', 'EDIT_TEST_CATALOG', 'EDIT_INTERFACES', 'EDIT_LABEL_TEMPLATES', 'RESTORE_SNAPSHOT', 'RESOLVE_QC'] },
 ];
 
 // Admin-only destinations. Hidden from the sidebar but indexed by the command
 // palette so power users can jump directly. Match each entry to an actual
 // route in `app.jsx` — anything here is reachable via Admin tiles too.
 const ADMIN_DESTINATIONS = [
-  { id: 'instruments',  label: 'Instruments',       icon: 'IconInstrument' },
-  { id: 'interfaces',   label: 'Interfaces',        icon: 'IconInterface' },
-  { id: 'rules',        label: 'Rules Engine',      icon: 'IconRules' },
-  { id: 'tests',        label: 'Test Catalog',      icon: 'IconBeaker' },
-  { id: 'qc',           label: 'QC (Westgard)',     icon: 'IconBeaker' },
-  { id: 'clients',      label: 'Clients',           icon: 'IconMap' },
-  { id: 'locations',    label: 'Locations',         icon: 'IconMap' },
-  { id: 'labels',       label: 'Labels & Printing', icon: 'IconLabel' },
-  { id: 'mappers',      label: 'Mappers (LML)',     icon: 'IconBranch' },
-  { id: 'notifications',label: 'Notifications',     icon: 'IconBell' },
+  { id: 'instruments',  label: 'Instruments',       icon: 'IconInstrument', permission: 'EDIT_INTERFACES' },
+  { id: 'interfaces',   label: 'Interfaces',        icon: 'IconInterface',  permission: 'EDIT_INTERFACES' },
+  { id: 'rules',        label: 'Rules Engine',      icon: 'IconRules',      permission: 'EDIT_RULES' },
+  { id: 'tests',        label: 'Test Catalog',      icon: 'IconBeaker',     permission: 'EDIT_TEST_CATALOG' },
+  { id: 'qc',           label: 'QC (Westgard)',     icon: 'IconBeaker',     permission: 'RESOLVE_QC' },
+  { id: 'clients',      label: 'Clients',           icon: 'IconMap',        permission: 'EDIT_LAB_CONFIG' },
+  { id: 'locations',    label: 'Locations',         icon: 'IconMap',        permission: 'EDIT_LAB_CONFIG' },
+  { id: 'labels',       label: 'Labels & Printing', icon: 'IconLabel',      permission: 'EDIT_LABEL_TEMPLATES' },
+  { id: 'mappers',      label: 'Mappers (LML)',     icon: 'IconBranch',     permission: 'EDIT_INTERFACES' },
+  { id: 'notifications',label: 'Notifications',     icon: 'IconBell',       permission: 'EDIT_LAB_CONFIG' },
 ];
+
+// Helper: does the current user pass a NAV / Admin entry's permission gate?
+// Items with no gate always pass. Without a resolver/user yet, fall open
+// for the milliseconds before hydration (the auth gate already prevents
+// unauthenticated access; this just avoids layout flicker).
+const __navItemAllowed = (item) => {
+  if (!item) return false;
+  if (!window.userRoles || !window.currentUser) return true;
+  const userId = window.currentUser.id;
+  if (item.permission) return window.userRoles.userHasPermission(userId, item.permission);
+  if (Array.isArray(item.anyPermission)) {
+    return item.anyPermission.some(p => window.userRoles.userHasPermission(userId, p));
+  }
+  return true;
+};
 
 // ----- Logo -----
 const LatticeLogo = ({ collapsed }) => (
@@ -56,11 +76,21 @@ const LatticeLogo = ({ collapsed }) => (
 
 // ----- Sidebar -----
 const Sidebar = ({ active, onNav, collapsed }) => {
+  // Force re-evaluation when the current operator changes (sign-in/sign-out
+  // or operator switch) so the permission filter re-runs against the new id.
+  const [, force] = useState(0);
+  useEffect(() => {
+    if (!window.currentUserApi) return;
+    return window.currentUserApi.subscribe(() => force(x => x + 1));
+  }, []);
   const groups = useMemo(() => {
     const g = {};
-    NAV.forEach(n => { if (!g[n.group]) g[n.group] = []; g[n.group].push(n); });
+    NAV.filter(__navItemAllowed).forEach(n => {
+      if (!g[n.group]) g[n.group] = [];
+      g[n.group].push(n);
+    });
     return g;
-  }, []);
+  }, [window.currentUser && window.currentUser.id]);
 
   return (
     <aside data-screen-label="Sidebar" style={{
@@ -132,7 +162,7 @@ const TopRail = ({ active, onNav }) => (
     background: 'var(--ivory-50)',
     overflowX: 'auto',
   }}>
-    {NAV.map(item => {
+    {NAV.filter(__navItemAllowed).map(item => {
       const Icon = window[item.icon];
       const isActive = active === item.id;
       return (
@@ -226,34 +256,33 @@ const UserSwitcher = () => {
   }, []);
 
   const cur = window.currentUser;
-  if (users.length === 0) return null;
-
-  // Hide INACTIVE users from the picker. Always include the current user
-  // even if they're flagged inactive somehow — losing the ability to switch
-  // away from a half-inactive selection would strand the operator.
-  const visibleUsers = users.filter(u =>
-    (u.status || 'ACTIVE') === 'ACTIVE' || (cur && u.id === cur.id));
+  if (!cur) return null;
 
   // Primary role for the chip badge. Catalog-order priority via userRoles.
-  const curRoleMeta = cur && window.userRoles ? window.userRoles.primaryRoleMeta(cur.id) : null;
+  const curRoleMeta = window.userRoles ? window.userRoles.primaryRoleMeta(cur.id) : null;
+
+  const signOut = () => {
+    if (window.auth) window.auth.signOut();
+    setOpen(false);
+  };
 
   return (
     <div style={{ position: 'relative' }}>
       <button onClick={() => setOpen(o => !o)}
         className="btn" data-size="sm" data-variant="ghost"
         style={{ gap: 8, paddingLeft: 8, paddingRight: 8 }}
-        title={curRoleMeta ? `${curRoleMeta.label} — switch active operator` : 'Switch active operator'}>
+        title={curRoleMeta ? `Signed in as ${curRoleMeta.label}` : 'Account'}>
         <span style={{
           width: 22, height: 22, borderRadius: '50%',
           background: 'var(--sage-200)', color: 'var(--sage-900)',
           display: 'grid', placeItems: 'center',
           fontSize: 10.5, fontWeight: 500, letterSpacing: 0.04,
         }}>
-          {cur ? (cur.firstName || cur.username || '?').slice(0, 1).toUpperCase()
-                + (cur.lastName ? cur.lastName.slice(0, 1).toUpperCase() : '') : '–'}
+          {(cur.firstName || cur.username || '?').slice(0, 1).toUpperCase()
+            + (cur.lastName ? cur.lastName.slice(0, 1).toUpperCase() : '')}
         </span>
         <span style={{ fontSize: 12.5, color: 'var(--ink-700)' }}>
-          {cur ? [cur.firstName, cur.lastName].filter(Boolean).join(' ') : 'No operator'}
+          {[cur.firstName, cur.lastName].filter(Boolean).join(' ') || cur.username}
         </span>
         {curRoleMeta && (
           <span className="pill" data-tone={curRoleMeta.tone} style={{ fontSize: 9.5 }}>
@@ -269,48 +298,54 @@ const UserSwitcher = () => {
             position: 'absolute', top: '100%', right: 0, marginTop: 4,
             minWidth: 260, zIndex: 91,
             background: '#fff', border: '1px solid var(--line)', borderRadius: 6,
-            boxShadow: 'var(--shadow-pop)', padding: 4,
+            boxShadow: 'var(--shadow-pop)', padding: 0,
           }}>
-            <div className="section-title" style={{ padding: '6px 10px' }}>Switch operator</div>
-            {visibleUsers.map(u => {
-              const meta = window.userRoles ? window.userRoles.primaryRoleMeta(u.id) : null;
-              const inactive = u.status === 'INACTIVE';
-              return (
-                <button key={u.id}
-                  onClick={() => { window.currentUserApi.setCurrent(u.id); setOpen(false); }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                    padding: '8px 10px', border: 0, background: cur && cur.id === u.id ? 'var(--sage-50)' : 'transparent',
-                    borderRadius: 4, cursor: 'pointer', textAlign: 'left',
-                    opacity: inactive ? 0.65 : 1,
-                  }}
-                  onMouseEnter={e => { if (!(cur && cur.id === u.id)) e.currentTarget.style.background = 'var(--ivory-100)'; }}
-                  onMouseLeave={e => { if (!(cur && cur.id === u.id)) e.currentTarget.style.background = 'transparent'; }}>
-                  <span style={{
-                    width: 22, height: 22, borderRadius: '50%',
-                    background: 'var(--sage-200)', color: 'var(--sage-900)',
-                    display: 'grid', placeItems: 'center',
-                    fontSize: 10.5, fontWeight: 500,
-                  }}>
-                    {(u.firstName || '?').slice(0, 1).toUpperCase() + (u.lastName ? u.lastName.slice(0, 1).toUpperCase() : '')}
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12.5, color: 'var(--ink-900)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>{[u.firstName, u.lastName].filter(Boolean).join(' ') || u.username}</span>
-                      {meta && (
-                        <span className="pill" data-tone={meta.tone} style={{ fontSize: 9.5 }}>{meta.label}</span>
-                      )}
-                      {inactive && (
-                        <span className="pill" data-tone="ghost" style={{ fontSize: 9.5 }}>inactive</span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>
-                      {(u.roles || []).join(', ')}{u.credentials && u.credentials.length ? ' · ' + u.credentials.join(', ') : ''}
-                    </div>
+            <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--line-soft)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{
+                  width: 32, height: 32, borderRadius: '50%',
+                  background: 'var(--sage-200)', color: 'var(--sage-900)',
+                  display: 'grid', placeItems: 'center',
+                  fontSize: 12, fontWeight: 500,
+                }}>
+                  {(cur.firstName || '?').slice(0, 1).toUpperCase() + (cur.lastName || '').slice(0, 1).toUpperCase()}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-900)' }}>
+                    {[cur.firstName, cur.lastName].filter(Boolean).join(' ') || cur.username}
                   </div>
-                </button>
-              );
-            })}
+                  <div className="mono" style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>
+                    {cur.username}{cur.email ? ' · ' + cur.email : ''}
+                  </div>
+                </div>
+              </div>
+              {(cur.roles || []).length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+                  {(cur.roles || []).map(rid => {
+                    const r = (window.schema && window.schema.ROLE_BY_ID && window.schema.ROLE_BY_ID[rid]) || { tone: 'ghost', label: rid };
+                    return <span key={rid} className="pill" data-tone={r.tone} style={{ fontSize: 9.5 }}>{r.label}</span>;
+                  })}
+                </div>
+              )}
+              {cur.credentials && cur.credentials.length > 0 && (
+                <div className="mono" style={{ fontSize: 10.5, color: 'var(--ink-500)', marginTop: 6 }}>
+                  {cur.credentials.join(', ')}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={signOut}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                width: '100%', padding: '10px 14px', border: 0,
+                background: 'transparent', color: 'var(--ink-700)',
+                fontSize: 12.5, cursor: 'pointer', textAlign: 'left',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--ivory-100)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <IconPower size={13}/>
+              Sign out
+            </button>
           </div>
         </>
       )}
@@ -330,11 +365,11 @@ const CommandPalette = ({ open, onClose, onNav }) => {
 
   const items = useMemo(() => {
     const all = [
-      ...NAV.map(n => ({ id: 'nav-' + n.id, label: 'Go to ' + n.label, kind: 'Navigate', target: n.id })),
+      ...NAV.filter(__navItemAllowed).map(n => ({ id: 'nav-' + n.id, label: 'Go to ' + n.label, kind: 'Navigate', target: n.id })),
       // Admin-only destinations are still indexable via the palette so power
       // users can jump straight to Rules / Instruments / etc. without the
-      // detour through the Admin tile grid.
-      ...ADMIN_DESTINATIONS.map(n => ({ id: 'admnav-' + n.id, label: 'Go to ' + n.label, kind: 'Admin', target: n.id })),
+      // detour through the Admin tile grid. Same permission gates apply.
+      ...ADMIN_DESTINATIONS.filter(__navItemAllowed).map(n => ({ id: 'admnav-' + n.id, label: 'Go to ' + n.label, kind: 'Admin', target: n.id })),
       { id: 'a-new-accession', label: 'New accessioning session', kind: 'Action', target: 'accession' },
       { id: 'a-new-rule',      label: 'Create new rule',           kind: 'Action', target: 'rules' },
       { id: 'a-new-order',     label: 'Create new order',          kind: 'Action', target: 'orders' },

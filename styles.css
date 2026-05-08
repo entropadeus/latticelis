@@ -275,6 +275,132 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .fade-in { animation: fadeIn 120ms ease-out; }
 .slide-up { animation: slideUp 140ms ease-out; }
 
+/* Login form shake — fires on auth fail. The 4-step left-right oscillation
+   reads as "no" without being cartoonish. Reduce-motion clamps to a brief
+   fade so we don't trigger vestibular discomfort. */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-6px); }
+  40%      { transform: translateX(5px); }
+  60%      { transform: translateX(-4px); }
+  80%      { transform: translateX(2px); }
+}
+.shake { animation: shake 360ms cubic-bezier(.36,.07,.19,.97); }
+@media (prefers-reduced-motion: reduce) {
+  .shake { animation: fadeIn 120ms ease-out; }
+}
+
+/* Login page — full-screen split. Brand panel left (sage), form right
+   (ivory). On narrow viewports the brand panel collapses above the form. */
+.login-shell {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  min-height: 100vh;
+  background: var(--ivory-50);
+}
+@media (max-width: 760px) {
+  .login-shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+}
+.login-brand {
+  background:
+    radial-gradient(ellipse at 20% 90%, var(--sage-700) 0%, var(--sage-900) 60%);
+  color: #F6F4EE;
+  padding: 56px 64px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+}
+.login-brand::after {
+  /* Subtle geometric backdrop — three offset rings echoing the icon style.
+     Pure CSS so it works without an SVG asset request on first paint. */
+  content: '';
+  position: absolute;
+  right: -120px; bottom: -120px;
+  width: 380px; height: 380px;
+  border-radius: 50%;
+  border: 1.25px solid rgba(255,255,255,0.08);
+  box-shadow:
+    0 0 0 32px rgba(255,255,255,0.04),
+    0 0 0 80px rgba(255,255,255,0.025);
+  pointer-events: none;
+}
+.login-form-pane {
+  display: grid;
+  place-items: center;
+  padding: 40px 32px;
+}
+.login-form-card {
+  width: 100%;
+  max-width: 380px;
+}
+.login-input {
+  width: 100%;
+  padding: 11px 13px;
+  font-size: 13.5px;
+  font-family: inherit;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #FFFFFF;
+  color: var(--ink-900);
+  transition: border-color 140ms var(--ease-standard, ease-out), box-shadow 140ms var(--ease-standard, ease-out);
+}
+.login-input:focus {
+  outline: none;
+  border-color: var(--sage-500);
+  box-shadow: 0 0 0 3px rgba(135, 152, 127, 0.18);
+}
+.login-input::placeholder { color: var(--ink-300); }
+.login-input:disabled { background: var(--ivory-100); color: var(--ink-400); }
+.login-btn {
+  width: 100%;
+  padding: 12px;
+  font-size: 13.5px;
+  font-weight: 500;
+  font-family: inherit;
+  letter-spacing: 0.01em;
+  background: var(--sage-700);
+  color: #F6F4EE;
+  border: 1px solid var(--sage-700);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 140ms var(--ease-standard, ease-out), transform 80ms ease-out;
+}
+.login-btn:hover:not(:disabled) { background: var(--sage-900); border-color: var(--sage-900); }
+.login-btn:active:not(:disabled) { transform: translateY(1px); }
+.login-btn:disabled { background: var(--ink-300); border-color: var(--ink-300); cursor: wait; }
+.login-spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #F6F4EE;
+  border-radius: 50%;
+  animation: loginSpin 700ms linear infinite;
+  vertical-align: -2px;
+}
+@keyframes loginSpin { to { transform: rotate(360deg); } }
+.login-show-pw {
+  position: absolute;
+  right: 8px; top: 50%; transform: translateY(-50%);
+  border: 0; background: transparent; cursor: pointer;
+  color: var(--ink-400);
+  padding: 4px;
+  font-size: 11px;
+  line-height: 1;
+}
+.login-show-pw:hover { color: var(--ink-700); }
+.login-error {
+  margin-top: 10px;
+  padding: 9px 12px;
+  background: #FCEFEC;
+  border: 1px solid #E8C5BD;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #7A2B1F;
+  line-height: 1.4;
+}
+
 /* Section title */
 .section-title {
   font-size: 11px;
