@@ -322,24 +322,28 @@ const LabelsPage = ({ onBack }) => {
                   onChange={e => setDraft({ ...draft, zpl: e.target.value })}
                   style={{ height: 'auto', padding: 8, resize: 'vertical', fontSize: 11.5 }}/>
               </CatalogField>
-              {/* Body-vs-orientation heuristic: parse ^PW / ^LL out of the body
-                  and compare to current dimensions. When they don't match, the
-                  body was designed for a different aspect ratio and the print
-                  output will likely truncate or overflow (on top of the
-                  __forceLabelDimensions override which only fixes the boundary
-                  marker, not the field coordinates). Surfaces a "Reset layout"
-                  link that swaps in the matching default. */}
+              {/* Body-vs-orientation heuristic. Earlier version compared absolute
+                  dim values, which fired false positives any time DPI changed
+                  (e.g. body designed at 203 dpi, form set to 500 dpi — same
+                  2:1 landscape aspect, just bigger pixel grid). The boundary
+                  marker (^PW/^LL) gets overwritten by __forceLabelDimensions
+                  at print time anyway; only an *orientation* flip actually
+                  breaks the layout (field coords designed for landscape land
+                  off-edge on a portrait media). So we now detect orientation
+                  disagreement only, ignoring DPI scale. */}
               {(() => {
-                const orient = __orientationOf(draft.width, draft.height);
-                const bodyMatch = /\^PW(\d+).*?\^LL(\d+)/s.exec(draft.zpl || '');
+                const expOrient = __orientationOf(draft.width, draft.height);
+                const bodyMatch = /\^PW(\d+)[\s\S]*?\^LL(\d+)/.exec(draft.zpl || '');
                 const bodyW = bodyMatch ? Number(bodyMatch[1]) : null;
                 const bodyH = bodyMatch ? Number(bodyMatch[2]) : null;
-                const expectedW = Math.round(Number(draft.width || 0) * Number(draft.dpi || 0));
-                const expectedH = Math.round(Number(draft.height || 0) * Number(draft.dpi || 0));
-                const mismatch = bodyW != null && bodyH != null
-                  && (bodyW !== expectedW || bodyH !== expectedH);
+                const bodyOrient = bodyW != null && bodyH != null
+                  ? __orientationOf(bodyW / 100, bodyH / 100)  // arbitrary scale; only ratio matters
+                  : null;
+                const mismatch = bodyOrient && expOrient !== 'square'
+                  && bodyOrient !== 'square'
+                  && bodyOrient !== expOrient;
                 const applyDefault = () => {
-                  const next = __defaultBodyFor(orient);
+                  const next = __defaultBodyFor(expOrient);
                   setDraft({ ...draft, zpl: next });
                 };
                 return (
@@ -348,7 +352,7 @@ const LabelsPage = ({ onBack }) => {
                       Placeholders: <span className="mono">{'{patient_line} {mrn} {dob} {sex} {age} {type} {container} {tests} {order_number} {accession}'}</span>
                       {mismatch && (
                         <div style={{ marginTop: 4, color: 'var(--warn-700, #B5462E)', fontSize: 10.5 }}>
-                          Body ^PW{bodyW}/^LL{bodyH} doesn't match {expectedW}×{expectedH}. The ZPL output forces the dimensions but field coords will likely fall outside the printable region — reset to the {orient} default if you don't have a custom layout.
+                          Body is designed for {bodyOrient} but the form is set to {expOrient}. Field coords will fall off the printable region — reset to the {expOrient} default if you don't have a custom layout.
                         </div>
                       )}
                     </div>
@@ -356,8 +360,8 @@ const LabelsPage = ({ onBack }) => {
                       onClick={applyDefault}
                       className="btn" data-size="xs"
                       style={{ flexShrink: 0 }}
-                      title={`Replace body with the canonical ${orient} default`}>
-                      Reset to {orient} default
+                      title={`Replace body with the canonical ${expOrient} default`}>
+                      Reset to {expOrient} default
                     </button>
                   </div>
                 );

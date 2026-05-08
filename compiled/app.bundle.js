@@ -16753,15 +16753,14 @@ var LabelsPage = ({
       fontSize: 11.5
     }
   })), (() => {
-    var orient = __orientationOf(draft.width, draft.height);
-    var bodyMatch = /\^PW(\d+).*?\^LL(\d+)/s.exec(draft.zpl || '');
+    var expOrient = __orientationOf(draft.width, draft.height);
+    var bodyMatch = /\^PW(\d+)[\s\S]*?\^LL(\d+)/.exec(draft.zpl || '');
     var bodyW = bodyMatch ? Number(bodyMatch[1]) : null;
     var bodyH = bodyMatch ? Number(bodyMatch[2]) : null;
-    var expectedW = Math.round(Number(draft.width || 0) * Number(draft.dpi || 0));
-    var expectedH = Math.round(Number(draft.height || 0) * Number(draft.dpi || 0));
-    var mismatch = bodyW != null && bodyH != null && (bodyW !== expectedW || bodyH !== expectedH);
+    var bodyOrient = bodyW != null && bodyH != null ? __orientationOf(bodyW / 100, bodyH / 100) : null;
+    var mismatch = bodyOrient && expOrient !== 'square' && bodyOrient !== 'square' && bodyOrient !== expOrient;
     var applyDefault = () => {
-      var next = __defaultBodyFor(orient);
+      var next = __defaultBodyFor(expOrient);
       setDraft({
         ...draft,
         zpl: next
@@ -16789,7 +16788,7 @@ var LabelsPage = ({
         color: 'var(--warn-700, #B5462E)',
         fontSize: 10.5
       }
-    }, "Body ^PW", bodyW, "/^LL", bodyH, " doesn't match ", expectedW, "\xD7", expectedH, ". The ZPL output forces the dimensions but field coords will likely fall outside the printable region \u2014 reset to the ", orient, " default if you don't have a custom layout.")), React.createElement("button", {
+    }, "Body is designed for ", bodyOrient, " but the form is set to ", expOrient, ". Field coords will fall off the printable region \u2014 reset to the ", expOrient, " default if you don't have a custom layout.")), React.createElement("button", {
       type: "button",
       onClick: applyDefault,
       className: "btn",
@@ -16797,8 +16796,8 @@ var LabelsPage = ({
       style: {
         flexShrink: 0
       },
-      title: `Replace body with the canonical ${orient} default`
-    }, "Reset to ", orient, " default"));
+      title: `Replace body with the canonical ${expOrient} default`
+    }, "Reset to ", expOrient, " default"));
   })(), React.createElement(CatalogField, {
     label: "Active"
   }, React.createElement("label", {
