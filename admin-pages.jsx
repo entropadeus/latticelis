@@ -1,6 +1,6 @@
 const AdminPage = ({ onNav }) => {
   const tiles = [
-    { id: 'users',        label: 'Users & Roles',     desc: 'Manage users, roles, permissions',           icon: 'IconUser' },
+    { id: 'users',        label: 'Users & Roles',     desc: 'Manage users, roles, permissions',           icon: 'IconUser', go: 'users' },
     { id: 'clients',      label: 'Clients',           desc: 'Referring clinics, delivery preferences',    icon: 'IconMap', go: 'clients' },
     { id: 'locations',    label: 'Locations',         desc: 'Facilities, departments, sites',             icon: 'IconMap', go: 'locations' },
     { id: 'instruments',  label: 'Instruments',       desc: 'Configure devices and connectivity',         icon: 'IconInstrument', go: 'instruments' },

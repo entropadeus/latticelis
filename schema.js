@@ -313,6 +313,13 @@ const newAuditEvent = (init = {}) => ({
   id: init.id || __id('aud'),
   type: init.type || '',
   actor: init.actor || 'system',
+  // Frozen role snapshot at action time. Optional — older records didn't
+  // carry this; consumers should treat missing as `[]` not as an error.
+  // Never inferred from `actor` at read time, which is what makes it a
+  // *snapshot* and not a live join. Set by events.js publish() automatically
+  // when the actor maps to a real user; callers can override by passing a
+  // pre-resolved `actorRoles` array in payload.
+  actorRoles: Array.isArray(init.actorRoles) ? init.actorRoles.filter(r => typeof r === 'string') : [],
   entityType: init.entityType || '',
   entityId: init.entityId || null,
   payload: init.payload || {},
@@ -444,6 +451,86 @@ const newLabelTemplate = (init = {}) => ({
   updatedAt: Date.now(),
 });
 
+// ── Users & Roles ───────────────────────────────────────────────────────
+//
+// ROLES catalog: single source of truth for the role identifiers used by
+// users, TAT routing, the safety modal's permission gates, and any future
+// access-control surface. Adding a role here automatically makes it
+// selectable in the Users admin page and selectable in TAT recipient
+// pickers (because both surfaces enumerate this list directly).
+//
+// `tone` maps to the existing pill colors; the Users admin and audit log
+// use it to color the role badge consistently with the rest of the UI.
+const ROLES = [
+  { id: 'LAB_DIRECTOR',         label: 'Lab Director',         tone: 'rust',  description: 'Final medical authority. Sign-out, abnormal/critical oversight.' },
+  { id: 'LAB_SUPERVISOR',       label: 'Lab Supervisor',       tone: 'amber', description: 'Day-to-day lab operations, QC override authority, scheduling.' },
+  { id: 'PATHOLOGIST',          label: 'Pathologist',          tone: 'rust',  description: 'Anatomic / clinical sign-out. Critical result review.' },
+  { id: 'MEDICAL_TECHNOLOGIST', label: 'Medical Technologist', tone: 'sage',  description: 'Result release, manual entry, instrument operation.' },
+  { id: 'LAB_ASSISTANT',        label: 'Lab Assistant',        tone: 'ghost', description: 'Accessioning, specimen handling, prep.' },
+  { id: 'IT_ADMIN',             label: 'IT Admin',             tone: 'slate', description: 'System config, interfaces, mappers, label templates.' },
+];
+const ROLE_IDS = ROLES.map(r => r.id);
+const ROLE_BY_ID = Object.fromEntries(ROLES.map(r => [r.id, r]));
+
+// PERMISSIONS matrix: which roles can perform which permissioned actions.
+// `userRoles.userHasPermission(userId, permission)` reads this; UI surfaces
+// can use it to disable buttons proactively, and the safety modal uses it
+// to gate the high-impact flows. Permissions absent from this map are
+// treated as "no gate" (anyone may perform the action) — this keeps the
+// matrix focused on the meaningful gates instead of needing an entry per
+// click target.
+const PERMISSIONS = {
+  RELEASE_RESULT:       ['LAB_DIRECTOR', 'LAB_SUPERVISOR', 'MEDICAL_TECHNOLOGIST', 'PATHOLOGIST'],
+  VERIFY_RESULT:        ['LAB_DIRECTOR', 'LAB_SUPERVISOR', 'MEDICAL_TECHNOLOGIST', 'PATHOLOGIST'],
+  CORRECT_RESULT:       ['LAB_DIRECTOR', 'LAB_SUPERVISOR', 'MEDICAL_TECHNOLOGIST', 'PATHOLOGIST'],
+  ACK_CRITICAL:         ['LAB_DIRECTOR', 'LAB_SUPERVISOR', 'MEDICAL_TECHNOLOGIST', 'PATHOLOGIST'],
+  RESOLVE_QC:           ['LAB_DIRECTOR', 'LAB_SUPERVISOR'],
+  EDIT_RULES:           ['LAB_DIRECTOR', 'LAB_SUPERVISOR', 'IT_ADMIN'],
+  EDIT_LAB_CONFIG:      ['LAB_DIRECTOR', 'LAB_SUPERVISOR', 'IT_ADMIN'],
+  EDIT_TEST_CATALOG:    ['LAB_DIRECTOR', 'LAB_SUPERVISOR', 'IT_ADMIN'],
+  EDIT_USERS:           ['LAB_DIRECTOR', 'IT_ADMIN'],
+  EDIT_INTERFACES:      ['IT_ADMIN'],
+  EDIT_LABEL_TEMPLATES: ['IT_ADMIN'],
+  RESTORE_SNAPSHOT:     ['LAB_DIRECTOR', 'IT_ADMIN'],
+  ACCESSION:            ['LAB_DIRECTOR', 'LAB_SUPERVISOR', 'MEDICAL_TECHNOLOGIST', 'LAB_ASSISTANT'],
+  CREATE_ORDER:         ['LAB_DIRECTOR', 'LAB_SUPERVISOR', 'MEDICAL_TECHNOLOGIST', 'LAB_ASSISTANT'],
+};
+
+// User factory. Filters role array against the ROLES catalog so unknown
+// role ids from imports / hand-edited records can't poison the resolver.
+// `status` is a hard 'ACTIVE' | 'INACTIVE' enum — anything else snaps to ACTIVE.
+const __coerceUserRoles = (raw) => {
+  if (!Array.isArray(raw)) return [];
+  const allowed = new Set(ROLE_IDS);
+  const seen = new Set();
+  const out = [];
+  for (const r of raw) {
+    if (typeof r !== 'string') continue;
+    if (!allowed.has(r)) continue;
+    if (seen.has(r)) continue;
+    seen.add(r);
+    out.push(r);
+  }
+  return out;
+};
+const newUser = (init = {}) => ({
+  id: init.id || __id('usr'),
+  username: init.username || '',
+  firstName: init.firstName || '',
+  lastName: init.lastName || '',
+  email: init.email || '',
+  credentials: Array.isArray(init.credentials)
+    ? init.credentials.filter(c => typeof c === 'string')
+    : [],
+  roles: __coerceUserRoles(init.roles),
+  facilityIds: Array.isArray(init.facilityIds)
+    ? init.facilityIds.filter(f => typeof f === 'string')
+    : [],
+  status: init.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
 // LabConfig — installation-level singleton. Exactly one row, fixed id.
 // Holds settings that apply lab-wide regardless of test or instrument.
 //   qcDisabledRules: Westgard rule IDs that should NOT trigger violations.
@@ -524,11 +611,12 @@ const nextAccessionNumber = (existingCountToday) => {
 window.schema = {
   newPatient, newOrder, newSpecimen, newResult, newTest, newReferenceRange,
   newInstrument, newInterface, newWorklist, newAuditEvent, newNotification,
-  newClient,
+  newClient, newUser,
   newLocation, newLabelTemplate,
   newQcLevel, newQcResult, newQcRuleViolation,
   newLabConfig, LAB_CONFIG_ID,
   TAT_THRESHOLD_DEFAULTS, TAT_RECIPIENTS_DEFAULT, TAT_PRIORITY_KEYS,
+  ROLES, ROLE_IDS, ROLE_BY_ID, PERMISSIONS,
   nextAccessionNumber,
   SPECIMEN_CONDITIONS,
 };

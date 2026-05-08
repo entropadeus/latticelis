@@ -52,9 +52,20 @@ const events = {
 
     // Persist to the audit log so the timeline survives reloads.
     if (window.schema && window.db) {
+      const actor = payload.actor || 'system';
+      // Frozen role snapshot at publish time. Caller can pre-resolve the
+      // snapshot in payload.actorRoles (e.g. for cross-user attributions);
+      // otherwise we look up the user in window.__userCache and snapshot
+      // their current roles. Snapshot at publish-time means historical
+      // events don't shift if a user's roles change later.
+      let actorRoles = Array.isArray(payload.actorRoles) ? payload.actorRoles : null;
+      if (!actorRoles && window.userRoles && actor && actor !== 'system' && actor !== 'auto' && actor !== 'rules') {
+        actorRoles = window.userRoles.userRolesSnapshot(actor);
+      }
       const audit = window.schema.newAuditEvent({
         type,
-        actor: payload.actor || 'system',
+        actor,
+        actorRoles: actorRoles || [],
         entityType: payload.entityType || null,
         entityId: payload.entityId || null,
         payload,

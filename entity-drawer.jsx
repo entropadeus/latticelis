@@ -948,7 +948,27 @@ const DrawerTimeline = ({ target }) => {
         }}>
           <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>{fmtTs(ev.ts)}</span>
           <div>
-            <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-900)' }}>{ev.type}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-900)' }}>{ev.type}</span>
+              {/* Actor + frozen role pill — actor resolves through displayName so a
+                  user id renders as their name; system/auto/rules pass through. */}
+              {ev.actor && ev.actor !== 'system' && (
+                <span style={{ fontSize: 10.5, color: 'var(--ink-500)' }}>
+                  · {window.currentUserApi ? window.currentUserApi.displayName(ev.actor) : ev.actor}
+                </span>
+              )}
+              {Array.isArray(ev.actorRoles) && ev.actorRoles.length > 0 && (() => {
+                const primary = ev.actorRoles[0];
+                const meta = (window.schema && window.schema.ROLE_BY_ID && window.schema.ROLE_BY_ID[primary])
+                  || { tone: 'ghost', label: primary };
+                return (
+                  <span className="pill" data-tone={meta.tone} style={{ fontSize: 9.5 }}
+                    title={ev.actorRoles.length > 1 ? `+${ev.actorRoles.length - 1} more: ${ev.actorRoles.slice(1).join(', ')}` : meta.description}>
+                    {meta.label}
+                  </span>
+                );
+              })()}
+            </div>
             {ev.payload && ev.payload.message && (
               <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 2 }}>{ev.payload.message}</div>
             )}

@@ -127,6 +127,21 @@ const NotificationToasts = () => {
             <div style={{ fontSize: 12, color: 'var(--ink-700)', lineHeight: 1.4 }}>
               {t.msg || '(no message)'}
             </div>
+            {/* When a role-targeted notification resolves to specific users,
+                surface the names so operators see who actually got paged.
+                Truncated past the third name to keep toasts compact. */}
+            {t.kind === 'role' && t.ctx && Array.isArray(t.ctx.resolvedUserNames) && t.ctx.resolvedUserNames.length > 0 && (
+              <div style={{ fontSize: 10.5, color: 'var(--ink-400)', marginTop: 4 }}>
+                paged: {t.ctx.resolvedUserNames.length <= 3
+                  ? t.ctx.resolvedUserNames.join(', ')
+                  : `${t.ctx.resolvedUserNames.slice(0, 3).join(', ')} +${t.ctx.resolvedUserNames.length - 3}`}
+              </div>
+            )}
+            {t.kind === 'role' && t.ctx && Array.isArray(t.ctx.resolvedUserIds) && t.ctx.resolvedUserIds.length === 0 && (
+              <div style={{ fontSize: 10.5, color: 'var(--warn-700)', marginTop: 4 }}>
+                no users currently hold this role — paging nobody
+              </div>
+            )}
             {(hasCtx || isCriticalEsc) && (
               <div style={{ marginTop: 6, display: 'flex', gap: 4 }}>
                 {isCriticalEsc && (

@@ -148,13 +148,24 @@
 
     // Surface to operators via the existing notification rail. Fire one
     // notification per recipient role so the toast `target` chip shows the
-    // role and the drawer history records who was paged.
+    // role and the drawer history records who was paged. Also resolve each
+    // role to actual user ids (when window.userRoles is loaded) so the
+    // notification carries `resolvedUserIds[]` in ctx — downstream UI can
+    // filter toasts to only the current operator's roles, and the audit
+    // log can show "paged 3 users" instead of just the abstract role label.
+    const ur = window.userRoles;
     for (const role of recipients) {
+      const matched = ur ? ur.usersByRole(role) : [];
       window.events.publish('notification', {
         kind: 'role',
         target: role,
         msg,
-        ctx: { orderId: order.id },
+        ctx: {
+          orderId: order.id,
+          resolvedUserIds: matched.map(u => u.id),
+          resolvedUserNames: matched.map(u =>
+            [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || u.id),
+        },
         viaTat: true,
         level,
         thresholdSource,

@@ -228,12 +228,21 @@ const UserSwitcher = () => {
   const cur = window.currentUser;
   if (users.length === 0) return null;
 
+  // Hide INACTIVE users from the picker. Always include the current user
+  // even if they're flagged inactive somehow — losing the ability to switch
+  // away from a half-inactive selection would strand the operator.
+  const visibleUsers = users.filter(u =>
+    (u.status || 'ACTIVE') === 'ACTIVE' || (cur && u.id === cur.id));
+
+  // Primary role for the chip badge. Catalog-order priority via userRoles.
+  const curRoleMeta = cur && window.userRoles ? window.userRoles.primaryRoleMeta(cur.id) : null;
+
   return (
     <div style={{ position: 'relative' }}>
       <button onClick={() => setOpen(o => !o)}
         className="btn" data-size="sm" data-variant="ghost"
         style={{ gap: 8, paddingLeft: 8, paddingRight: 8 }}
-        title="Switch active operator">
+        title={curRoleMeta ? `${curRoleMeta.label} — switch active operator` : 'Switch active operator'}>
         <span style={{
           width: 22, height: 22, borderRadius: '50%',
           background: 'var(--sage-200)', color: 'var(--sage-900)',
@@ -246,6 +255,11 @@ const UserSwitcher = () => {
         <span style={{ fontSize: 12.5, color: 'var(--ink-700)' }}>
           {cur ? [cur.firstName, cur.lastName].filter(Boolean).join(' ') : 'No operator'}
         </span>
+        {curRoleMeta && (
+          <span className="pill" data-tone={curRoleMeta.tone} style={{ fontSize: 9.5 }}>
+            {curRoleMeta.label}
+          </span>
+        )}
         <IconChevDown size={12}/>
       </button>
       {open && (
@@ -253,39 +267,50 @@ const UserSwitcher = () => {
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 90 }}/>
           <div style={{
             position: 'absolute', top: '100%', right: 0, marginTop: 4,
-            minWidth: 240, zIndex: 91,
+            minWidth: 260, zIndex: 91,
             background: '#fff', border: '1px solid var(--line)', borderRadius: 6,
             boxShadow: 'var(--shadow-pop)', padding: 4,
           }}>
             <div className="section-title" style={{ padding: '6px 10px' }}>Switch operator</div>
-            {users.map(u => (
-              <button key={u.id}
-                onClick={() => { window.currentUserApi.setCurrent(u.id); setOpen(false); }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                  padding: '8px 10px', border: 0, background: cur && cur.id === u.id ? 'var(--sage-50)' : 'transparent',
-                  borderRadius: 4, cursor: 'pointer', textAlign: 'left',
-                }}
-                onMouseEnter={e => { if (!(cur && cur.id === u.id)) e.currentTarget.style.background = 'var(--ivory-100)'; }}
-                onMouseLeave={e => { if (!(cur && cur.id === u.id)) e.currentTarget.style.background = 'transparent'; }}>
-                <span style={{
-                  width: 22, height: 22, borderRadius: '50%',
-                  background: 'var(--sage-200)', color: 'var(--sage-900)',
-                  display: 'grid', placeItems: 'center',
-                  fontSize: 10.5, fontWeight: 500,
-                }}>
-                  {(u.firstName || '?').slice(0, 1).toUpperCase() + (u.lastName ? u.lastName.slice(0, 1).toUpperCase() : '')}
-                </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, color: 'var(--ink-900)' }}>
-                    {[u.firstName, u.lastName].filter(Boolean).join(' ') || u.username}
+            {visibleUsers.map(u => {
+              const meta = window.userRoles ? window.userRoles.primaryRoleMeta(u.id) : null;
+              const inactive = u.status === 'INACTIVE';
+              return (
+                <button key={u.id}
+                  onClick={() => { window.currentUserApi.setCurrent(u.id); setOpen(false); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                    padding: '8px 10px', border: 0, background: cur && cur.id === u.id ? 'var(--sage-50)' : 'transparent',
+                    borderRadius: 4, cursor: 'pointer', textAlign: 'left',
+                    opacity: inactive ? 0.65 : 1,
+                  }}
+                  onMouseEnter={e => { if (!(cur && cur.id === u.id)) e.currentTarget.style.background = 'var(--ivory-100)'; }}
+                  onMouseLeave={e => { if (!(cur && cur.id === u.id)) e.currentTarget.style.background = 'transparent'; }}>
+                  <span style={{
+                    width: 22, height: 22, borderRadius: '50%',
+                    background: 'var(--sage-200)', color: 'var(--sage-900)',
+                    display: 'grid', placeItems: 'center',
+                    fontSize: 10.5, fontWeight: 500,
+                  }}>
+                    {(u.firstName || '?').slice(0, 1).toUpperCase() + (u.lastName ? u.lastName.slice(0, 1).toUpperCase() : '')}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, color: 'var(--ink-900)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>{[u.firstName, u.lastName].filter(Boolean).join(' ') || u.username}</span>
+                      {meta && (
+                        <span className="pill" data-tone={meta.tone} style={{ fontSize: 9.5 }}>{meta.label}</span>
+                      )}
+                      {inactive && (
+                        <span className="pill" data-tone="ghost" style={{ fontSize: 9.5 }}>inactive</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>
+                      {(u.roles || []).join(', ')}{u.credentials && u.credentials.length ? ' · ' + u.credentials.join(', ') : ''}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>
-                    {(u.roles || []).join(', ')}{u.credentials && u.credentials.length ? ' · ' + u.credentials.join(', ') : ''}
-                  </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </>
       )}
