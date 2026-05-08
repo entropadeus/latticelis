@@ -38,7 +38,32 @@ const CriticalAlerts = () => {
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [results]);
 
-  const [collapsed, setCollapsed] = useStateCA(false);
+  // Collapse state is persisted across reloads. When there are many criticals,
+  // default to collapsed so the cascade doesn't bury the page on first paint —
+  // the user can expand to triage when they're ready.
+  const [collapsed, setCollapsed] = useStateCA(() => {
+    try {
+      const saved = window.localStorage.getItem('lattice.criticalAlertsCollapsed');
+      if (saved === 'true') return true;
+      if (saved === 'false') return false;
+    } catch (e) { /* localStorage unavailable */ }
+    return null; // sentinel — fall through to count-based default below
+  });
+
+  useEffectCA(() => {
+    // Only resolve the sentinel once results have actually loaded. On first
+    // mount unacked.length is 0 (useEntities hasn't pushed data yet); if we
+    // resolved here we'd lock to `false` forever, even when 32 criticals show
+    // up a tick later.
+    if (collapsed === null && unacked.length > 0) {
+      setCollapsed(unacked.length > 4);
+    }
+  }, [unacked.length, collapsed]);
+
+  const setCollapsedPersisted = (v) => {
+    setCollapsed(v);
+    try { window.localStorage.setItem('lattice.criticalAlertsCollapsed', String(v)); } catch (e) { /* ignore */ }
+  };
 
   const ack = async (r) => {
     const spec = r.specimenId ? specimenById[r.specimenId] : null;
@@ -112,10 +137,11 @@ const CriticalAlerts = () => {
   };
 
   if (unacked.length === 0) return null;
+  if (collapsed === null) return null; // wait for the count-based default to resolve
 
   if (collapsed) {
     return (
-      <button onClick={() => setCollapsed(false)} className="slide-down" style={{
+      <button onClick={() => setCollapsedPersisted(false)} className="slide-down" style={{
         position: 'fixed', top: 12, right: 12, zIndex: 800,
         height: 36, padding: '0 14px',
         background: 'var(--rust)', color: '#fff',
@@ -152,7 +178,7 @@ const CriticalAlerts = () => {
             fontSize: 11, cursor: 'pointer',
           }}>Ack all</button>
         )}
-        <button onClick={() => setCollapsed(true)} style={{
+        <button onClick={() => setCollapsedPersisted(true)} style={{
           background: 'transparent', color: '#fff', border: 0, padding: '0 4px',
           fontSize: 14, cursor: 'pointer', lineHeight: 1,
         }} title="Collapse">−</button>

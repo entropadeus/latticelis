@@ -292,20 +292,19 @@ const ClientVolumePanel = ({ orders, results, specimens, clients }) => {
               <div key={row.client.id}
                 onClick={onClick}
                 title={`Open Orders filtered to ${row.client.code} — ${row.client.name}`}
+                className="dashboard-bar-row"
                 style={{
                   display: 'grid', gridTemplateColumns: '90px 1fr 60px 60px',
                   gap: 8, alignItems: 'center', fontSize: 12,
                   padding: '4px 6px', borderRadius: 4,
                   cursor: 'pointer',
                   transition: 'background 80ms linear',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'var(--ivory-100)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                }}>
                 <span className="mono" style={{ color: 'var(--sage-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {row.client.code}
                 </span>
-                <div style={{ height: 14, background: 'var(--ivory-200)', borderRadius: 3, position: 'relative' }}>
-                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: widthPct + '%', background: 'var(--info)', borderRadius: 3 }}/>
+                <div style={{ height: 10, background: 'var(--sage-50)', borderRadius: 999, position: 'relative', overflow: 'hidden' }}>
+                  <div className="dashboard-bar-fill" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: widthPct + '%', background: 'var(--sage-600)', borderRadius: 999, transition: 'background 120ms linear, width 240ms var(--ease-out)' }}/>
                 </div>
                 <span className="mono tnum" style={{ color: 'var(--ink-900)', textAlign: 'right' }}>{row.count}</span>
                 <span className="mono" style={{ color: 'var(--ink-400)', fontSize: 11, textAlign: 'right' }}>TAT {fmt(row.tatMedian)}</span>

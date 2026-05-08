@@ -6308,7 +6308,25 @@ var CriticalAlerts = () => {
   var unacked = useMemoCA(() => {
     return results.filter(r => CRITICAL_FLAGS.includes(r.flag) && !r.criticalAckedAt).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [results]);
-  var [collapsed, setCollapsed] = useStateCA(false);
+  var [collapsed, setCollapsed] = useStateCA(() => {
+    try {
+      var saved = window.localStorage.getItem('lattice.criticalAlertsCollapsed');
+      if (saved === 'true') return true;
+      if (saved === 'false') return false;
+    } catch (e) {}
+    return null;
+  });
+  useEffectCA(() => {
+    if (collapsed === null && unacked.length > 0) {
+      setCollapsed(unacked.length > 4);
+    }
+  }, [unacked.length, collapsed]);
+  var setCollapsedPersisted = v => {
+    setCollapsed(v);
+    try {
+      window.localStorage.setItem('lattice.criticalAlertsCollapsed', String(v));
+    } catch (e) {}
+  };
   var ack = async r => {
     var spec = r.specimenId ? specimenById[r.specimenId] : null;
     var pat = spec && spec.patientId ? patientById[spec.patientId] : null;
@@ -6390,9 +6408,10 @@ var CriticalAlerts = () => {
     }
   };
   if (unacked.length === 0) return null;
+  if (collapsed === null) return null;
   if (collapsed) {
     return React.createElement("button", {
-      onClick: () => setCollapsed(false),
+      onClick: () => setCollapsedPersisted(false),
       className: "slide-down",
       style: {
         position: 'fixed',
@@ -6465,7 +6484,7 @@ var CriticalAlerts = () => {
       cursor: 'pointer'
     }
   }, "Ack all"), React.createElement("button", {
-    onClick: () => setCollapsed(true),
+    onClick: () => setCollapsedPersisted(true),
     style: {
       background: 'transparent',
       color: '#fff',
@@ -10775,6 +10794,7 @@ var ClientVolumePanel = ({
       key: row.client.id,
       onClick: onClick,
       title: `Open Orders filtered to ${row.client.code} — ${row.client.name}`,
+      className: "dashboard-bar-row",
       style: {
         display: 'grid',
         gridTemplateColumns: '90px 1fr 60px 60px',
@@ -10785,12 +10805,6 @@ var ClientVolumePanel = ({
         borderRadius: 4,
         cursor: 'pointer',
         transition: 'background 80ms linear'
-      },
-      onMouseEnter: e => {
-        e.currentTarget.style.background = 'var(--ivory-100)';
-      },
-      onMouseLeave: e => {
-        e.currentTarget.style.background = 'transparent';
       }
     }, React.createElement("span", {
       className: "mono",
@@ -10802,20 +10816,23 @@ var ClientVolumePanel = ({
       }
     }, row.client.code), React.createElement("div", {
       style: {
-        height: 14,
-        background: 'var(--ivory-200)',
-        borderRadius: 3,
-        position: 'relative'
+        height: 10,
+        background: 'var(--sage-50)',
+        borderRadius: 999,
+        position: 'relative',
+        overflow: 'hidden'
       }
     }, React.createElement("div", {
+      className: "dashboard-bar-fill",
       style: {
         position: 'absolute',
         left: 0,
         top: 0,
         bottom: 0,
         width: widthPct + '%',
-        background: 'var(--info)',
-        borderRadius: 3
+        background: 'var(--sage-600)',
+        borderRadius: 999,
+        transition: 'background 120ms linear, width 240ms var(--ease-out)'
       }
     })), React.createElement("span", {
       className: "mono tnum",
