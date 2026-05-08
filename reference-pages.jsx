@@ -17,7 +17,7 @@ const TestCatalogPage = ({ onBack }) => {
   const startNew = () => {
     if (!hasPermission('EDIT_TEST_CATALOG')) return;
     setEditingId(null);
-    setDraft({ code: '', name: '', shortName: '', loinc: '', units: '', refRangeLow: '', refRangeHigh: '', turnaroundMinutes: '', referenceRanges: [], criticalEscalationT1Sec: '', criticalEscalationT2Sec: '', active: true });
+    setDraft({ code: '', name: '', shortName: '', loinc: '', units: '', refRangeLow: '', refRangeHigh: '', turnaroundMinutes: '', referenceRanges: [], criticalEscalationT1Sec: '', criticalEscalationT2Sec: '', lotExpirationAmberDays: '', active: true });
   };
   const startEdit = (t) => {
     if (!hasPermission('EDIT_TEST_CATALOG')) return;
@@ -31,6 +31,7 @@ const TestCatalogPage = ({ onBack }) => {
       referenceRanges: Array.isArray(t.referenceRanges) ? t.referenceRanges.map(r => ({ ...r })) : [],
       criticalEscalationT1Sec: t.criticalEscalationT1Sec == null ? '' : t.criticalEscalationT1Sec,
       criticalEscalationT2Sec: t.criticalEscalationT2Sec == null ? '' : t.criticalEscalationT2Sec,
+      lotExpirationAmberDays: t.lotExpirationAmberDays == null ? '' : t.lotExpirationAmberDays,
       active: t.active !== false,
     });
   };
@@ -53,6 +54,7 @@ const TestCatalogPage = ({ onBack }) => {
       turnaroundMinutes: draft.turnaroundMinutes === '' ? null : Number(draft.turnaroundMinutes),
       criticalEscalationT1Sec: parseSec(draft.criticalEscalationT1Sec),
       criticalEscalationT2Sec: parseSec(draft.criticalEscalationT2Sec),
+      lotExpirationAmberDays: parseSec(draft.lotExpirationAmberDays),
       referenceRanges: (draft.referenceRanges || []).map(r => window.schema.newReferenceRange(r)),
     };
     if (editingId) {
@@ -286,6 +288,21 @@ const TestCatalogPage = ({ onBack }) => {
                 </div>
                 <div style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>
                   Per-test override for unacknowledged critical results. Empty = use global default. T2 must be greater than T1; otherwise both fall back to defaults.
+                </div>
+              </div>
+
+              <div style={{ marginTop: 6, marginBottom: 10, padding: 10, background: 'var(--ivory-50)', border: '1px solid var(--line)', borderRadius: 5 }}>
+                <div className="section-title" style={{ fontSize: 9.5, marginBottom: 6 }}>QC lot expiration warning</div>
+                <CatalogField label="Amber threshold (days)">
+                  <input className="input mono tnum" placeholder="default 14"
+                    value={draft.lotExpirationAmberDays}
+                    onChange={e => setDraft({ ...draft, lotExpirationAmberDays: e.target.value })}/>
+                </CatalogField>
+                <div style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>
+                  Days before a QC lot expires when the watcher should fire the
+                  "expiring soon" notification. Empty = use global default (14).
+                  Useful when this test's reagent has a tighter shelf life than
+                  most and the lab wants earlier warning.
                 </div>
               </div>
 

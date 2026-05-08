@@ -13,12 +13,24 @@ const DashboardPage = () => {
     const resultsToVerify = results.filter(r => r.status === 'preliminary' || r.status === 'pending').length;
     const criticalResults = results.filter(r => r.flag === 'LL' || r.flag === 'HH' || r.flag === 'A').length;
     const interfaceAlerts = interfaces.filter(i => i.status === 'error' || i.status === 'offline').length;
+    // `zeroCaption` overrides the default "No data" foot-text when the KPI
+    // is zero. Counters where zero is the *good* state (criticals, interface
+    // alerts, review queue) get reassuring copy; counters where zero is just
+    // "nothing yet today" get neutral copy. `zeroIsGood` lights the value
+    // sage instead of muted ink so the dashboard reads as healthy at a glance.
     return [
-      { l: 'Orders today',         v: ordersToday,         i: 'IconOrder' },
-      { l: 'Specimens in transit', v: specimensInTransit,  i: 'IconTube' },
-      { l: 'Results to verify',    v: resultsToVerify,     i: 'IconResults' },
-      { l: 'Critical results',     v: criticalResults,     i: 'IconFlag', tone: criticalResults > 0 ? 'rust' : null },
-      { l: 'Interface alerts',     v: interfaceAlerts,     i: 'IconInterface', tone: interfaceAlerts > 0 ? 'amber' : null },
+      { l: 'Orders today',         v: ordersToday,         i: 'IconOrder',
+        zeroCaption: 'No orders yet today' },
+      { l: 'Specimens in transit', v: specimensInTransit,  i: 'IconTube',
+        zeroCaption: 'None in transit' },
+      { l: 'Results to verify',    v: resultsToVerify,     i: 'IconResults',
+        zeroCaption: 'Queue is clear', zeroIsGood: true },
+      { l: 'Critical results',     v: criticalResults,     i: 'IconFlag',
+        tone: criticalResults > 0 ? 'rust' : null,
+        zeroCaption: 'All clear', zeroIsGood: true },
+      { l: 'Interface alerts',     v: interfaceAlerts,     i: 'IconInterface',
+        tone: interfaceAlerts > 0 ? 'amber' : null,
+        zeroCaption: 'All systems healthy', zeroIsGood: true },
     ];
   }, [orders, specimens, results, interfaces]);
 
@@ -35,10 +47,13 @@ const DashboardPage = () => {
       {kpis.map(k => {
         const Ico = window[k.i];
         const isZero = k.v === 0;
-        const valueColor = isZero ? 'var(--ink-300)'
+        const valueColor = isZero
+          ? (k.zeroIsGood ? 'var(--sage-600)' : 'var(--ink-300)')
           : k.tone === 'rust'  ? 'var(--err-700)'
           : k.tone === 'amber' ? 'var(--warn-700)'
           : 'var(--ink-900)';
+        const captionColor = isZero && k.zeroIsGood ? 'var(--sage-700)' : 'var(--ink-300)';
+        const caption = isZero ? (k.zeroCaption || 'No data') : 'Live';
         return (
           <div key={k.l} className="panel" style={{ padding: 14 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -46,7 +61,7 @@ const DashboardPage = () => {
               <Ico size={14} style={{ color: 'var(--ink-300)' }}/>
             </div>
             <div className="mono tnum" style={{ fontSize: 26, color: valueColor, fontWeight: 400, letterSpacing: '-0.02em' }}>{isZero ? '0' : k.v}</div>
-            <div style={{ fontSize: 11, color: 'var(--ink-300)', marginTop: 2 }}>{isZero ? 'No data' : 'Live'}</div>
+            <div style={{ fontSize: 11, color: captionColor, marginTop: 2 }}>{caption}</div>
           </div>
         );
       })}
@@ -292,20 +307,19 @@ const ClientVolumePanel = ({ orders, results, specimens, clients }) => {
               <div key={row.client.id}
                 onClick={onClick}
                 title={`Open Orders filtered to ${row.client.code} — ${row.client.name}`}
+                className="dashboard-bar-row"
                 style={{
                   display: 'grid', gridTemplateColumns: '90px 1fr 60px 60px',
                   gap: 8, alignItems: 'center', fontSize: 12,
                   padding: '4px 6px', borderRadius: 4,
                   cursor: 'pointer',
                   transition: 'background 80ms linear',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'var(--ivory-100)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                }}>
                 <span className="mono" style={{ color: 'var(--sage-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {row.client.code}
                 </span>
-                <div style={{ height: 14, background: 'var(--ivory-200)', borderRadius: 3, position: 'relative' }}>
-                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: widthPct + '%', background: 'var(--info)', borderRadius: 3 }}/>
+                <div style={{ height: 10, background: 'var(--sage-50)', borderRadius: 999, position: 'relative', overflow: 'hidden' }}>
+                  <div className="dashboard-bar-fill" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: widthPct + '%', background: 'var(--sage-600)', borderRadius: 999, transition: 'background 120ms linear, width 240ms var(--ease-out)' }}/>
                 </div>
                 <span className="mono tnum" style={{ color: 'var(--ink-900)', textAlign: 'right' }}>{row.count}</span>
                 <span className="mono" style={{ color: 'var(--ink-400)', fontSize: 11, textAlign: 'right' }}>TAT {fmt(row.tatMedian)}</span>
