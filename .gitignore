@@ -1,9 +1,19 @@
+# Build artifacts
 .build-cache/
-.claude/
-ui-audit-shots/
-_design/
-*.md
-
 node_modules/
+ui-audit-shots/
+
+# Internal / AI scaffolding
+.claude/
+_design/
+
+# Internal docs (not for public deployment)
+# Keep all markdown private except the README.
+*.md
+!README.md
+# Internal text notes (build ledger, scratchpads, etc.)
+*.txt
+
+# OS junk
 .DS_Store
 Thumbs.db
