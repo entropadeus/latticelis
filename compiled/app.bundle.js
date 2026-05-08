@@ -10225,25 +10225,33 @@ var DashboardPage = () => {
     return [{
       l: 'Orders today',
       v: ordersToday,
-      i: 'IconOrder'
+      i: 'IconOrder',
+      zeroCaption: 'No orders yet today'
     }, {
       l: 'Specimens in transit',
       v: specimensInTransit,
-      i: 'IconTube'
+      i: 'IconTube',
+      zeroCaption: 'None in transit'
     }, {
       l: 'Results to verify',
       v: resultsToVerify,
-      i: 'IconResults'
+      i: 'IconResults',
+      zeroCaption: 'Queue is clear',
+      zeroIsGood: true
     }, {
       l: 'Critical results',
       v: criticalResults,
       i: 'IconFlag',
-      tone: criticalResults > 0 ? 'rust' : null
+      tone: criticalResults > 0 ? 'rust' : null,
+      zeroCaption: 'All clear',
+      zeroIsGood: true
     }, {
       l: 'Interface alerts',
       v: interfaceAlerts,
       i: 'IconInterface',
-      tone: interfaceAlerts > 0 ? 'amber' : null
+      tone: interfaceAlerts > 0 ? 'amber' : null,
+      zeroCaption: 'All systems healthy',
+      zeroIsGood: true
     }];
   }, [orders, specimens, results, interfaces]);
   return React.createElement(Page, {
@@ -10269,7 +10277,9 @@ var DashboardPage = () => {
   }, kpis.map(k => {
     var Ico = window[k.i];
     var isZero = k.v === 0;
-    var valueColor = isZero ? 'var(--ink-300)' : k.tone === 'rust' ? 'var(--err-700)' : k.tone === 'amber' ? 'var(--warn-700)' : 'var(--ink-900)';
+    var valueColor = isZero ? k.zeroIsGood ? 'var(--sage-600)' : 'var(--ink-300)' : k.tone === 'rust' ? 'var(--err-700)' : k.tone === 'amber' ? 'var(--warn-700)' : 'var(--ink-900)';
+    var captionColor = isZero && k.zeroIsGood ? 'var(--sage-700)' : 'var(--ink-300)';
+    var caption = isZero ? k.zeroCaption || 'No data' : 'Live';
     return React.createElement("div", {
       key: k.l,
       className: "panel",
@@ -10304,10 +10314,10 @@ var DashboardPage = () => {
     }, isZero ? '0' : k.v), React.createElement("div", {
       style: {
         fontSize: 11,
-        color: 'var(--ink-300)',
+        color: captionColor,
         marginTop: 2
       }
-    }, isZero ? 'No data' : 'Live'));
+    }, caption));
   })), React.createElement("div", {
     style: {
       display: 'grid',
