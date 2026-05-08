@@ -1,19 +1,26 @@
 const AdminPage = ({ onNav }) => {
+  // Each tile declares the permission needed to see it. Tiles without a
+  // permission gate are visible to everyone who reached the Admin page
+  // (the Admin page itself is gated at the sidebar level via anyPermission).
   const tiles = [
-    { id: 'users',        label: 'Users & Roles',     desc: 'Manage users, roles, permissions',           icon: 'IconUser', go: 'users' },
-    { id: 'clients',      label: 'Clients',           desc: 'Referring clinics, delivery preferences',    icon: 'IconMap', go: 'clients' },
-    { id: 'locations',    label: 'Locations',         desc: 'Facilities, departments, sites',             icon: 'IconMap', go: 'locations' },
-    { id: 'instruments',  label: 'Instruments',       desc: 'Configure devices and connectivity',         icon: 'IconInstrument', go: 'instruments' },
-    { id: 'interfaces',   label: 'Interfaces',        desc: 'HL7 integrations and endpoints',             icon: 'IconInterface', go: 'interfaces' },
-    { id: 'tests',        label: 'Test Catalog',      desc: 'Tests, panels, analytes, LOINC',             icon: 'IconBeaker', go: 'tests' },
-    { id: 'mappers',      label: 'Mappers (LML)',     desc: 'Inbound/outbound format scripts',            icon: 'IconBranch', go: 'mappers' },
-    { id: 'qc',           label: 'QC (Westgard)',     desc: 'Control levels, runs, rule violations',      icon: 'IconBeaker', go: 'qc' },
-    { id: 'rules',        label: 'Rules Engine',      desc: 'Order routing, validation, reflex logic',    icon: 'IconRules', go: 'rules' },
-    { id: 'ranges',       label: 'Reference Ranges',  desc: 'Ranges by test, age, sex, population',       icon: 'IconReports', go: 'tests' },
-    { id: 'notifications',label: 'Notifications',     desc: 'TAT thresholds, alert routing, recent breaches', icon: 'IconBell', go: 'notifications' },
-    { id: 'labels',       label: 'Labels & Printing', desc: 'Label templates, printers, formats',         icon: 'IconLabel', go: 'labels' },
-    { id: 'audit',        label: 'Audit & Compliance',desc: 'Audit log, retention, access reviews',       icon: 'IconShield', go: 'reports' },
-  ];
+    { id: 'users',        label: 'Users & Roles',     desc: 'Manage users, roles, permissions',           icon: 'IconUser',       go: 'users',         permission: 'EDIT_USERS' },
+    { id: 'clients',      label: 'Clients',           desc: 'Referring clinics, delivery preferences',    icon: 'IconMap',        go: 'clients',       permission: 'EDIT_LAB_CONFIG' },
+    { id: 'locations',    label: 'Locations',         desc: 'Facilities, departments, sites',             icon: 'IconMap',        go: 'locations',     permission: 'EDIT_LAB_CONFIG' },
+    { id: 'instruments',  label: 'Instruments',       desc: 'Configure devices and connectivity',         icon: 'IconInstrument', go: 'instruments',   permission: 'EDIT_INTERFACES' },
+    { id: 'interfaces',   label: 'Interfaces',        desc: 'HL7 integrations and endpoints',             icon: 'IconInterface',  go: 'interfaces',    permission: 'EDIT_INTERFACES' },
+    { id: 'tests',        label: 'Test Catalog',      desc: 'Tests, panels, analytes, LOINC',             icon: 'IconBeaker',     go: 'tests',         permission: 'EDIT_TEST_CATALOG' },
+    { id: 'mappers',      label: 'Mappers (LML)',     desc: 'Inbound/outbound format scripts',            icon: 'IconBranch',     go: 'mappers',       permission: 'EDIT_INTERFACES' },
+    { id: 'qc',           label: 'QC (Westgard)',     desc: 'Control levels, runs, rule violations',      icon: 'IconBeaker',     go: 'qc',            permission: 'RESOLVE_QC' },
+    { id: 'rules',        label: 'Rules Engine',      desc: 'Order routing, validation, reflex logic',    icon: 'IconRules',      go: 'rules',         permission: 'EDIT_RULES' },
+    { id: 'ranges',       label: 'Reference Ranges',  desc: 'Ranges by test, age, sex, population',       icon: 'IconReports',    go: 'tests',         permission: 'EDIT_TEST_CATALOG' },
+    { id: 'notifications',label: 'Notifications',     desc: 'TAT thresholds, alert routing, recent breaches', icon: 'IconBell',  go: 'notifications', permission: 'EDIT_LAB_CONFIG' },
+    { id: 'labels',       label: 'Labels & Printing', desc: 'Label templates, printers, formats',         icon: 'IconLabel',      go: 'labels',        permission: 'EDIT_LABEL_TEMPLATES' },
+    { id: 'audit',        label: 'Audit & Compliance',desc: 'Audit log, retention, access reviews',       icon: 'IconShield',     go: 'reports' },
+  ].filter(t => {
+    if (!t.permission) return true;
+    if (!window.userRoles || !window.currentUser) return true;
+    return window.userRoles.userHasPermission(window.currentUser.id, t.permission);
+  });
 
   const exportSnapshot = async () => {
     const snap = await window.db.exportAll();

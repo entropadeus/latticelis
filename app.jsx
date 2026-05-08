@@ -9,7 +9,38 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 }/*EDITMODE-END*/;
 
 const App = () => {
+  // ── Auth gate ─────────────────────────────────────────────────────────
+  // The login flag is the source of truth — we re-read it on every render
+  // and on auth.subscribeAuth callbacks. When `authedId` is null, the LoginPage
+  // is rendered instead of the main shell. `currentUser` (set by current-user.js
+  // when the auth flag matches a real user) is the deeper signal — we wait
+  // for both to line up before flipping into the app to avoid the brief
+  // moment where authedId is set but the user record hasn't hydrated yet.
+  const [authTick, bumpAuth] = useStateApp(0);
+  useEffectApp(() => {
+    if (!window.auth) return;
+    const unsub = window.auth.subscribeAuth(() => bumpAuth(t => t + 1));
+    return unsub;
+  }, []);
+  // Bump on currentUser changes too — current-user.js fires its own subscribers
+  // when the user record lands; without this hook the app stays on LoginPage
+  // for one render after auth.verify resolves.
+  useEffectApp(() => {
+    if (!window.currentUserApi) return;
+    return window.currentUserApi.subscribe(() => bumpAuth(t => t + 1));
+  }, []);
+  const authedId = window.auth ? window.auth.authedUserId() : null;
+  const authedUser = authedId && window.currentUser && window.currentUser.id === authedId
+    ? window.currentUser : null;
+
   const [active, setActive] = useStateApp('dashboard');
+
+  // Reset active page when the signed-in identity changes so a fresh sign-in
+  // doesn't land on a Forbidden page left over from the previous operator.
+  // useEffect-driven, only fires when the user *id* actually changes.
+  useEffectApp(() => {
+    if (authedUser) setActive('dashboard');
+  }, [authedUser && authedUser.id]);
   const [cmdOpen, setCmdOpen] = useStateApp(false);
   const [newOrderOpen, setNewOrderOpen] = useStateApp(false);
   // Optional pinned filter for the Orders page. Set when navigating from
@@ -98,7 +129,47 @@ const App = () => {
   const showSidebar = navStyle === 'sidebar' || navStyle === 'hybrid';
   const showTopRail = navStyle === 'top';
 
+  // Route-level permission gate. Pages that should restrict access by role
+  // declare the permission here; if the current user lacks it, we render
+  // a Forbidden panel instead of the page. Routes not in this map are
+  // unrestricted.
+  const ROUTE_PERMISSIONS = {
+    accession:     'ACCESSION',
+    instruments:   'EDIT_INTERFACES',
+    interfaces:    'EDIT_INTERFACES',
+    rules:         'EDIT_RULES',
+    tests:         'EDIT_TEST_CATALOG',
+    clients:       'EDIT_LAB_CONFIG',
+    locations:     'EDIT_LAB_CONFIG',
+    labels:        'EDIT_LABEL_TEMPLATES',
+    mappers:       'EDIT_INTERFACES',
+    qc:            'RESOLVE_QC',
+    notifications: 'EDIT_LAB_CONFIG',
+    users:         'EDIT_USERS',
+  };
+
+  const Forbidden = ({ route, perm }) => (
+    <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 32 }}>
+      <div className="panel" style={{ padding: 32, maxWidth: 440, textAlign: 'center' }}>
+        <div style={{ fontSize: 28, marginBottom: 8 }}>🔒</div>
+        <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--ink-900)', marginBottom: 8 }}>
+          Your role doesn't allow this
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-500)', lineHeight: 1.6, marginBottom: 14 }}>
+          The <span className="mono">{route}</span> page requires the
+          <span className="mono"> {perm}</span> permission. Talk to a Lab Director or IT Admin if you need access, or sign out and use an account that holds that permission.
+        </div>
+        <button className="btn" data-size="sm" onClick={() => setActive('dashboard')}>Back to Dashboard</button>
+      </div>
+    </div>
+  );
+
   const activePage = useMemoApp(() => {
+    const perm = ROUTE_PERMISSIONS[active];
+    if (perm && window.userRoles && window.currentUser
+        && !window.userRoles.userHasPermission(window.currentUser.id, perm)) {
+      return <Forbidden route={active} perm={perm}/>;
+    }
     switch (active) {
       case 'dashboard':   return <DashboardPage/>;
       case 'orders':      return <OrdersPage filterClientId={ordersFilterClientId}
@@ -123,7 +194,15 @@ const App = () => {
       case 'users':       return <UsersPage onBack={() => setActive('admin')}/>;
       default:            return <DashboardPage/>;
     }
-  }, [active, rules, ordersFilterClientId]);
+  }, [active, rules, ordersFilterClientId, authedUser && authedUser.id]);
+
+  // Render the LoginPage until both (a) the auth flag is set AND (b) the
+  // user record hydrated. After verify() succeeds, both hold within one
+  // event loop tick — current-user.js refresh() runs synchronously after
+  // auth flips the localStorage flag.
+  if (!authedUser && window.LoginPage) {
+    return <window.LoginPage onSuccess={() => bumpAuth(t => t + 1)}/>;
+  }
 
   return (
     <div className="app" data-nav={navStyle}>

@@ -23,6 +23,7 @@ const jsxFiles = [
   'entity-drawer.jsx',
   'safety-modal.jsx',
   'shared-pages.jsx',
+  'login-page.jsx',
   'dashboard-pages.jsx',
   'order-workflow-pages.jsx',
   'result-pages.jsx',

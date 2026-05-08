@@ -527,6 +527,15 @@ const newUser = (init = {}) => ({
     ? init.facilityIds.filter(f => typeof f === 'string')
     : [],
   status: init.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+  // Password storage: salt + SHA-256 hash via auth.js (Web Crypto SubtleCrypto).
+  // PROTOTYPE-GRADE — single-round SHA-256 with a per-user random salt is fine
+  // for an in-browser-only LIS prototype; production needs PBKDF2 / argon2id
+  // with proper work factors. Both fields are nullable: a user without a
+  // passwordHash cannot log in (auth.verify returns reason: 'no password set').
+  // Writing nulls is intentional, not a sentinel for "no password ever required".
+  passwordHash: init.passwordHash || null,
+  passwordSalt: init.passwordSalt || null,
+  passwordSetAt: init.passwordSetAt || null,
   createdAt: init.createdAt || Date.now(),
   updatedAt: Date.now(),
 });
