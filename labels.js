@@ -22,9 +22,13 @@
 
 (function () {
 
-  // 2x1 @ 203 dpi
-  const W = 406;
-  const H = 203;
+  // 1x2 @ 203 dpi — portrait by default. Portrait reads naturally on a
+  // tube held upright (sticker on the front) and matches the `label_templates`
+  // admin form's new-template defaults. The Labels admin form is the source
+  // of truth for any per-template variation; this constant only governs the
+  // inline-fallback path used when no template matches.
+  const W = 203;
+  const H = 406;
   const MAX_ZPL_BYTES = 12000;
   const MAX_COPIES = 10;
   const DENIED_TEMPLATE_COMMANDS = [
@@ -264,24 +268,29 @@
       if (!lint.ok) throw new Error('[labels] unsafe ZPL template: ' + lint.errors.slice(0, 3).join('; '));
       usedTemplate = { id: template.id, code: template.code, name: template.name };
     } else {
-      // Inline default — preserves prior behavior when no templates exist.
+      // Inline default — portrait 1×2 layout. Tubes are read upright; the
+      // patient block sits below the barcode header and the order/coll
+      // footer pins to the bottom edge. Coordinates target ^PW203 ^LL406.
       const lines = [];
       lines.push('^XA');
       lines.push(`^PW${W}`);
       lines.push(`^LL${H}`);
       lines.push('^LH0,0');
       if (includeBarcode && render.accession) {
-        lines.push('^FO12,8');
-        lines.push('^BY2,2.5,50');
-        lines.push('^BCN,50,Y,N,N');
+        lines.push('^FO8,8');
+        lines.push('^BY2,2.5,80');
+        lines.push('^BCN,80,Y,N,N');
         lines.push(`^FD${__zplEsc(render.accession)}^FS`);
       }
-      lines.push(`^FO12,75^A0N,22,22^FD${__zplEsc(render.patientLine)}^FS`);
-      const id1 = `MRN ${render.mrn}` + (render.dob ? `  DOB ${render.dob}` : '') + (render.sex ? `  ${render.sex}` : '') + (render.age != null ? `  ${render.age}y` : '');
-      lines.push(`^FO12,103^A0N,18,18^FD${__zplEsc(id1)}^FS`);
-      lines.push(`^FO12,125^A0N,18,18^FD${__zplEsc(render.specimenType + '  ·  ' + render.container)}^FS`);
-      lines.push(`^FO12,147^A0N,18,18^FDTESTS: ${__zplEsc(render.testsShort)}^FS`);
-      lines.push(`^FO12,170^A0N,16,16^FD${__zplEsc('ORD ' + render.orderNumber)}    COLL ${__zplEsc(render.collectedAt)}^FS`);
+      lines.push(`^FO8,118^A0N,18,18^FD${__zplEsc(render.patientLine)}^FS`);
+      lines.push(`^FO8,148^A0N,14,14^FD${__zplEsc('MRN ' + render.mrn)}^FS`);
+      const id2 = (render.dob || '') + (render.sex ? '  ' + render.sex : '') + (render.age != null ? '  ' + render.age + 'y' : '');
+      lines.push(`^FO8,168^A0N,14,14^FD${__zplEsc(id2)}^FS`);
+      lines.push(`^FO8,196^A0N,16,16^FD${__zplEsc(render.specimenType)}^FS`);
+      lines.push(`^FO8,218^A0N,14,14^FD${__zplEsc(render.container)}^FS`);
+      lines.push(`^FO8,250^A0N,12,12^FDTESTS^FS`);
+      lines.push(`^FO8,268^A0N,16,16^FD${__zplEsc(render.testsShort)}^FS`);
+      lines.push(`^FO8,378^A0N,12,12^FD${__zplEsc('ORD ' + render.orderNumber)}^FS`);
       if (copies > 1) lines.push(`^PQ${copies}`);
       lines.push('^XZ');
       zpl = lines.join('\n');
