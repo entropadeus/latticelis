@@ -21523,14 +21523,16 @@ var LabelPreviewModal = ({
   };
   var printNow = () => {
     if (!built) return;
-    var w = window.open('', '_blank', 'width=400,height=240');
+    var widthIn = built.meta && Number(built.meta.width) || 2;
+    var heightIn = built.meta && Number(built.meta.height) || 1;
+    var w = window.open('', '_blank', `width=${Math.round(widthIn * 200)},height=${Math.round(heightIn * 240)}`);
     if (!w) {
       window.alert('Pop-up blocked — allow pop-ups to print.');
       return;
     }
     w.document.write(`<!doctype html><html><head><title>Label ${built.render.accession}</title>
-      <style>@page { size: 2in 1in; margin: 0; } body { margin: 0; padding: 0; }</style>
-      </head><body>${window.labels.renderHtml(built.render)}<script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); };</script></body></html>`);
+      <style>@page { size: ${widthIn}in ${heightIn}in; margin: 0; } body { margin: 0; padding: 0; }</style>
+      </head><body>${window.labels.renderHtml(built.render, built.meta)}<script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); };</script></body></html>`);
     w.document.close();
   };
   return React.createElement("div", {
@@ -21604,9 +21606,9 @@ var LabelPreviewModal = ({
       fontSize: 9.5,
       marginBottom: 6
     }
-  }, "Preview (2.0\" \xD7 1.0\")"), React.createElement("div", {
+  }, "Preview (", Number(built.meta.width || 2), "\u2033 \xD7 ", Number(built.meta.height || 1), "\u2033)"), React.createElement("div", {
     dangerouslySetInnerHTML: {
-      __html: window.labels.renderHtml(built.render)
+      __html: window.labels.renderHtml(built.render, built.meta)
     }
   }), React.createElement("div", {
     style: {
@@ -21614,7 +21616,7 @@ var LabelPreviewModal = ({
       fontSize: 11,
       color: 'var(--ink-400)'
     }
-  }, built.meta.width, "\xD7", built.meta.height, " dots @ ", built.meta.dpi, " dpi")), React.createElement("div", {
+  }, Math.round(Number(built.meta.width) * Number(built.meta.dpi)), "\xD7", Math.round(Number(built.meta.height) * Number(built.meta.dpi)), " dots @ ", built.meta.dpi, " dpi")), React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',

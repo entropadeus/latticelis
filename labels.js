@@ -328,12 +328,47 @@
 
   // Convenience for a print preview window that uses HTML rendering instead
   // of ZPL — used by the UI when no Zebra is wired.
-  const renderHtml = (render) => {
+  //
+  // Sizes the preview box to actual template dimensions (passed in via the
+  // `meta` returned by build()), then picks a layout that fits the aspect.
+  // Portrait (taller than wide) stacks each datum on its own row to match
+  // the ZPL portrait template; landscape uses the wide-row layout. Both
+  // set `box-sizing:border-box` (without it, padding pushed content past
+  // the constraint) and `overflow:hidden` (without it, spillover into
+  // adjacent labels mirrored exactly what the printer would have done —
+  // wrapped to a second label).
+  //
+  // `meta` is optional for backward compat — falls back to 2×1 landscape
+  // at the previous fixed scale if absent.
+  const SCREEN_PX_PER_INCH = 144;
+  const renderHtml = (render, meta) => {
     const e = __htmlEsc;
-    return `<div style="font:12px Geist,system-ui;width:288px;height:144px;padding:8px;border:1px solid #000;">
+    const widthIn  = (meta && Number(meta.width))  || 2.0;
+    const heightIn = (meta && Number(meta.height)) || 1.0;
+    const pxW = Math.round(widthIn  * SCREEN_PX_PER_INCH);
+    const pxH = Math.round(heightIn * SCREEN_PX_PER_INCH);
+    const portrait = heightIn > widthIn;
+
+    if (portrait) {
+      // Vertical stack — each line has room to breathe at narrower widths.
+      return `<div style="font:11px Geist,system-ui;width:${pxW}px;height:${pxH}px;padding:8px;border:1px solid #000;box-sizing:border-box;display:flex;flex-direction:column;gap:2px;overflow:hidden;background:#fff;color:#000;">
+        <div style="font:13px Geist Mono,monospace;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:4px;letter-spacing:0.5px;">${e(render.accession)}</div>
+        <div style="font-weight:600;font-size:13px;">${e(render.patientLine)}</div>
+        <div style="font-size:10px;color:#444;">MRN ${e(render.mrn)}</div>
+        <div style="font-size:10px;color:#444;">${e(render.dob)}${render.sex ? ' · ' + e(render.sex) : ''}${render.age != null ? ' · ' + render.age + 'y' : ''}</div>
+        <div style="margin-top:4px;font-size:12px;">${e(render.specimenType)}</div>
+        <div style="font-size:10px;color:#444;">${e(render.container)}</div>
+        <div style="margin-top:4px;font-size:9px;color:#666;text-transform:uppercase;letter-spacing:0.04em;">Tests</div>
+        <div style="font-size:11px;">${e(render.testsShort)}</div>
+        <div style="margin-top:auto;font-size:9px;color:#666;">ORD ${e(render.orderNumber)}</div>
+      </div>`;
+    }
+
+    // Landscape — same compact-row layout as before, scaled to actual dims.
+    return `<div style="font:12px Geist,system-ui;width:${pxW}px;height:${pxH}px;padding:8px;border:1px solid #000;box-sizing:border-box;overflow:hidden;background:#fff;color:#000;">
       <div style="font:14px Geist Mono,monospace;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:4px;letter-spacing:1px;">${e(render.accession)}</div>
       <div style="font-weight:600;">${e(render.patientLine)}</div>
-      <div style="font-size:11px;color:#444;">MRN ${e(render.mrn)} · DOB ${e(render.dob)} · ${e(render.sex)}${render.age != null ? ` · ${render.age}y` : ''}</div>
+      <div style="font-size:11px;color:#444;">MRN ${e(render.mrn)} · DOB ${e(render.dob)} · ${e(render.sex)}${render.age != null ? ' · ' + render.age + 'y' : ''}</div>
       <div style="margin-top:4px;">${e(render.specimenType)} · ${e(render.container)}</div>
       <div style="font-size:11px;">TESTS: ${e(render.testsShort)}</div>
       <div style="font-size:10px;color:#666;margin-top:4px;">ORD ${e(render.orderNumber)} · COLL ${e(render.collectedAt)}</div>

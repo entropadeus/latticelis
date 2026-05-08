@@ -445,13 +445,17 @@ const LabelPreviewModal = ({ specimenId, onClose }) => {
   // Open an isolated print window so the lab's browser-attached label printer
   // (or any page printer) can render the label without the surrounding LIS UI.
   // The actual ZPL path (Zebra over TCP) is Tier 6.
+  // @page size matches the configured template dimensions, not a fixed 2x1 —
+  // portrait templates print portrait, landscape stays landscape.
   const printNow = () => {
     if (!built) return;
-    const w = window.open('', '_blank', 'width=400,height=240');
+    const widthIn  = (built.meta && Number(built.meta.width))  || 2;
+    const heightIn = (built.meta && Number(built.meta.height)) || 1;
+    const w = window.open('', '_blank', `width=${Math.round(widthIn * 200)},height=${Math.round(heightIn * 240)}`);
     if (!w) { window.alert('Pop-up blocked — allow pop-ups to print.'); return; }
     w.document.write(`<!doctype html><html><head><title>Label ${built.render.accession}</title>
-      <style>@page { size: 2in 1in; margin: 0; } body { margin: 0; padding: 0; }</style>
-      </head><body>${window.labels.renderHtml(built.render)}<script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); };</script></body></html>`);
+      <style>@page { size: ${widthIn}in ${heightIn}in; margin: 0; } body { margin: 0; padding: 0; }</style>
+      </head><body>${window.labels.renderHtml(built.render, built.meta)}<script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); };</script></body></html>`);
     w.document.close();
   };
 
@@ -476,10 +480,12 @@ const LabelPreviewModal = ({ specimenId, onClose }) => {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 0 }}>
             <div style={{ padding: 16, borderRight: '1px solid var(--line)', background: 'var(--ivory-50)' }}>
-              <div className="section-title" style={{ fontSize: 9.5, marginBottom: 6 }}>Preview (2.0" × 1.0")</div>
-              <div dangerouslySetInnerHTML={{ __html: window.labels.renderHtml(built.render) }}/>
+              <div className="section-title" style={{ fontSize: 9.5, marginBottom: 6 }}>
+                Preview ({Number(built.meta.width || 2)}″ × {Number(built.meta.height || 1)}″)
+              </div>
+              <div dangerouslySetInnerHTML={{ __html: window.labels.renderHtml(built.render, built.meta) }}/>
               <div style={{ marginTop: 10, fontSize: 11, color: 'var(--ink-400)' }}>
-                {built.meta.width}×{built.meta.height} dots @ {built.meta.dpi} dpi
+                {Math.round(Number(built.meta.width) * Number(built.meta.dpi))}×{Math.round(Number(built.meta.height) * Number(built.meta.dpi))} dots @ {built.meta.dpi} dpi
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', minHeight: 240 }}>
