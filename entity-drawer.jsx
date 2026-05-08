@@ -888,7 +888,7 @@ const ResultOverview = ({ result }) => {
 };
 
 // Tone map shared with the result-history strip. Mirrors RESULT_FLAG_TONE
-// from other-pages.jsx but kept local so this file doesn't need to import.
+// from the shared page helpers but kept local so this file doesn't need to import.
 const RESULT_FLAG_TONE_INLINE = { L: 'info', H: 'amber', LL: 'rust', HH: 'rust', A: 'amber', AA: 'rust' };
 
 // Tiny inline icon — pencil-on-line. Custom 1.25px geometric per the design system.

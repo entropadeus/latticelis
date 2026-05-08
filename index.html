@@ -8,22 +8,22 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-/* Lattice LIS � design tokens */
+/* Lattice LIS — design tokens */
 
 :root {
-  /* Surfaces � warm ivory */
+  /* Surfaces — warm ivory */
   --ivory-50:  #FBFAF6;   /* page background */
   --ivory-100: #F6F4EE;   /* panel surface */
   --ivory-200: #EFEBE1;   /* hover surface */
   --ivory-300: #E5E0D2;   /* divider strong */
   --ivory-400: #D8D2C0;   /* border */
 
-  /* Lines � thin structural */
+  /* Lines — thin structural */
   --line:      #E8E3D5;   /* default border */
   --line-strong: #D6CFBA;
   --line-soft: #F0ECE0;
 
-  /* Ink � soft charcoal */
+  /* Ink — soft charcoal */
   --ink-900: #1F1E1A;     /* primary text */
   --ink-700: #3F3D36;     /* heading */
   --ink-500: #6E6A5C;     /* body */
@@ -31,7 +31,7 @@
   --ink-300: #B5B0A0;     /* tertiary / placeholder */
   --ink-200: #D0CCBE;     /* disabled */
 
-  /* Sage � system primary */
+  /* Sage — system primary */
   --sage-900: #3F4F3D;
   --sage-700: #556B53;
   --sage-600: #6B8068;
@@ -41,7 +41,7 @@
   --sage-100: #E6EADC;
   --sage-50:  #F0F2E7;
 
-  /* Accent � restrained */
+  /* Accent — restrained */
   --amber: #B27A2B;
   --amber-soft: #F1E5C9;
   --rust:  #A85432;
@@ -57,13 +57,13 @@
   --warn-700: #8E6A2A;
   --err-700: #8A4527;
 
-  /* Radius � restrained */
+  /* Radius — restrained */
   --r-xs: 3px;
   --r-sm: 5px;
   --r-md: 7px;
   --r-lg: 10px;
 
-  /* Shadow � almost none */
+  /* Shadow — almost none */
   --shadow-sm: 0 1px 0 rgba(31,30,26,0.04);
   --shadow-md: 0 1px 2px rgba(31,30,26,0.06), 0 0 0 1px rgba(31,30,26,0.04);
   --shadow-pop: 0 8px 24px -8px rgba(31,30,26,0.18), 0 0 0 1px rgba(31,30,26,0.08);
@@ -79,7 +79,7 @@
   --sidebar: 232px;
   --sidebar-collapsed: 56px;
 
-  /* Motion � easings & durations.
+  /* Motion — easings & durations.
      Premium feel = imperceptibly fast, with a curve that decelerates
      into rest. Standard for state changes, out-quint for entrances. */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
@@ -113,7 +113,7 @@ html, body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
-/* Dense enterprise UI � the layout is built for desktop widths. Below the
+/* Dense enterprise UI — the layout is built for desktop widths. Below the
    threshold the page horizontal-scrolls instead of squishing column grids
    and tables. Pattern matches Linear / Splunk / Datadog / Notion-as-app:
    1:1 pixel mapping at desktop widths, scroll fallback when narrower. */
@@ -125,7 +125,7 @@ input, select, textarea { font-family: inherit; font-size: inherit; color: inher
 
 ::selection { background: var(--sage-200); color: var(--ink-900); }
 
-/* Scrollbar � subtle */
+/* Scrollbar — subtle */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--ivory-300); border-radius: 10px; border: 2px solid var(--ivory-50); }
@@ -289,7 +289,7 @@ input[type="checkbox"] { accent-color: var(--sage-700); }
 .empty .empty-title { font-size: 13px; color: var(--ink-700); font-weight: 500; }
 .empty .empty-sub { font-size: 12px; color: var(--ink-400); max-width: 320px; }
 
-/* Tables � dense */
+/* Tables — dense */
 .tbl {
   width: 100%;
   border-collapse: separate;
@@ -306,7 +306,7 @@ input[type="checkbox"] { accent-color: var(--sage-700); }
   padding: 8px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--ivory-50);
-  /* Sticky `<th>` inside `<table>` was unreliable here � it broke when the
+  /* Sticky `<th>` inside `<table>` was unreliable here — it broke when the
      scroll container changed shape (post-resize fixes), leaving the header
      floating mid-scroll above its data. Until we move the header into a
      non-table layout that supports sticky cleanly, the header scrolls with
@@ -337,11 +337,11 @@ input[type="checkbox"] { accent-color: var(--sage-700); }
 }
 .tbl tbody tr:hover td { background: var(--ivory-100); }
 .tbl tbody tr[data-selected="true"] td { background: var(--sage-50); }
-/* Pills inside cells must not break across lines either � "TAT BREACH +1.2h"
+/* Pills inside cells must not break across lines either — "TAT BREACH +1.2h"
    is two visual chips but conceptually one. */
 .tbl .pill { white-space: nowrap; }
 
-/* Animations � minimal, premium, respect reduce-motion (see media query at top).
+/* Animations — minimal, premium, respect reduce-motion (see media query at top).
    Transitions live on the elements themselves (btn, input, pill, row).
    These keyframes drive entry animations on mounted-once surfaces:
    drawers, modals, toasts, banners, page content. */
@@ -357,7 +357,7 @@ input[type="checkbox"] { accent-color: var(--sage-700); }
 @keyframes shimmer  { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 @keyframes pulseSoft{ 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
 
-/* Utility entry classes � apply once on mount. `forwards` keeps the
+/* Utility entry classes — apply once on mount. `forwards` keeps the
    final transform/opacity locked so a re-render doesn't re-trigger. */
 .fade-in       { animation: fadeIn       var(--dur-base) var(--ease-standard) both; }
 .slide-up      { animation: slideUp      var(--dur-base) var(--ease-out)      both; }
@@ -370,7 +370,7 @@ input[type="checkbox"] { accent-color: var(--sage-700); }
 .backdrop-in   { animation: fadeIn       var(--dur-mid)  var(--ease-standard) both; }
 .pulse-soft    { animation: pulseSoft 2.4s var(--ease-standard) infinite; }
 
-/* Stagger � caller adds .stagger-children to a flex/grid container.
+/* Stagger — caller adds .stagger-children to a flex/grid container.
    Children fade-up with a small per-index delay. Cuts off at 8 to
    keep delays bounded; rows past that just fade with no stagger. */
 .stagger-children > * { opacity: 0; animation: slideUp var(--dur-base) var(--ease-out) forwards; }
@@ -394,7 +394,7 @@ input[type="checkbox"] { accent-color: var(--sage-700); }
   pointer-events: none;
 }
 
-/* Hover-lift card � subtle elevation on interactive panels */
+/* Hover-lift card — subtle elevation on interactive panels */
 .lift {
   transition:
     transform var(--dur-base) var(--ease-out),
@@ -446,7 +446,6 @@ input[type="checkbox"] { accent-color: var(--sage-700); }
 <!-- Cache-busting hint: bump this when you ship JS changes during dev. -->
 <script>window.__LIS_VERSION = '20260508g';</script>
 
-<!-- Persistence pipeline (plain JS, no JSX) � loads before any page so window.db / schema / events / hooks are ready -->
 <script src="db.js?v=20260508g"></script>
 <script src="schema.js?v=20260508g"></script>
 <script src="events.js?v=20260508g"></script>
@@ -469,8 +468,38 @@ input[type="checkbox"] { accent-color: var(--sage-700); }
 <script src="instrument-sim.js?v=20260508g"></script>
 <script src="seed.js?v=20260508g"></script>
 
-<!-- Precompiled React UI bundle. Rebuild with: node scripts/build-jsx-bundle.cjs -->
-<script src="compiled/app.bundle.js?v=20260508g"></script>
+<!-- JSX UI sources (Babel standalone dev path). Keep order in sync with scripts/build-jsx-bundle.cjs. -->
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+<script type="text/babel" src="tweaks-panel.jsx?v=20260508g"></script>
+<script type="text/babel" src="icons.jsx?v=20260508g"></script>
+<script type="text/babel" src="rules-library.jsx?v=20260508g"></script>
+<script type="text/babel" src="app-shell.jsx?v=20260508g"></script>
+<script type="text/babel" src="rules-page.jsx?v=20260508g"></script>
+<script type="text/babel" src="rule-editor.jsx?v=20260508g"></script>
+<script type="text/babel" src="order-form.jsx?v=20260508g"></script>
+<script type="text/babel" src="critical-alerts.jsx?v=20260508g"></script>
+<script type="text/babel" src="notification-toasts.jsx?v=20260508g"></script>
+<script type="text/babel" src="notifications-drawer.jsx?v=20260508g"></script>
+<script type="text/babel" src="entity-drawer.jsx?v=20260508g"></script>
+<script type="text/babel" src="safety-modal.jsx?v=20260508g"></script>
+<script type="text/babel" src="shared-pages.jsx?v=20260508g"></script>
+<script type="text/babel" src="dashboard-pages.jsx?v=20260508g"></script>
+<script type="text/babel" src="order-workflow-pages.jsx?v=20260508g"></script>
+<script type="text/babel" src="result-pages.jsx?v=20260508g"></script>
+<script type="text/babel" src="interop-pages.jsx?v=20260508g"></script>
+<script type="text/babel" src="reports-pages.jsx?v=20260508g"></script>
+<script type="text/babel" src="reference-pages.jsx?v=20260508g"></script>
+<script type="text/babel" src="label-pages.jsx?v=20260508g"></script>
+<script type="text/babel" src="mapper-pages.jsx?v=20260508g"></script>
+<script type="text/babel" src="quality-pages.jsx?v=20260508g"></script>
+<script type="text/babel" src="notification-pages.jsx?v=20260508g"></script>
+<script type="text/babel" src="admin-pages.jsx?v=20260508g"></script>
+<script type="text/babel" src="accessioning.jsx?v=20260508g"></script>
+<script type="text/babel" src="app.jsx?v=20260508g"></script>
+
+<!-- Precompiled React UI bundle for no-Babel deployments. Rebuild with: node scripts/build-jsx-bundle.cjs -->
+<!-- <script src="compiled/app.bundle.js?v=20260508g"></script> -->
+<script src="compiled/app.bundle.js?v=20260508f"></script>
 
 </body>
 </html>
