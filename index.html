@@ -419,6 +419,134 @@ input[type="checkbox"] { accent-color: var(--sage-700); }
 .page-title { font-size: 22px; font-weight: 500; letter-spacing: -0.012em; color: var(--ink-900); margin: 0; }
 .page-sub { font-size: 13px; color: var(--ink-400); margin: 4px 0 0; }
 
+/* Login form shake — fires on auth fail. The 4-step left-right oscillation
+   reads as "no" without being cartoonish. Reduce-motion clamps to a brief
+   fade so we don't trigger vestibular discomfort. */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-6px); }
+  40%      { transform: translateX(5px); }
+  60%      { transform: translateX(-4px); }
+  80%      { transform: translateX(2px); }
+}
+.shake { animation: shake 360ms cubic-bezier(.36,.07,.19,.97); }
+@media (prefers-reduced-motion: reduce) {
+  .shake { animation: fadeIn 120ms ease-out; }
+}
+
+/* Login page — full-screen split. Brand panel left (sage), form right
+   (ivory). Mounted at the document root so it doesn't pull from the
+   app shell's grid. On narrow viewports the brand panel collapses
+   above the form. */
+.login-shell {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  min-height: 100vh;
+  background: var(--ivory-50);
+}
+@media (max-width: 760px) {
+  .login-shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+}
+.login-brand {
+  background:
+    radial-gradient(ellipse at 20% 90%, var(--sage-700) 0%, var(--sage-900) 60%);
+  color: #F6F4EE;
+  padding: 56px 64px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+}
+.login-brand::after {
+  content: '';
+  position: absolute;
+  right: -120px; bottom: -120px;
+  width: 380px; height: 380px;
+  border-radius: 50%;
+  border: 1.25px solid rgba(255,255,255,0.08);
+  box-shadow:
+    0 0 0 32px rgba(255,255,255,0.04),
+    0 0 0 80px rgba(255,255,255,0.025);
+  pointer-events: none;
+}
+.login-form-pane {
+  display: grid;
+  place-items: center;
+  padding: 40px 32px;
+}
+.login-form-card {
+  width: 100%;
+  max-width: 380px;
+}
+.login-input {
+  width: 100%;
+  padding: 11px 13px;
+  font-size: 13.5px;
+  font-family: inherit;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #FFFFFF;
+  color: var(--ink-900);
+  transition: border-color 140ms var(--ease-standard, ease-out), box-shadow 140ms var(--ease-standard, ease-out);
+  box-sizing: border-box;
+}
+.login-input:focus {
+  outline: none;
+  border-color: var(--sage-500);
+  box-shadow: 0 0 0 3px rgba(135, 152, 127, 0.18);
+}
+.login-input::placeholder { color: var(--ink-300); }
+.login-input:disabled { background: var(--ivory-100); color: var(--ink-400); }
+.login-btn {
+  width: 100%;
+  padding: 12px;
+  font-size: 13.5px;
+  font-weight: 500;
+  font-family: inherit;
+  letter-spacing: 0.01em;
+  background: var(--sage-700);
+  color: #F6F4EE;
+  border: 1px solid var(--sage-700);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 140ms var(--ease-standard, ease-out), transform 80ms ease-out;
+  box-sizing: border-box;
+}
+.login-btn:hover:not(:disabled) { background: var(--sage-900); border-color: var(--sage-900); }
+.login-btn:active:not(:disabled) { transform: translateY(1px); }
+.login-btn:disabled { background: var(--ink-300); border-color: var(--ink-300); cursor: wait; color: #F6F4EE; }
+.login-spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #F6F4EE;
+  border-radius: 50%;
+  animation: loginSpin 700ms linear infinite;
+  vertical-align: -2px;
+}
+@keyframes loginSpin { to { transform: rotate(360deg); } }
+.login-show-pw {
+  position: absolute;
+  right: 8px; top: 50%; transform: translateY(-50%);
+  border: 0; background: transparent; cursor: pointer;
+  color: var(--ink-400);
+  padding: 4px;
+  font-size: 11px;
+  line-height: 1;
+}
+.login-show-pw:hover { color: var(--ink-700); }
+.login-error {
+  margin-top: 10px;
+  padding: 9px 12px;
+  background: #FCEFEC;
+  border: 1px solid #E8C5BD;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #7A2B1F;
+  line-height: 1.4;
+}
+
 </style>
 
 <template id="__bundler_thumbnail">
@@ -445,66 +573,66 @@ input[type="checkbox"] { accent-color: var(--sage-700); }
 <div id="root"></div>
 
 <!-- Cache-busting hint: bump this when you ship JS changes during dev. -->
-<script>window.__LIS_VERSION = '20260508n';</script>
+<script>window.__LIS_VERSION = '20260508o';</script>
 
-<script src="db.js?v=20260508n"></script>
-<script src="schema.js?v=20260508n"></script>
-<script src="events.js?v=20260508n"></script>
-<script src="store.js?v=20260508n"></script>
-<script src="current-user.js?v=20260508n"></script>
-<script src="user-roles.js?v=20260508n"></script>
-<script src="auth.js?v=20260508n"></script>
-<script src="rules-runtime.js?v=20260508n"></script>
-<script src="lifecycle.js?v=20260508n"></script>
-<script src="hl7.js?v=20260508n"></script>
-<script src="hl7-mllp.js?v=20260508n"></script>
-<script src="mappers.js?v=20260508n"></script>
-<script src="reference-ranges.js?v=20260508n"></script>
-<script src="westgard.js?v=20260508n"></script>
-<script src="westgard-watcher.js?v=20260508n"></script>
-<script src="qc-gate.js?v=20260508n"></script>
-<script src="critical-escalation.js?v=20260508n"></script>
-<script src="lot-expiry-watcher.js?v=20260508n"></script>
-<script src="labels.js?v=20260508n"></script>
-<script src="delivery-watcher.js?v=20260508n"></script>
-<script src="tat-watcher.js?v=20260508n"></script>
-<script src="instrument-sim.js?v=20260508n"></script>
-<script src="seed.js?v=20260508n"></script>
+<script src="db.js?v=20260508o"></script>
+<script src="schema.js?v=20260508o"></script>
+<script src="events.js?v=20260508o"></script>
+<script src="store.js?v=20260508o"></script>
+<script src="current-user.js?v=20260508o"></script>
+<script src="user-roles.js?v=20260508o"></script>
+<script src="auth.js?v=20260508o"></script>
+<script src="rules-runtime.js?v=20260508o"></script>
+<script src="lifecycle.js?v=20260508o"></script>
+<script src="hl7.js?v=20260508o"></script>
+<script src="hl7-mllp.js?v=20260508o"></script>
+<script src="mappers.js?v=20260508o"></script>
+<script src="reference-ranges.js?v=20260508o"></script>
+<script src="westgard.js?v=20260508o"></script>
+<script src="westgard-watcher.js?v=20260508o"></script>
+<script src="qc-gate.js?v=20260508o"></script>
+<script src="critical-escalation.js?v=20260508o"></script>
+<script src="lot-expiry-watcher.js?v=20260508o"></script>
+<script src="labels.js?v=20260508o"></script>
+<script src="delivery-watcher.js?v=20260508o"></script>
+<script src="tat-watcher.js?v=20260508o"></script>
+<script src="instrument-sim.js?v=20260508o"></script>
+<script src="seed.js?v=20260508o"></script>
 
 <!-- JSX UI sources (Babel standalone dev path). Keep order in sync with scripts/build-jsx-bundle.cjs. -->
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
-<script type="text/babel" src="tweaks-panel.jsx?v=20260508n"></script>
-<script type="text/babel" src="icons.jsx?v=20260508n"></script>
-<script type="text/babel" src="rules-library.jsx?v=20260508n"></script>
-<script type="text/babel" src="app-shell.jsx?v=20260508n"></script>
-<script type="text/babel" src="rules-page.jsx?v=20260508n"></script>
-<script type="text/babel" src="rule-editor.jsx?v=20260508n"></script>
-<script type="text/babel" src="order-form.jsx?v=20260508n"></script>
-<script type="text/babel" src="critical-alerts.jsx?v=20260508n"></script>
-<script type="text/babel" src="notification-toasts.jsx?v=20260508n"></script>
-<script type="text/babel" src="notifications-drawer.jsx?v=20260508n"></script>
-<script type="text/babel" src="entity-drawer.jsx?v=20260508n"></script>
-<script type="text/babel" src="safety-modal.jsx?v=20260508n"></script>
-<script type="text/babel" src="shared-pages.jsx?v=20260508n"></script>
-<script type="text/babel" src="login-page.jsx?v=20260508n"></script>
-<script type="text/babel" src="dashboard-pages.jsx?v=20260508n"></script>
-<script type="text/babel" src="order-workflow-pages.jsx?v=20260508n"></script>
-<script type="text/babel" src="result-pages.jsx?v=20260508n"></script>
-<script type="text/babel" src="interop-pages.jsx?v=20260508n"></script>
-<script type="text/babel" src="reports-pages.jsx?v=20260508n"></script>
-<script type="text/babel" src="reference-pages.jsx?v=20260508n"></script>
-<script type="text/babel" src="label-pages.jsx?v=20260508n"></script>
-<script type="text/babel" src="mapper-pages.jsx?v=20260508n"></script>
-<script type="text/babel" src="quality-pages.jsx?v=20260508n"></script>
-<script type="text/babel" src="notification-pages.jsx?v=20260508n"></script>
-<script type="text/babel" src="users-pages.jsx?v=20260508n"></script>
-<script type="text/babel" src="admin-pages.jsx?v=20260508n"></script>
-<script type="text/babel" src="accessioning.jsx?v=20260508n"></script>
-<script type="text/babel" src="app.jsx?v=20260508n"></script>
+<script type="text/babel" src="tweaks-panel.jsx?v=20260508o"></script>
+<script type="text/babel" src="icons.jsx?v=20260508o"></script>
+<script type="text/babel" src="rules-library.jsx?v=20260508o"></script>
+<script type="text/babel" src="app-shell.jsx?v=20260508o"></script>
+<script type="text/babel" src="rules-page.jsx?v=20260508o"></script>
+<script type="text/babel" src="rule-editor.jsx?v=20260508o"></script>
+<script type="text/babel" src="order-form.jsx?v=20260508o"></script>
+<script type="text/babel" src="critical-alerts.jsx?v=20260508o"></script>
+<script type="text/babel" src="notification-toasts.jsx?v=20260508o"></script>
+<script type="text/babel" src="notifications-drawer.jsx?v=20260508o"></script>
+<script type="text/babel" src="entity-drawer.jsx?v=20260508o"></script>
+<script type="text/babel" src="safety-modal.jsx?v=20260508o"></script>
+<script type="text/babel" src="shared-pages.jsx?v=20260508o"></script>
+<script type="text/babel" src="login-page.jsx?v=20260508o"></script>
+<script type="text/babel" src="dashboard-pages.jsx?v=20260508o"></script>
+<script type="text/babel" src="order-workflow-pages.jsx?v=20260508o"></script>
+<script type="text/babel" src="result-pages.jsx?v=20260508o"></script>
+<script type="text/babel" src="interop-pages.jsx?v=20260508o"></script>
+<script type="text/babel" src="reports-pages.jsx?v=20260508o"></script>
+<script type="text/babel" src="reference-pages.jsx?v=20260508o"></script>
+<script type="text/babel" src="label-pages.jsx?v=20260508o"></script>
+<script type="text/babel" src="mapper-pages.jsx?v=20260508o"></script>
+<script type="text/babel" src="quality-pages.jsx?v=20260508o"></script>
+<script type="text/babel" src="notification-pages.jsx?v=20260508o"></script>
+<script type="text/babel" src="users-pages.jsx?v=20260508o"></script>
+<script type="text/babel" src="admin-pages.jsx?v=20260508o"></script>
+<script type="text/babel" src="accessioning.jsx?v=20260508o"></script>
+<script type="text/babel" src="app.jsx?v=20260508o"></script>
 
 <!-- Precompiled React UI bundle for no-Babel deployments. Rebuild with: node scripts/build-jsx-bundle.cjs -->
-<!-- <script src="compiled/app.bundle.js?v=20260508n"></script> -->
-<script src="compiled/app.bundle.js?v=20260508n"></script>
+<!-- <script src="compiled/app.bundle.js?v=20260508o"></script> -->
+<script src="compiled/app.bundle.js?v=20260508o"></script>
 
 </body>
 </html>
