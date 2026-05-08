@@ -1,0 +1,513 @@
+// schema.js — Lattice LIS entity factories
+//
+// Real schema. No dummy data. Factories produce blank-but-shaped records.
+// Every record gets an id and timestamps. Optional fields are nulled, not omitted,
+// so the shape is consistent across reads.
+//
+// Inventory:
+//   Patient        — demographics, MRN
+//   Order          — request for tests on a patient (one or more tests)
+//   Specimen       — physical sample, attached to an order
+//   Test           — analyte definition (catalogue)
+//   Result         — measured value for a (specimen, test)
+//   Instrument     — analyzer
+//   Worklist       — queue of specimens for an instrument
+//   Interface      — external system feed (HL7, FHIR, ASTM)
+//   Rule           — composable rule (trigger + conditions + actions)
+//   AuditEvent     — append-only audit log
+
+const __id = (prefix) => prefix + '_' +
+  Math.random().toString(36).slice(2, 10) +
+  Date.now().toString(36).slice(-4);
+
+const __time = (v, fallback = null) => {
+  if (v == null || v === '') return fallback;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : fallback;
+  const n = Number(v);
+  if (Number.isFinite(n) && n > 0) return n;
+  const parsed = new Date(v).getTime();
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const newPatient = (init = {}) => ({
+  id: init.id || __id('pat'),
+  mrn: init.mrn || '',
+  lastName: init.lastName || '',
+  firstName: init.firstName || '',
+  middleName: init.middleName || '',
+  dob: init.dob || '',                 // YYYY-MM-DD
+  sex: init.sex || '',                  // 'M' | 'F' | 'X' | ''
+  phone: init.phone || '',
+  email: init.email || '',
+  address: init.address || null,
+  // Patient-preferred contact channel for non-result correspondence. Result
+  // delivery itself follows order.deliveryChannel + client.deliveryChannel
+  // overrides — see `delivery-watcher.js`. Empty falls back to client default.
+  preferredContact: init.preferredContact || '',  // ''|'phone'|'email'|'mail'|'portal'
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+const newOrder = (init = {}) => ({
+  id: init.id || __id('ord'),
+  orderNumber: init.orderNumber || '',
+  placerOrderNumber: init.placerOrderNumber || '',
+  fillerOrderNumber: init.fillerOrderNumber || init.orderNumber || '',
+  patientId: init.patientId || null,
+  providerId: init.providerId || null,
+  // Outreach: the "client" is the referring clinic that placed the order.
+  // Distinct from `facility` (the receiving lab's site name).
+  clientId: init.clientId || null,
+  // Where the order is physically processed. `locationId` is the FK into the
+  // `locations` collection (preferred); `facility` is a free-text fallback
+  // kept for back-compat with older records that pre-date the Locations admin.
+  // Display resolution prefers locationId → location.name; falls through to
+  // the string when locationId is unset.
+  locationId: init.locationId || null,
+  facility: init.facility || '',
+  priority: init.priority || 'routine',  // 'stat' | 'asap' | 'routine'
+  status: init.status || 'open',         // 'open' | 'in_progress' | 'completed' | 'cancelled'
+  testIds: init.testIds || [],
+  diagnosisCodes: init.diagnosisCodes || [],
+  notes: init.notes || '',
+  // Per-order delivery override. Empty = inherit from client (the standard
+  // outreach pattern: client.deliveryChannel is the default; an individual
+  // order can override for stat-faxes, urgent-portal, etc.).
+  deliveryChannel: init.deliveryChannel || '',     // ''|'fax'|'hl7'|'portal'|'email'|'print'|'manual'
+  deliveryEndpoint: init.deliveryEndpoint || '',
+  orderedAt: __time(init.orderedAt, Date.now()),
+  collectedAt: __time(init.collectedAt, null),
+  receivedAt: __time(init.receivedAt, null),
+  // TAT (turnaround time) state. Computed and stamped by `tat-watcher.js`.
+  // - tatBreachLevel: 'ok' until elapsed crosses warn threshold, then 'warn',
+  //   then 'breach'. Resets to 'ok' once the order completes/cancels (the
+  //   watcher leaves terminal orders alone, but a manual reopen would).
+  // - tatNotifiedLevel: highest level a notification has fired for. Prevents
+  //   re-firing on every scan tick. Cleared if thresholds are edited downward
+  //   so reconfigured limits surface fresh alerts.
+  // - tatBreachedAt: ms timestamp of the first 'breach' transition; powers the
+  //   "elapsed since breach" pill on the orders list / drawer.
+  tatBreachLevel: init.tatBreachLevel || 'ok',     // 'ok' | 'warn' | 'breach'
+  tatNotifiedLevel: init.tatNotifiedLevel || 'ok', // 'ok' | 'warn' | 'breach'
+  tatBreachedAt: init.tatBreachedAt || null,
+  tatThresholdMin: init.tatThresholdMin == null ? null : Number(init.tatThresholdMin),
+  tatThresholdSource: init.tatThresholdSource || '', // ''|'priority'|'test'
+  tatThresholdTestId: init.tatThresholdTestId || null,
+  tatPausedMs: init.tatPausedMs == null ? 0 : Number(init.tatPausedMs) || 0,
+  tatPauseStartedAt: init.tatPauseStartedAt || null,
+  tatPauseReason: init.tatPauseReason || '',
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+// Client = referring clinic / outreach customer. The lab's "customer" account,
+// distinct from a Facility (which is one of the lab's own sites).
+const newClient = (init = {}) => ({
+  id: init.id || __id('cli'),
+  code: init.code || '',                    // short mnemonic ("STJOSEPH", "FAMCARE")
+  name: init.name || '',                    // display name
+  type: init.type || 'CLINIC',              // 'CLINIC' | 'HOSPITAL' | 'PHYSICIAN_OFFICE' | 'OTHER'
+  contactName: init.contactName || '',
+  phone: init.phone || '',
+  fax: init.fax || '',
+  email: init.email || '',
+  address: init.address || null,
+  // Result delivery preference — drives the outbound channel after release.
+  deliveryChannel: init.deliveryChannel || 'fax',  // 'fax' | 'hl7' | 'portal' | 'email' | 'print'
+  deliveryEndpoint: init.deliveryEndpoint || '',    // fax #, HL7 endpoint id, portal url, etc.
+  // Billing
+  billType: init.billType || 'CLIENT',     // 'CLIENT' | 'PATIENT' | 'INSURANCE' (override per order)
+  active: init.active === undefined ? true : init.active,
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+const newSpecimen = (init = {}) => ({
+  id: init.id || __id('spec'),
+  accessionNumber: init.accessionNumber || '',
+  barcode: init.barcode || '',
+  orderId: init.orderId || null,
+  patientId: init.patientId || null,
+  type: init.type || '',               // 'serum' | 'plasma' | 'whole_blood' | 'urine' | …
+  container: init.container || '',      // 'sst' | 'lavender' | 'green' | 'cup' | …
+  volume: init.volume || null,
+  collectedAt: init.collectedAt || null,
+  receivedAt: init.receivedAt || null,
+  state: init.state || 'pending',       // 'pending'|'in_transit'|'received'|'in_analysis'|'completed'|'rejected'
+  // Condition is always captured at accessioning (Harvest / outreach LIS convention).
+  // Acceptable codes per Appendix A — the "ACCEPTABLE" default lets keyboard flow stay fast.
+  condition: init.condition || 'ACCEPTABLE',
+  rejectReason: init.rejectReason || '',
+  routedTo: init.routedTo || null,      // instrument id
+  flags: init.flags || [],
+  notes: init.notes || '',
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+const SPECIMEN_CONDITIONS = [
+  // Acceptable
+  { id: 'ACCEPTABLE',          label: 'Acceptable',           tone: 'sage',  ok: true },
+  // Hemolyzed
+  { id: 'HEMOLYZED_MILD',      label: 'Hemolyzed (mild)',     tone: 'amber', flag: 'hemolyzed' },
+  { id: 'HEMOLYZED_MODERATE',  label: 'Hemolyzed (moderate)', tone: 'amber', flag: 'hemolyzed' },
+  { id: 'HEMOLYZED_GROSS',     label: 'Hemolyzed (gross)',    tone: 'rust',  flag: 'hemolyzed', reject: true },
+  // Lipemic
+  { id: 'LIPEMIC_MILD',        label: 'Lipemic (mild)',       tone: 'amber', flag: 'lipemic' },
+  { id: 'LIPEMIC_MODERATE',    label: 'Lipemic (moderate)',   tone: 'amber', flag: 'lipemic' },
+  { id: 'LIPEMIC_GROSS',       label: 'Lipemic (gross)',      tone: 'rust',  flag: 'lipemic', reject: true },
+  // Icteric
+  { id: 'ICTERIC_MILD',        label: 'Icteric (mild)',       tone: 'amber', flag: 'icteric' },
+  { id: 'ICTERIC_MODERATE',    label: 'Icteric (moderate)',   tone: 'amber', flag: 'icteric' },
+  { id: 'ICTERIC_GROSS',       label: 'Icteric (gross)',      tone: 'rust',  flag: 'icteric', reject: true },
+  // Pre-analytical failures (typically reject)
+  { id: 'CLOTTED',             label: 'Clotted',              tone: 'rust',  flag: 'clotted',  reject: true },
+  { id: 'INSUFFICIENT_VOLUME', label: 'Insufficient volume',  tone: 'rust',  reject: true },
+  { id: 'IMPROPER_CONTAINER',  label: 'Improper container',   tone: 'rust',  reject: true },
+  { id: 'UNLABELED',           label: 'Unlabeled',            tone: 'rust',  reject: true },
+  { id: 'MISLABELED',          label: 'Mislabeled',           tone: 'rust',  reject: true },
+  { id: 'LEAKED',              label: 'Leaked',               tone: 'rust',  reject: true },
+  { id: 'BROKEN',              label: 'Broken',               tone: 'rust',  reject: true },
+  { id: 'EXPIRED',             label: 'Expired',              tone: 'rust',  reject: true },
+  { id: 'OTHER',               label: 'Other (note)',         tone: 'amber' },
+];
+
+const newResult = (init = {}) => ({
+  id: init.id || __id('res'),
+  specimenId: init.specimenId || null,
+  testId: init.testId || null,
+  value: init.value === undefined ? null : init.value,
+  units: init.units || '',
+  refRangeLow: init.refRangeLow == null ? null : init.refRangeLow,
+  refRangeHigh: init.refRangeHigh == null ? null : init.refRangeHigh,
+  refRangeSource: init.refRangeSource || '',  // '' | 'matched' | 'default' | 'none'
+  refRangeId: init.refRangeId || null,        // id of the test.referenceRanges entry that resolved
+  flag: init.flag || '',                  // '' | 'L' | 'H' | 'LL' | 'HH' | 'A'
+  status: init.status || 'pending',       // 'pending'|'preliminary'|'final'|'corrected'|'cancelled'
+  // Critical-result acknowledgment + escalation tracking. Set by the
+  // critical-alerts banner (ack) and the critical-escalation watcher (escalate).
+  criticalAckedAt: init.criticalAckedAt || null,
+  criticalAckedBy: init.criticalAckedBy || null,
+  criticalAckNote: init.criticalAckNote || '',
+  criticalEscalatedAt: init.criticalEscalatedAt || null,  // timestamp of last escalation fire
+  criticalEscalationTier: init.criticalEscalationTier == null ? 0 : init.criticalEscalationTier,  // 0 = none, 1 = supervisor, 2 = director/oncall
+  verifiedBy: init.verifiedBy || null,
+  verifiedAt: init.verifiedAt || null,
+  releasedAt: init.releasedAt || null,
+  releasedBy: init.releasedBy || null,
+  // Outbound delivery to the ordering client (fax/hl7/portal/email/print).
+  // Owned by the delivery watcher: written when result.released propagates
+  // through. Re-deliveries append to deliveryAttempts; deliveredAt holds the
+  // most recent successful delivery (null if none).
+  deliveredAt: init.deliveredAt || null,
+  deliveredVia: init.deliveredVia || '',
+  deliveredTo: init.deliveredTo || '',
+  deliveryAttempts: init.deliveryAttempts || [],
+  deliveryStatus: init.deliveryStatus || '',  // ''|'pending'|'delivered'|'failed'|'manual'
+  instrumentId: init.instrumentId || null,
+  comments: init.comments || '',
+  enteredManually: init.enteredManually || false,
+  enteredBy: init.enteredBy || null,
+  // Correction chain. When a released/final result needs to be amended,
+  // a NEW record is created with `correctionOf` pointing to the prior id
+  // and `status: 'corrected'`. The prior record is NEVER mutated — it
+  // remains at status='final' (it really was final at the time it was
+  // reported); display logic walks the chain to surface the latest.
+  // Real labs treat this as an audit-trail religion — the only way to
+  // amend a reported result without losing the original signal.
+  correctionOf: init.correctionOf || null,         // previous result.id this supersedes
+  correctionReason: init.correctionReason || '',   // free text, required by UI when issuing
+  correctedBy: init.correctedBy || null,           // user.id who issued the correction
+  correctedAt: init.correctedAt || null,           // timestamp of the correction record creation
+  // Mirror field on the SUPERSEDED record. Stamped after the new corrected
+  // record is written so a prior result can be displayed as "amended" without
+  // walking the chain. Updates the prior record but does NOT change its status.
+  supersededByResultId: init.supersededByResultId || null,
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+const newTest = (init = {}) => ({
+  id: init.id || __id('test'),
+  code: init.code || '',
+  loinc: init.loinc || '',
+  name: init.name || '',
+  shortName: init.shortName || '',
+  units: init.units || '',
+  // Default range — used when no reference range entry matches a patient's demographics.
+  // Treat as the "any sex, any age, no effective dating" fallback.
+  refRangeLow: init.refRangeLow == null ? null : init.refRangeLow,
+  refRangeHigh: init.refRangeHigh == null ? null : init.refRangeHigh,
+  // Demographic-aware ranges. Resolution lives in `reference-ranges.js`:
+  //   pickReferenceRange(test, { patient, asOf, method })
+  // Each entry shape: see `newReferenceRange` below.
+  referenceRanges: init.referenceRanges || [],
+  specimenTypes: init.specimenTypes || [],
+  containerTypes: init.containerTypes || [],
+  turnaroundMinutes: init.turnaroundMinutes == null || init.turnaroundMinutes === '' ? null : Number(init.turnaroundMinutes),
+  // Per-test critical-result escalation thresholds, in seconds. `null` (or any
+  // non-finite / non-positive value) falls back to the watcher's global default
+  // (see critical-escalation.js TIER1_MS / TIER2_MS). Real labs tune these
+  // per-test: STAT troponin escalates faster than routine glucose.
+  criticalEscalationT1Sec: init.criticalEscalationT1Sec == null ? null : Number(init.criticalEscalationT1Sec),
+  criticalEscalationT2Sec: init.criticalEscalationT2Sec == null ? null : Number(init.criticalEscalationT2Sec),
+  active: init.active === undefined ? true : init.active,
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+// One row in `test.referenceRanges`. Nulls mean "wildcard" for filtering;
+// blank `units` inherits from the parent test.
+const newReferenceRange = (init = {}) => ({
+  id: init.id || __id('rr'),
+  low:           init.low == null ? null : Number(init.low),
+  high:          init.high == null ? null : Number(init.high),
+  units:         init.units || '',
+  sex:           init.sex || 'any',          // 'any' | 'M' | 'F' | 'X'
+  ageMinYears:   init.ageMinYears == null ? null : Number(init.ageMinYears),
+  ageMaxYears:   init.ageMaxYears == null ? null : Number(init.ageMaxYears),
+  method:        init.method || '',          // empty = any method
+  effectiveFrom: init.effectiveFrom == null ? null : Number(init.effectiveFrom),
+  effectiveTo:   init.effectiveTo   == null ? null : Number(init.effectiveTo),
+  notes:         init.notes || '',
+  createdAt:     init.createdAt || Date.now(),
+  updatedAt:     Date.now(),
+});
+
+const newInstrument = (init = {}) => ({
+  id: init.id || __id('inst'),
+  name: init.name || '',
+  vendor: init.vendor || '',
+  model: init.model || '',
+  serial: init.serial || '',
+  status: init.status || 'idle',       // 'idle'|'running'|'maintenance'|'offline'|'error'
+  testIds: init.testIds || [],
+  interfaceId: init.interfaceId || null,
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+const newInterface = (init = {}) => ({
+  id: init.id || __id('iface'),
+  name: init.name || '',
+  protocol: init.protocol || 'hl7v2',  // 'hl7v2'|'fhir'|'astm'|'custom'
+  direction: init.direction || 'bidirectional',  // 'inbound'|'outbound'|'bidirectional'
+  endpoint: init.endpoint || '',
+  status: init.status || 'idle',
+  lastSeenAt: init.lastSeenAt || null,
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+const newWorklist = (init = {}) => ({
+  id: init.id || __id('wl'),
+  name: init.name || '',
+  instrumentId: init.instrumentId || null,
+  specimenIds: init.specimenIds || [],
+  status: init.status || 'open',
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+const newAuditEvent = (init = {}) => ({
+  id: init.id || __id('aud'),
+  type: init.type || '',
+  actor: init.actor || 'system',
+  entityType: init.entityType || '',
+  entityId: init.entityId || null,
+  payload: init.payload || {},
+  ts: init.ts || Date.now(),
+});
+
+// Persisted history of notification toasts (the in-memory toast component
+// auto-dismisses; this is the durable record). Same shape as the event payload
+// plus an `acknowledgedAt` field so users can mark items read.
+const newNotification = (init = {}) => ({
+  id: init.id || __id('not'),
+  kind: init.kind || 'system',         // 'user'|'role'|'provider'|'system'
+  target: init.target || '',
+  msg: init.msg || '',
+  ctx: init.ctx || {},                 // { orderId, specimenId, resultId } refs
+  acknowledgedAt: init.acknowledgedAt || null,
+  acknowledgedBy: init.acknowledgedBy || null,
+  createdAt: init.createdAt || Date.now(),
+});
+
+// ── QC (Westgard) ───────────────────────────────────────────────────────
+//
+// QcLevel: a control material at a specific level for a specific test
+// (e.g. "Glucose, BioRad Lyphochek L1, mean 90, SD 4"). The catalog row
+// the running QC results compare against.
+const newQcLevel = (init = {}) => ({
+  id: init.id || __id('qcl'),
+  testId: init.testId || null,
+  level: init.level || 'L1',                         // 'L1'|'L2'|'L3' or freeform
+  material: init.material || '',                     // vendor / product label
+  lotNumber: init.lotNumber || '',
+  lotExpiresAt: init.lotExpiresAt || null,
+  mean: init.mean == null ? null : Number(init.mean),
+  sd:   init.sd   == null ? null : Number(init.sd),
+  units: init.units || '',                           // inherits from test if blank
+  instrumentId: init.instrumentId || null,           // optional scope to a single instrument
+  active: init.active === undefined ? true : init.active,
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+// QcResult: a single observation of a control level. zScore is computed
+// at write time so downstream Westgard evaluation is a pure function over
+// {zScore, ranAt} arrays.
+const newQcResult = (init = {}) => ({
+  id: init.id || __id('qcr'),
+  qcLevelId: init.qcLevelId || null,
+  testId: init.testId || null,                       // denormalized for fast filtering
+  value: init.value == null ? null : Number(init.value),
+  zScore: init.zScore == null ? null : Number(init.zScore),
+  instrumentId: init.instrumentId || null,
+  status: init.status || 'pending',                  // 'pending'|'in_control'|'warn'|'out_of_control'
+  violations: init.violations || [],                 // [{rule,severity}], filled by evaluator
+  ranAt: init.ranAt || Date.now(),
+  enteredBy: init.enteredBy || null,
+  enteredManually: init.enteredManually || false,
+  notes: init.notes || '',
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+// QcRuleViolation: historical record of a Westgard rule firing. We keep
+// them separate from QcResult so violation lifecycle (acknowledge / resolve)
+// doesn't tangle with the underlying QC measurement record.
+const newQcRuleViolation = (init = {}) => ({
+  id: init.id || __id('qcv'),
+  qcLevelId: init.qcLevelId || null,
+  testId: init.testId || null,
+  instrumentId: init.instrumentId || null,
+  rule: init.rule || '',                             // '1-2s'|'1-3s'|'2-2s'|'R-4s'|'4-1s'|'10-x'
+  severity: init.severity || 'warn',                 // 'warn'|'reject'
+  triggerQcResultId: init.triggerQcResultId || null,
+  affectedQcResultIds: init.affectedQcResultIds || [],
+  acknowledgedAt: init.acknowledgedAt || null,
+  acknowledgedBy: init.acknowledgedBy || null,
+  resolvedAt: init.resolvedAt || null,
+  notes: init.notes || '',
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+// Location — a facility / department / draw station the lab services.
+// Orders pin a location via `order.facility` (string code today; rows can
+// later carry the lookup id). Locations are also used by the dashboard
+// for the "All Locations" filter.
+const newLocation = (init = {}) => ({
+  id: init.id || __id('loc'),
+  code: init.code || '',                     // short mnemonic ("MAIN-LAB", "WSDS")
+  name: init.name || '',                     // display name ("Main Lab", "Westside Draw Station")
+  type: init.type || 'LAB',                  // 'LAB'|'DRAW_STATION'|'HOSPITAL'|'CLINIC'|'OTHER'
+  parentId: init.parentId || null,           // optional: a draw station can belong to a lab
+  address: init.address || null,             // { line1, city, state, postalCode } shape
+  phone: init.phone || '',
+  // Operating hours stored as plain text for now ("M-F 0700-1700"). Real
+  // scheduling would land an array of weekday/time-range entries.
+  hours: init.hours || '',
+  // Departments / sections within the location. Free-form codes:
+  // ['CHEMISTRY','HEMATOLOGY','MICROBIOLOGY']. UI shows them as pills.
+  departments: Array.isArray(init.departments) ? init.departments : [],
+  active: init.active === undefined ? true : init.active,
+  notes: init.notes || '',
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+// LabelTemplate — a ZPL II template scoped to specimen type or test class.
+// `labels.build` looks up the most-specific template (by specimenType, then
+// testCode, then default). The body is a ZPL string with mustache-like
+// `{patient_line}`, `{accession}`, `{barcode}` placeholders that the build
+// step substitutes.
+const newLabelTemplate = (init = {}) => ({
+  id: init.id || __id('lbl'),
+  code: init.code || '',                     // short mnemonic ("CHEM-DEFAULT")
+  name: init.name || '',                     // display name
+  // Scope predicate. Empty fields = wildcard. Most-specific match wins.
+  specimenType: init.specimenType || '',     // 'serum'|'plasma'|'whole_blood'|...|''
+  testCode: init.testCode || '',             // optional: "BLOOD-BANK" forces specific template
+  // Output config
+  width:  init.width  == null ? 2.0 : Number(init.width),    // inches (2.0×1.0 default)
+  height: init.height == null ? 1.0 : Number(init.height),
+  dpi:    init.dpi    == null ? 203 : Number(init.dpi),
+  zpl:    init.zpl    || '',                 // raw ZPL II body with placeholders
+  // Optional printer routing hint — the eventual transport layer reads this
+  // to pick a destination (e.g., 'tcp://zebra-bench3:9100'). Not used today.
+  printerEndpoint: init.printerEndpoint || '',
+  active: init.active === undefined ? true : init.active,
+  notes: init.notes || '',
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+// LabConfig — installation-level singleton. Exactly one row, fixed id.
+// Holds settings that apply lab-wide regardless of test or instrument.
+//   qcDisabledRules: Westgard rule IDs that should NOT trigger violations.
+//     Some labs disable 1-2s as advisory-only or skip 4-1s for a specific
+//     workflow. Unknown / invalid IDs are silently ignored at evaluator time.
+//   tatThresholds: per-priority TAT targets in MINUTES. Order's
+//     `orderedAt → releasedAt-of-last-test` interval is compared against
+//     these by `tat-watcher.js`. Defaults reflect typical hospital lab
+//     targets (STAT 1h, ASAP 4h, Routine 24h) and are user-editable in the
+//     Notifications admin page.
+//   tatWarnAtPercent: percent of the threshold at which the watcher flips
+//     an order to `tatBreachLevel='warn'`. Default 80%. Below this is `ok`,
+//     above the full threshold is `breach`.
+//   tatRecipients: notification target roles. The watcher publishes
+//     `notification` events with kind='role' and target=each entry, so the
+//     existing toast / drawer / bell surfaces light up without bespoke wiring.
+const LAB_CONFIG_ID = 'lab_config';
+const TAT_THRESHOLD_DEFAULTS = { stat: 60, asap: 240, routine: 1440 };
+const TAT_RECIPIENTS_DEFAULT = ['LAB_SUPERVISOR'];
+const __coerceTatThresholds = (raw) => {
+  const out = { ...TAT_THRESHOLD_DEFAULTS };
+  if (!raw || typeof raw !== 'object') return out;
+  for (const k of Object.keys(out)) {
+    const v = Number(raw[k]);
+    if (Number.isFinite(v) && v > 0) out[k] = v;
+  }
+  return out;
+};
+const newLabConfig = (init = {}) => ({
+  id: LAB_CONFIG_ID,                                      // fixed singleton id
+  qcDisabledRules: Array.isArray(init.qcDisabledRules)
+    ? init.qcDisabledRules.filter(r => typeof r === 'string')
+    : [],
+  tatThresholds: __coerceTatThresholds(init.tatThresholds),
+  tatWarnAtPercent: (() => {
+    const v = Number(init.tatWarnAtPercent);
+    return Number.isFinite(v) && v > 0 && v < 100 ? v : 80;
+  })(),
+  tatRecipients: Array.isArray(init.tatRecipients) && init.tatRecipients.length
+    ? init.tatRecipients.filter(r => typeof r === 'string')
+    : [...TAT_RECIPIENTS_DEFAULT],
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+// Accession number generation. YYYYMMDD-NNNN local sequence.
+// Pure function — caller passes today's existing count.
+const nextAccessionNumber = (existingCountToday) => {
+  const d = new Date();
+  const ymd = d.getFullYear().toString()
+    + String(d.getMonth() + 1).padStart(2, '0')
+    + String(d.getDate()).padStart(2, '0');
+  const seq = String((existingCountToday || 0) + 1).padStart(4, '0');
+  return ymd + '-' + seq;
+};
+
+window.schema = {
+  newPatient, newOrder, newSpecimen, newResult, newTest, newReferenceRange,
+  newInstrument, newInterface, newWorklist, newAuditEvent, newNotification,
+  newClient,
+  newLocation, newLabelTemplate,
+  newQcLevel, newQcResult, newQcRuleViolation,
+  newLabConfig, LAB_CONFIG_ID,
+  TAT_THRESHOLD_DEFAULTS, TAT_RECIPIENTS_DEFAULT,
+  nextAccessionNumber,
+  SPECIMEN_CONDITIONS,
+};

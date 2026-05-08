@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Lattice LIS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Lattice LIS — design tokens */
+
+:root {
+  /* Surfaces — warm ivory */
+  --ivory-50:  #FBFAF6;   /* page background */
+  --ivory-100: #F6F4EE;   /* panel surface */
+  --ivory-200: #EFEBE1;   /* hover surface */
+  --ivory-300: #E5E0D2;   /* divider strong */
+  --ivory-400: #D8D2C0;   /* border */
+
+  /* Lines — thin structural */
+  --line:      #E8E3D5;   /* default border */
+  --line-strong: #D6CFBA;
+  --line-soft: #F0ECE0;
+
+  /* Ink — soft charcoal */
+  --ink-900: #1F1E1A;     /* primary text */
+  --ink-700: #3F3D36;     /* heading */
+  --ink-500: #6E6A5C;     /* body */
+  --ink-400: #908B7A;     /* secondary */
+  --ink-300: #B5B0A0;     /* tertiary / placeholder */
+  --ink-200: #D0CCBE;     /* disabled */
+
+  /* Sage — system primary */
+  --sage-900: #3F4F3D;
+  --sage-700: #556B53;
+  --sage-600: #6B8068;
+  --sage-500: #87987F;    /* primary brand */
+  --sage-400: #A8B89F;
+  --sage-200: #D4DCCB;
+  --sage-100: #E6EADC;
+  --sage-50:  #F0F2E7;
+
+  /* Accent — restrained */
+  --amber: #B27A2B;
+  --amber-soft: #F1E5C9;
+  --rust:  #A85432;
+  --rust-soft: #F2D9C9;
+  --slate: #3F4A55;
+  --slate-soft: #DDE3E8;
+  --info: #4A6B85;
+  --info-soft: #DAE3EB;
+
+  /* States */
+  --ok-700: #4F6A4C;
+  --ok-500: #6B8068;
+  --warn-700: #8E6A2A;
+  --err-700: #8A4527;
+
+  /* Radius — restrained */
+  --r-xs: 3px;
+  --r-sm: 5px;
+  --r-md: 7px;
+  --r-lg: 10px;
+
+  /* Shadow — almost none */
+  --shadow-sm: 0 1px 0 rgba(31,30,26,0.04);
+  --shadow-md: 0 1px 2px rgba(31,30,26,0.06), 0 0 0 1px rgba(31,30,26,0.04);
+  --shadow-pop: 0 8px 24px -8px rgba(31,30,26,0.18), 0 0 0 1px rgba(31,30,26,0.08);
+
+  /* Type */
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Sizes */
+  --row: 36px;          /* dense table row */
+  --row-comfy: 40px;
+  --topbar: 52px;
+  --sidebar: 232px;
+  --sidebar-collapsed: 56px;
+
+  /* Motion — easings & durations.
+     Premium feel = imperceptibly fast, with a curve that decelerates
+     into rest. Standard for state changes, out-quint for entrances. */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out:      cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:       cubic-bezier(0.4, 0, 1, 1);
+  --dur-instant:   80ms;
+  --dur-fast:      120ms;
+  --dur-base:      180ms;
+  --dur-mid:       240ms;
+  --dur-slow:      320ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--ivory-50);
+  color: var(--ink-900);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+/* Dense enterprise UI — the layout is built for desktop widths. Below the
+   threshold the page horizontal-scrolls instead of squishing column grids
+   and tables. Pattern matches Linear / Splunk / Datadog / Notion-as-app:
+   1:1 pixel mapping at desktop widths, scroll fallback when narrower. */
+body { min-width: 1100px; overflow-x: auto; }
+#root { min-height: 100vh; min-width: 1100px; }
+
+button { font-family: inherit; cursor: pointer; }
+input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+
+::selection { background: var(--sage-200); color: var(--ink-900); }
+
+/* Scrollbar — subtle */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--ivory-300); border-radius: 10px; border: 2px solid var(--ivory-50); }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-200); }
+
+/* Utility */
+.mono { font-family: var(--font-mono); font-feature-settings: "ss01", "cv11"; letter-spacing: -0.005em; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* Focus */
+:focus-visible { outline: 2px solid var(--sage-500); outline-offset: 1px; border-radius: 3px; }
+button:focus, input:focus, select:focus { outline: none; }
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--sage-500); outline-offset: 1px;
+}
+
+/* App shell */
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar) 1fr;
+  grid-template-rows: var(--topbar) 1fr;
+  min-height: 100vh;
+  height: 100vh;
+}
+.app[data-nav="top"] {
+  grid-template-columns: 1fr;
+  grid-template-rows: var(--topbar) 1fr;
+}
+.app[data-nav="hybrid"] {
+  grid-template-columns: var(--sidebar-collapsed) 1fr;
+  grid-template-rows: var(--topbar) 1fr;
+}
+
+/* Generic panel */
+.panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink-700);
+  font-size: 12.5px; font-weight: 500;
+  letter-spacing: -0.005em;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+  will-change: transform;
+}
+.btn:hover { background: var(--ivory-100); border-color: var(--line-strong); }
+.btn:active { background: var(--ivory-200); transform: translateY(0.5px); }
+.btn[data-variant="primary"] {
+  background: var(--sage-700); border-color: var(--sage-700); color: #FBFAF6;
+}
+.btn[data-variant="primary"]:hover { background: var(--sage-900); border-color: var(--sage-900); }
+.btn[data-variant="ghost"] {
+  background: transparent; border-color: transparent; color: var(--ink-500);
+}
+.btn[data-variant="ghost"]:hover { background: var(--ivory-100); color: var(--ink-700); }
+.btn[data-variant="danger"] {
+  color: var(--err-700);
+}
+.btn[data-variant="danger"]:hover { background: #F5E5DD; border-color: #E4C7B6; }
+.btn[data-size="sm"] { height: 26px; padding: 0 9px; font-size: 12px; }
+.btn[data-size="xs"] { height: 22px; padding: 0 7px; font-size: 11.5px; gap: 4px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 18px; padding: 0 4px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: var(--ivory-100);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-500);
+  letter-spacing: 0;
+}
+.kbd-inline { background: transparent; border-color: var(--line); }
+
+/* Inputs */
+.input {
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: #fff;
+  padding: 0 10px;
+  font-size: 12.5px;
+  color: var(--ink-900);
+  width: 100%;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+.input::placeholder { color: var(--ink-300); }
+.input:hover { border-color: var(--line-strong); }
+.input:focus { border-color: var(--sage-500); box-shadow: 0 0 0 3px var(--sage-50); }
+input[type="checkbox"] { accent-color: var(--sage-700); }
+
+.field-label {
+  font-size: 11px; font-weight: 500;
+  color: var(--ink-500);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* Pills / tags */
+.pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 20px; padding: 0 7px;
+  border-radius: 999px;
+  background: var(--ivory-200);
+  color: var(--ink-700);
+  font-size: 11px; font-weight: 500;
+  border: 1px solid transparent;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.pill[data-tone="sage"]   { background: var(--sage-100); color: var(--sage-900); }
+.pill[data-tone="amber"]  { background: var(--amber-soft); color: var(--warn-700); }
+.pill[data-tone="rust"]   { background: var(--rust-soft); color: var(--err-700); }
+.pill[data-tone="slate"]  { background: var(--slate-soft); color: var(--slate); }
+.pill[data-tone="info"]   { background: var(--info-soft); color: var(--info); }
+.pill[data-tone="ghost"]  { background: transparent; border-color: var(--line); color: var(--ink-500); }
+
+.dot { width: 6px; height: 6px; border-radius: 999px; background: var(--ink-300); display: inline-block; }
+.dot[data-tone="ok"] { background: var(--sage-500); }
+.dot[data-tone="warn"] { background: var(--amber); }
+.dot[data-tone="err"] { background: var(--rust); }
+.dot[data-tone="idle"] { background: var(--ink-300); }
+
+/* Empty states */
+.empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 48px 24px;
+  color: var(--ink-400);
+  text-align: center;
+  gap: 10px;
+}
+.empty .empty-icon {
+  width: 38px; height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid; place-items: center;
+  color: var(--ink-300);
+  background: var(--ivory-50);
+}
+.empty .empty-title { font-size: 13px; color: var(--ink-700); font-weight: 500; }
+.empty .empty-sub { font-size: 12px; color: var(--ink-400); max-width: 320px; }
+
+/* Tables — dense */
+.tbl {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12.5px;
+}
+.tbl thead th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--ink-500);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--ivory-50);
+  /* Sticky `<th>` inside `<table>` was unreliable here — it broke when the
+     scroll container changed shape (post-resize fixes), leaving the header
+     floating mid-scroll above its data. Until we move the header into a
+     non-table layout that supports sticky cleanly, the header scrolls with
+     the rest of the content. The compact filter/search bar above the table
+     stays visible long enough that operators rarely lose orientation. */
+  height: 32px;
+}
+.tbl tbody td {
+  padding: 0 12px;
+  height: var(--row);
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-700);
+  vertical-align: middle;
+  transition: background var(--dur-fast) var(--ease-standard);
+  /* Lab data is one-value-per-cell. Wrapping turns rows into 4-line sandwiches
+     when a facility name or pill text gets long. Default to nowrap; cells that
+     genuinely need multi-line content opt in via .tbl-cell-wrap below. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+.tbl tbody td.tbl-cell-wrap {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  max-width: none;
+}
+.tbl tbody tr:hover td { background: var(--ivory-100); }
+.tbl tbody tr[data-selected="true"] td { background: var(--sage-50); }
+/* Pills inside cells must not break across lines either — "TAT BREACH +1.2h"
+   is two visual chips but conceptually one. */
+.tbl .pill { white-space: nowrap; }
+
+/* Animations — minimal, premium, respect reduce-motion (see media query at top).
+   Transitions live on the elements themselves (btn, input, pill, row).
+   These keyframes drive entry animations on mounted-once surfaces:
+   drawers, modals, toasts, banners, page content. */
+@keyframes fadeIn   { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fadeOut  { from { opacity: 1; } to { opacity: 0; } }
+@keyframes slideUp  { from { opacity: 0; transform: translateY(6px);  } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideDown{ from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideRightIn { from { opacity: 0; transform: translateX(16px);  } to { opacity: 1; transform: translateX(0); } }
+@keyframes slideLeftIn  { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes scaleIn  { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes drawerSlide { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes drawerSlideLeft { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes shimmer  { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+@keyframes pulseSoft{ 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+/* Utility entry classes — apply once on mount. `forwards` keeps the
+   final transform/opacity locked so a re-render doesn't re-trigger. */
+.fade-in       { animation: fadeIn       var(--dur-base) var(--ease-standard) both; }
+.slide-up      { animation: slideUp      var(--dur-base) var(--ease-out)      both; }
+.slide-down    { animation: slideDown    var(--dur-base) var(--ease-out)      both; }
+.slide-right-in{ animation: slideRightIn var(--dur-base) var(--ease-out)      both; }
+.slide-left-in { animation: slideLeftIn  var(--dur-base) var(--ease-out)      both; }
+.scale-in      { animation: scaleIn      var(--dur-mid)  var(--ease-out)      both; }
+.drawer-in     { animation: drawerSlide  var(--dur-mid)  var(--ease-out)      both; }
+.drawer-in-left{ animation: drawerSlideLeft var(--dur-mid) var(--ease-out)    both; }
+.backdrop-in   { animation: fadeIn       var(--dur-mid)  var(--ease-standard) both; }
+.pulse-soft    { animation: pulseSoft 2.4s var(--ease-standard) infinite; }
+
+/* Stagger — caller adds .stagger-children to a flex/grid container.
+   Children fade-up with a small per-index delay. Cuts off at 8 to
+   keep delays bounded; rows past that just fade with no stagger. */
+.stagger-children > * { opacity: 0; animation: slideUp var(--dur-base) var(--ease-out) forwards; }
+.stagger-children > *:nth-child(1) { animation-delay: 20ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 50ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 80ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 110ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 140ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 170ms; }
+.stagger-children > *:nth-child(7) { animation-delay: 200ms; }
+.stagger-children > *:nth-child(8) { animation-delay: 230ms; }
+.stagger-children > *:nth-child(n+9) { animation-delay: 250ms; }
+
+/* Skeleton shimmer for loading states */
+.skeleton {
+  background: linear-gradient(90deg, var(--ivory-200) 0%, var(--ivory-100) 50%, var(--ivory-200) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s var(--ease-standard) infinite;
+  border-radius: var(--r-sm);
+  color: transparent;
+  pointer-events: none;
+}
+
+/* Hover-lift card — subtle elevation on interactive panels */
+.lift {
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+  will-change: transform;
+}
+.lift:hover { transform: translateY(-1px); box-shadow: var(--shadow-pop); border-color: var(--line-strong); }
+.lift:active { transform: translateY(0); }
+
+/* Section title */
+.section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-400);
+  font-weight: 500;
+}
+
+/* Page title */
+.page-title { font-size: 22px; font-weight: 500; letter-spacing: -0.012em; color: var(--ink-900); margin: 0; }
+.page-sub { font-size: 13px; color: var(--ink-400); margin: 4px 0 0; }
+
+</style>
+
+<template id="__bundler_thumbnail">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <rect width="200" height="200" fill="#FBFAF6"/>
+  <g stroke="#3F4F3D" stroke-width="14" stroke-linecap="round" fill="none">
+    <path d="M50 50 V120"/>
+    <path d="M50 120 H140"/>
+  </g>
+  <g stroke="#556B53" stroke-width="14" stroke-linecap="round" fill="none">
+    <path d="M100 90 V170"/>
+    <path d="M140 80 V170"/>
+  </g>
+  <g stroke="#87987F" stroke-width="14" stroke-linecap="round" fill="none">
+    <path d="M75 155 H170"/>
+  </g>
+</svg>
+</template>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- Cache-busting hint: bump this when you ship JS changes during dev. -->
+<script>window.__LIS_VERSION = '20260508e';</script>
+
+<!-- Persistence pipeline (plain JS, no JSX) — loads before any page so window.db / schema / events / hooks are ready -->
+<script src="db.js?v=20260508e"></script>
+<script src="schema.js?v=20260508e"></script>
+<script src="events.js?v=20260508e"></script>
+<script src="store.js?v=20260508e"></script>
+<script src="current-user.js?v=20260508e"></script>
+<script src="rules-runtime.js?v=20260508e"></script>
+<script src="lifecycle.js?v=20260508e"></script>
+<script src="hl7.js?v=20260508e"></script>
+<script src="hl7-mllp.js?v=20260508e"></script>
+<script src="mappers.js?v=20260508e"></script>
+<script src="reference-ranges.js?v=20260508e"></script>
+<script src="westgard.js?v=20260508e"></script>
+<script src="westgard-watcher.js?v=20260508e"></script>
+<script src="qc-gate.js?v=20260508e"></script>
+<script src="critical-escalation.js?v=20260508e"></script>
+<script src="lot-expiry-watcher.js?v=20260508e"></script>
+<script src="labels.js?v=20260508e"></script>
+<script src="delivery-watcher.js?v=20260508e"></script>
+<script src="tat-watcher.js?v=20260508e"></script>
+<script src="instrument-sim.js?v=20260508e"></script>
+<script src="seed.js?v=20260508e"></script>
+
+<!-- Precompiled React UI bundle. Rebuild with: node scripts/build-jsx-bundle.cjs -->
+<script src="compiled/app.bundle.js?v=20260508e"></script>
+
+</body>
+</html>
+
+

@@ -1,0 +1,9 @@
+.build-cache/
+.claude/
+ui-audit-shots/
+_design/
+*.md
+
+node_modules/
+.DS_Store
+Thumbs.db

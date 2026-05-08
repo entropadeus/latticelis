@@ -1,0 +1,93 @@
+// current-user.js — Active operator context for the LIS.
+//
+// Real labs require accountability on every action. Until we have actual auth,
+// this gives us a "Who's on shift" surrogate: a User record that's pinned to
+// localStorage so reloads don't lose it, exposed as window.currentUser, and
+// surfaced as a switcher in the topbar.
+//
+// Every place that previously hardcoded 'you' / 'system' / 'auto' as the actor
+// now reads window.currentUser?.id (with a fallback). When real auth lands, the
+// switcher is replaced; the actor field is already in place.
+
+(function () {
+
+  const KEY = 'lattice.currentUserId';
+  const __subs = new Set();
+
+  let __cur = null;       // last-seen user object (or null if none chosen)
+  let __started = false;
+
+  // ── Auto-seed: at least one user must exist or the picker is empty. ───────
+  // We seed two operators on first run so the switcher has options and shows
+  // something other than "no user". Both have role hints that align with
+  // Appendix A's Role enum (LAB_ASSISTANT, MEDICAL_TECHNOLOGIST).
+
+  const seedUsers = async () => {
+    const existing = await window.db.list('users').catch(() => []);
+    if (existing.length > 0) return existing;
+    const now = Date.now();
+    const u1 = {
+      id: 'usr_seed_alex', username: 'alex', firstName: 'Alex', lastName: 'Tran',
+      credentials: ['MLT'], roles: ['LAB_ASSISTANT'],
+      facilityIds: [], status: 'ACTIVE',
+      createdAt: now, updatedAt: now,
+    };
+    const u2 = {
+      id: 'usr_seed_morgan', username: 'morgan', firstName: 'Morgan', lastName: 'Lee',
+      credentials: ['MT(ASCP)'], roles: ['MEDICAL_TECHNOLOGIST'],
+      facilityIds: [], status: 'ACTIVE',
+      createdAt: now, updatedAt: now,
+    };
+    await window.db.put('users', u1);
+    await window.db.put('users', u2);
+    return [u1, u2];
+  };
+
+  const refresh = async () => {
+    const users = await window.db.list('users').catch(() => []);
+    // Keep a synchronous lookup cache so displayName() can resolve any actor id
+    // without an async fetch — important for table cells rendered in tight loops.
+    window.__userCache = Object.fromEntries(users.map(u => [u.id, u]));
+    if (users.length === 0) return;
+    const stored = localStorage.getItem(KEY);
+    let cur = stored ? users.find(u => u.id === stored) : null;
+    if (!cur) cur = users[0];
+    __cur = cur;
+    window.currentUser = cur;
+    __subs.forEach(fn => { try { fn(cur); } catch (e) { console.error(e); } });
+  };
+
+  const setCurrent = async (id) => {
+    localStorage.setItem(KEY, id);
+    await refresh();
+  };
+
+  const subscribe = (fn) => { __subs.add(fn); return () => __subs.delete(fn); };
+
+  const start = async () => {
+    if (__started) return;
+    if (!window.db) { setTimeout(start, 0); return; }
+    __started = true;
+    // The users collection isn't watched anywhere yet; piggyback on db.subscribe
+    // so adds/removals propagate to the topbar.
+    window.db.subscribe('users', () => refresh());
+    await seedUsers();
+    await refresh();
+  };
+
+  // displayName(actor) — accepts a user id or a string actor like 'system'/'auto'/'rules'
+  const displayName = (actor) => {
+    if (!actor) return 'system';
+    if (actor === 'system' || actor === 'auto' || actor === 'rules') return actor;
+    if (window.__userCache && window.__userCache[actor]) {
+      const u = window.__userCache[actor];
+      return [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || actor;
+    }
+    return actor;
+  };
+
+  window.currentUser = null;
+  window.currentUserApi = { setCurrent, subscribe, displayName, refresh };
+
+  start();
+})();
