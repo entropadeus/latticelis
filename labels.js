@@ -89,6 +89,30 @@
     return { ok: errors.length === 0, errors, bytes };
   };
 
+  // Force ^PW (print width) and ^LL (label length) in a ZPL block to match
+  // given dimensions in dots. Existing directives are replaced; missing ones
+  // are inserted right after the first ^XA. The Labels & Printing admin form
+  // saves width/height/dpi per template, but the wire output ignored those
+  // fields entirely until this helper landed — operators would shrink a
+  // template to 0.75×1.5" in the form and watch the printer keep emitting
+  // ^LL203 from whatever was baked into the template body, then chase the
+  // "design wraps to a second label" ghost when the configured printable
+  // region didn't match the design's actual extent.
+  const __forceLabelDimensions = (zpl, widthDots, heightDots) => {
+    let out = String(zpl == null ? '' : zpl);
+    if (/\^PW\d+/.test(out)) {
+      out = out.replace(/\^PW\d+/g, `^PW${widthDots}`);
+    } else {
+      out = out.replace(/\^XA/, `^XA\n^PW${widthDots}`);
+    }
+    if (/\^LL\d+/.test(out)) {
+      out = out.replace(/\^LL\d+/g, `^LL${heightDots}`);
+    } else {
+      out = out.replace(/\^XA/, `^XA\n^LL${heightDots}`);
+    }
+    return out;
+  };
+
   // ── Template lookup ─────────────────────────────────────────────────────
   //
   // `label_templates` is the admin-managed source of truth for label layout.
@@ -223,6 +247,14 @@
     if (template && template.zpl) {
       // Template path — operator-managed body with placeholder substitution.
       zpl = applyTemplate(template.zpl, render);
+      // Make the Labels & Printing form's width/height/dpi authoritative.
+      // The form is the source of truth for the printable region; template
+      // bodies carry layout only. See __forceLabelDimensions header for
+      // background.
+      const __dpi   = Number(template.dpi)    || 203;
+      const __wDots = Math.round((Number(template.width)  || 2.0) * __dpi);
+      const __hDots = Math.round((Number(template.height) || 1.0) * __dpi);
+      zpl = __forceLabelDimensions(zpl, __wDots, __hDots);
       // Append copies directive when requested. Templates may already have
       // their own `^PQ` so we only add when missing.
       if (copies > 1 && !/\^PQ\d/.test(zpl)) {
