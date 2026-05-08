@@ -18879,6 +18879,7 @@ var UsersPage = ({
     }
     return out;
   }, [users]);
+  var [showPw, setShowPw] = useStateOS(false);
   var startNew = () => {
     setEditingId(null);
     setDraft({
@@ -18889,9 +18890,12 @@ var UsersPage = ({
       credentials: [],
       roles: [],
       facilityIds: [],
-      status: 'ACTIVE'
+      status: 'ACTIVE',
+      password: '',
+      confirmPassword: ''
     });
     setCredInput('');
+    setShowPw(false);
   };
   var startEdit = u => {
     setEditingId(u.id);
@@ -18903,14 +18907,18 @@ var UsersPage = ({
       credentials: Array.isArray(u.credentials) ? [...u.credentials] : [],
       roles: Array.isArray(u.roles) ? [...u.roles] : [],
       facilityIds: Array.isArray(u.facilityIds) ? [...u.facilityIds] : [],
-      status: u.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE'
+      status: u.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+      password: '',
+      confirmPassword: ''
     });
     setCredInput('');
+    setShowPw(false);
   };
   var cancel = () => {
     setEditingId(null);
     setDraft(null);
     setCredInput('');
+    setShowPw(false);
   };
   var toggleRole = roleId => {
     setDraft(d => {
@@ -18947,6 +18955,14 @@ var UsersPage = ({
   };
   var save = async () => {
     if (!draft || !draft.firstName.trim() || !draft.lastName.trim()) return;
+    if (!draft.username.trim()) {
+      await safetyNotice({
+        tone: 'warning',
+        title: 'Username required',
+        message: 'Pick a username — it\'s what the operator types at sign-in.'
+      });
+      return;
+    }
     if (draft.roles.length === 0) {
       await safetyNotice({
         tone: 'warning',
@@ -18955,31 +18971,99 @@ var UsersPage = ({
       });
       return;
     }
+    var wantsPasswordChange = !!draft.password;
+    if (!editingId && !wantsPasswordChange) {
+      await safetyNotice({
+        tone: 'warning',
+        title: 'Password required',
+        message: 'New users need a password set at create time, or they can\'t sign in. Use the field below the roster.'
+      });
+      return;
+    }
+    if (wantsPasswordChange) {
+      if (draft.password.length < 4) {
+        await safetyNotice({
+          tone: 'warning',
+          title: 'Password too short',
+          message: 'Set a password of at least 4 characters. Stronger is better — this is browser-prototype hashing.'
+        });
+        return;
+      }
+      if (draft.password !== draft.confirmPassword) {
+        await safetyNotice({
+          tone: 'warning',
+          title: 'Passwords don\'t match',
+          message: 'The password and confirm fields differ — retype them so they line up.'
+        });
+        return;
+      }
+    }
+    var usernameLower = draft.username.trim().toLowerCase();
+    var conflict = users.find(u => (u.username || '').toLowerCase() === usernameLower && (!editingId || u.id !== editingId));
+    if (conflict) {
+      await safetyNotice({
+        tone: 'danger',
+        title: 'Username already taken',
+        message: `Another user (${conflict.firstName} ${conflict.lastName}) already uses ${draft.username}. Pick a different one.`
+      });
+      return;
+    }
     var ask = await safetyConfirm({
       id: editingId ? 'admin.users.edit' : 'admin.users.create',
       tone: 'info',
       title: editingId ? 'Save user changes' : 'Create user',
       message: editingId ? 'Updating a user record changes who can do what across the lab.' : 'Adding a user gives them access to the LIS based on the roles you assign.',
-      facts: [safetyFact('name', `${draft.firstName} ${draft.lastName}`), safetyFact('username', draft.username || '(none)'), safetyFact('roles', (draft.roles || []).join(', ') || 'none'), safetyFact('credentials', (draft.credentials || []).join(', ') || 'none'), safetyFact('status', draft.status)],
+      facts: [safetyFact('name', `${draft.firstName} ${draft.lastName}`), safetyFact('username', draft.username || '(none)'), safetyFact('roles', (draft.roles || []).join(', ') || 'none'), safetyFact('credentials', (draft.credentials || []).join(', ') || 'none'), safetyFact('status', draft.status), safetyFact('password', wantsPasswordChange ? editingId ? 'rotating to a new password' : 'setting initial password' : 'unchanged')],
       entityType: 'user',
       entityId: editingId || 'new',
       confirmLabel: editingId ? 'Save user' : 'Create user'
     });
     if (!ask.confirmed) return;
-    var init = {
-      ...draft
-    };
+    var {
+      password,
+      confirmPassword,
+      ...persistable
+    } = draft;
+    var init = persistable;
     if (editingId) {
       var fresh = await window.db.get('users', editingId);
       init = {
         ...(fresh || {}),
-        ...draft,
+        ...persistable,
         id: editingId
       };
     }
     var record = window.schema.newUser(init);
     await window.db.put('users', record);
+    if (wantsPasswordChange && window.auth && window.auth.setPassword) {
+      try {
+        await window.auth.setPassword(record.id, password);
+      } catch (e) {
+        console.error('[users] setPassword failed', e);
+        await safetyNotice({
+          tone: 'danger',
+          title: 'Password not set',
+          message: 'The user record saved, but hashing the password failed: ' + (e.message || 'unknown error') + '. Edit and retry.'
+        });
+        return;
+      }
+    }
     cancel();
+  };
+  var clearPasswordFor = async u => {
+    if (!u || !window.auth || !window.auth.clearPassword) return;
+    var ask = await safetyConfirm({
+      id: 'admin.users.clear_password',
+      tone: 'warning',
+      title: 'Clear password',
+      message: 'After clearing, this user cannot sign in until an admin sets a new password. Use this when an account is compromised or the password needs reset.',
+      facts: [safetyFact('name', `${u.firstName} ${u.lastName}`), safetyFact('username', u.username)],
+      entityType: 'user',
+      entityId: u.id,
+      confirmLabel: 'Clear password'
+    });
+    if (!ask.confirmed) return;
+    await window.auth.clearPassword(u.id);
   };
   var deactivate = async u => {
     var ask = await safetyConfirm({
@@ -19364,6 +19448,125 @@ var UsersPage = ({
     })),
     placeholder: "alex@lab.example"
   }))), React.createElement("div", {
+    style: {
+      marginBottom: 10,
+      padding: '10px 12px',
+      background: 'var(--ivory-50)',
+      border: '1px solid var(--line-soft)',
+      borderRadius: 5
+    }
+  }, React.createElement("div", {
+    className: "section-title",
+    style: {
+      fontSize: 10,
+      marginBottom: 6,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6
+    }
+  }, React.createElement("span", null, editingExisting ? 'Reset password' : 'Set password'), !editingExisting && React.createElement("span", {
+    style: {
+      color: 'var(--rust, #B5462E)',
+      textTransform: 'none',
+      letterSpacing: 0
+    }
+  }, "\xB7 required"), editingExisting && React.createElement("span", {
+    style: {
+      color: 'var(--ink-300)',
+      textTransform: 'none',
+      letterSpacing: 0
+    }
+  }, "\xB7 leave blank to keep current"), React.createElement("span", {
+    style: {
+      flex: 1
+    }
+  }), editingExisting && editingUser && window.auth && window.auth.hasPassword(editingUser) && React.createElement("span", {
+    className: "pill",
+    "data-tone": "sage",
+    style: {
+      fontSize: 9.5
+    }
+  }, "password set"), editingExisting && editingUser && window.auth && !window.auth.hasPassword(editingUser) && React.createElement("span", {
+    className: "pill",
+    "data-tone": "amber",
+    style: {
+      fontSize: 9.5
+    }
+  }, "no password")), React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: 8
+    }
+  }, React.createElement("div", {
+    style: {
+      position: 'relative'
+    }
+  }, React.createElement("input", {
+    className: "input",
+    type: showPw ? 'text' : 'password',
+    placeholder: editingExisting ? '••••••••' : 'min 4 characters',
+    value: draft.password,
+    autoComplete: "new-password",
+    onChange: e => setDraft(d => ({
+      ...d,
+      password: e.target.value
+    })),
+    style: {
+      width: '100%',
+      paddingRight: 50
+    }
+  }), React.createElement("button", {
+    type: "button",
+    onClick: () => setShowPw(s => !s),
+    style: {
+      position: 'absolute',
+      right: 6,
+      top: '50%',
+      transform: 'translateY(-50%)',
+      border: 0,
+      background: 'transparent',
+      cursor: 'pointer',
+      color: 'var(--ink-400)',
+      fontSize: 10.5,
+      padding: 4,
+      lineHeight: 1
+    },
+    tabIndex: -1,
+    title: showPw ? 'Hide' : 'Show'
+  }, showPw ? 'hide' : 'show')), React.createElement("input", {
+    className: "input",
+    type: showPw ? 'text' : 'password',
+    placeholder: "confirm",
+    value: draft.confirmPassword,
+    autoComplete: "new-password",
+    onChange: e => setDraft(d => ({
+      ...d,
+      confirmPassword: e.target.value
+    }))
+  })), draft.password && draft.confirmPassword && draft.password !== draft.confirmPassword && React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: 'var(--err-700, #B5462E)',
+      marginTop: 4
+    }
+  }, "passwords don't match yet"), editingExisting && editingUser && window.auth && window.auth.hasPassword(editingUser) && React.createElement("div", {
+    style: {
+      marginTop: 6
+    }
+  }, React.createElement("button", {
+    type: "button",
+    onClick: () => clearPasswordFor(editingUser),
+    style: {
+      border: 0,
+      background: 'transparent',
+      cursor: 'pointer',
+      padding: 0,
+      fontSize: 10.5,
+      color: 'var(--ink-500)',
+      textDecoration: 'underline'
+    }
+  }, "Clear password (force admin reset before next sign-in)"))), React.createElement("div", {
     style: {
       marginBottom: 10
     }
