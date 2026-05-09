@@ -190,7 +190,7 @@ const ReportsPage = () => {
                   <th style={{ width: 100 }}>Entity</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="stagger-children">
                 {pager.slice.map(e => {
                   // The entity column becomes a click-through to the entity drawer
                   // when both entityType and entityId are present and the drawer

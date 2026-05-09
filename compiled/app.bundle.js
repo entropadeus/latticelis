@@ -11248,6 +11248,7 @@ var ActivityPanel = () => {
       fontSize: 11.5
     }
   }, "Lifecycle events stream here as the lab works \u2014 orders, specimens, results, and rule activity.")) : React.createElement("div", {
+    className: "stagger-children",
     style: {
       maxHeight: 260,
       overflowY: 'auto'
@@ -11479,7 +11480,9 @@ var OrdersPage = ({
     sub: orders.length === 0 ? 'Click "New order" to add a patient, pick tests, and set priority. Orders can also arrive via inbound interface.' : 'Adjust the filter or search.'
   }) : React.createElement("table", {
     className: "tbl"
-  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Order #"), React.createElement("th", null, "Client"), React.createElement("th", null, "Patient"), React.createElement("th", null, "MRN"), React.createElement("th", null, "Tests"), React.createElement("th", null, "Priority"), React.createElement("th", null, "Status"), React.createElement("th", null, "TAT"), React.createElement("th", null, "Ordered"), React.createElement("th", null, "Facility"))), React.createElement("tbody", null, pager.slice.map(o => {
+  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Order #"), React.createElement("th", null, "Client"), React.createElement("th", null, "Patient"), React.createElement("th", null, "MRN"), React.createElement("th", null, "Tests"), React.createElement("th", null, "Priority"), React.createElement("th", null, "Status"), React.createElement("th", null, "TAT"), React.createElement("th", null, "Ordered"), React.createElement("th", null, "Facility"))), React.createElement("tbody", {
+    className: "stagger-children"
+  }, pager.slice.map(o => {
     var pat = o.patientId ? patientById[o.patientId] : null;
     var cli = o.clientId ? clientById[o.clientId] : null;
     var loc = o.locationId ? locationById[o.locationId] : null;
@@ -11690,7 +11693,9 @@ var SpecimensPage = () => {
     sub: specimens.length === 0 ? 'Accession a specimen to populate the pipeline.' : 'Adjust the filter or search.'
   }) : React.createElement("table", {
     className: "tbl"
-  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Accession"), React.createElement("th", null, "Barcode"), React.createElement("th", null, "Patient"), React.createElement("th", null, "Order"), React.createElement("th", null, "Type"), React.createElement("th", null, "Container"), React.createElement("th", null, "Received"), React.createElement("th", null, "Condition"), React.createElement("th", null, "Flags"), React.createElement("th", null, "State"))), React.createElement("tbody", null, pager.slice.map(s => {
+  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Accession"), React.createElement("th", null, "Barcode"), React.createElement("th", null, "Patient"), React.createElement("th", null, "Order"), React.createElement("th", null, "Type"), React.createElement("th", null, "Container"), React.createElement("th", null, "Received"), React.createElement("th", null, "Condition"), React.createElement("th", null, "Flags"), React.createElement("th", null, "State"))), React.createElement("tbody", {
+    className: "stagger-children"
+  }, pager.slice.map(s => {
     var pat = s.patientId ? patientById[s.patientId] : null;
     var ord = s.orderId ? orderById[s.orderId] : null;
     var flags = Array.isArray(s.flags) ? s.flags : [];
@@ -12148,7 +12153,9 @@ var WorklistsPage = () => {
     style: {
       width: 110
     }
-  }))), React.createElement("tbody", null, selected.items.map(s => {
+  }))), React.createElement("tbody", {
+    className: "stagger-children"
+  }, selected.items.map(s => {
     var o = s.orderId ? orderById[s.orderId] : null;
     var p = s.patientId ? patientById[s.patientId] : null;
     var testCodes = o ? o.testIds.map(id => (testById[id] || {}).code).filter(Boolean).join(' ') : '';
@@ -12758,7 +12765,9 @@ var ResultsPage = () => {
     style: {
       width: 180
     }
-  }))), React.createElement("tbody", null, pager.slice.map(r => {
+  }))), React.createElement("tbody", {
+    className: "stagger-children"
+  }, pager.slice.map(r => {
     var spec = r.specimenId ? specimenById[r.specimenId] : null;
     var pat = spec && spec.patientId ? patientById[spec.patientId] : null;
     var test = r.testId ? testById[r.testId] : null;
@@ -14992,7 +15001,9 @@ var ReportsPage = () => {
     style: {
       width: 100
     }
-  }, "Entity"))), React.createElement("tbody", null, pager.slice.map(e => {
+  }, "Entity"))), React.createElement("tbody", {
+    className: "stagger-children"
+  }, pager.slice.map(e => {
     var drawerKind = {
       order: 'order',
       specimen: 'specimen',

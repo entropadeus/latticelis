@@ -498,7 +498,7 @@ const ResultsPage = () => {
                 <th style={{ width: 180 }}></th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="stagger-children">
               {pager.slice.map(r => {
                 const spec = r.specimenId ? specimenById[r.specimenId] : null;
                 const pat = spec && spec.patientId ? patientById[spec.patientId] : null;

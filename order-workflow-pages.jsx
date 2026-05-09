@@ -95,7 +95,7 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
                 <th>Priority</th><th>Status</th><th>TAT</th><th>Ordered</th><th>Facility</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="stagger-children">
               {pager.slice.map(o => {
                 const pat = o.patientId ? patientById[o.patientId] : null;
                 const cli = o.clientId ? clientById[o.clientId] : null;
@@ -225,7 +225,7 @@ const SpecimensPage = () => {
                 <th>Condition</th><th>Flags</th><th>State</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="stagger-children">
               {pager.slice.map(s => {
                 const pat = s.patientId ? patientById[s.patientId] : null;
                 const ord = s.orderId ? orderById[s.orderId] : null;
@@ -592,7 +592,7 @@ const WorklistsPage = () => {
                         <th style={{ width: 110 }}></th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="stagger-children">
                       {selected.items.map(s => {
                         const o = s.orderId ? orderById[s.orderId] : null;
                         const p = s.patientId ? patientById[s.patientId] : null;

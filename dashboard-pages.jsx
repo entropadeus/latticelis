@@ -482,7 +482,7 @@ const ActivityPanel = () => {
           </div>
         </div>
       ) : (
-        <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+        <div className="stagger-children" style={{ maxHeight: 260, overflowY: 'auto' }}>
           {recent.map(ev => (
             <ActivityRow key={ev.id} ev={ev} animate={animateNew}/>
           ))}

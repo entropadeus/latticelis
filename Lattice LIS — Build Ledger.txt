@@ -262,7 +262,7 @@ _(newest first)_
 
 **Built:**
 
-1. **Sole-runtime guard in `index.html`.** The dev path was 28 `<script type="text/babel">` lines + the Babel CDN; it had been running alongside the precompiled bundle, so every page load mounted React twice. Comment-blocked the entire dev path with a header explaining the toggle (production = compiled bundle sole runtime; dev = uncomment block + comment compiled line) so future-me doesn't re-enable both. Cache bumped `20260509i → 20260509k` across every `.js` script tag + `__LIS_VERSION` + the compiled bundle URL.
+1. **Sole-runtime guard in `index.html`.** The dev path was 28 `<script type="text/babel">` lines + the Babel CDN; it had been running alongside the precompiled bundle, so every page load mounted React twice. Comment-blocked the entire dev path with a header explaining the toggle (production = compiled bundle sole runtime; dev = uncomment block + comment compiled line) so future-me doesn't re-enable both. Cache bumped `20260509i → 20260509l` across every `.js` script tag + `__LIS_VERSION` + the compiled bundle URL.
 
 2. **Page transition.** `app.jsx` page wrapper switched from `fade-in` (opacity-only) to `slide-up` (out-quint, 6px translateY). Aligns with the design system note "out-quint for entries"; route changes now settle in rather than crossfade-flash. Reduce-motion still clamps everything to 1ms via the global media query.
 
@@ -272,7 +272,9 @@ _(newest first)_
 
 5. **Bundle rebuild.** `node scripts/build-jsx-bundle.cjs` → 673 kb post-rebase against codex's delta-check-thresholds tip (was 669 pre-merge), Babel standalone path. Both feature sets present: 6 `useDeferredEnter` callsites (motion) and 12 `delta`-prefixed identifiers (codex's per-analyte threshold work) confirmed in the integrated bundle. Cache bumped a second time to `k` post-rebase because codex independently used `j` for their own bundle rebuild.
 
-**Cache `20260509i → 20260509k`**, bundle 671 kb.
+6. **Followup pass — stagger-children on list bodies (visible mount motion).** First push delivered motion that was technically correct but practically invisible: row-enter animations only fired on STREAMING inserts (audit events, simulator results, manual entry), and the page-transition lift was 6px / 180ms — biased toward the design system's "conservative enterprise feel" but undershooting "visibly different on a normal page reload." Added `className="stagger-children"` to the `<tbody>` of OrdersPage, SpecimensPage, WorklistsPage (`order-workflow-pages.jsx`), ResultsPage (`result-pages.jsx`), ReportsPage activity log (`reports-pages.jsx`), and the ActivityPanel container (`dashboard-pages.jsx`). The CSS class was already defined (lines 442-451 of `index.html`): items 1-8 stagger at 20-230ms delays, items 9+ all fire at 250ms — total mount unfurl ~430ms. Cascade-checked vs. existing `.slide-up` class on rows: same animation properties (slideUp keyframe), `.stagger-children > *` wins the cascade for animation-delay, no double-animation conflict. Streaming inserts continue to work — new row at position 1 inherits nth-child(1) = 20ms delay. Cache bumped a third time `k → l` post-rebuild. Bundle still 673 kb. 8 `stagger-children` occurrences confirmed in bundle (6 new callsites + 2 pre-existing).
+
+**Cache `20260509i → 20260509l`**, bundle 671 kb.
 
 **Verified (static):**
 - Bundle compiles clean, no transform errors.
