@@ -1187,9 +1187,15 @@ var RULE_TRIGGERS = [{
   label: 'Analyzer QC event',
   group: 'Instruments'
 }, {
-  id: 'tat.threshold',
-  label: 'TAT threshold breached',
-  group: 'Operations'
+  id: 'order.tat.warned',
+  label: 'TAT warning threshold crossed',
+  group: 'Operations',
+  desc: 'Fires when an order reaches the warning percentage of its TAT target'
+}, {
+  id: 'order.tat.breached',
+  label: 'TAT breach threshold crossed',
+  group: 'Operations',
+  desc: 'Fires when an order exceeds its full TAT target'
 }, {
   id: 'schedule.cron',
   label: 'On schedule (cron)',
@@ -1454,12 +1460,22 @@ var CONDITION_PRIMITIVES = [{
 }, {
   id: 'tat.elapsed.gt',
   label: 'TAT elapsed >',
-  cat: 'Time',
+  cat: 'TAT',
   args: [{
     k: 'minutes',
     t: 'number',
     unit: 'min'
   }]
+}, {
+  id: 'order.tat.warned',
+  label: 'Order TAT is in warning',
+  cat: 'TAT',
+  args: []
+}, {
+  id: 'order.tat.breached',
+  label: 'Order TAT is breached',
+  cat: 'TAT',
+  args: []
 }, {
   id: 'message.type.is',
   label: 'Message type',
@@ -1750,7 +1766,7 @@ var ACTION_PRIMITIVES = [{
     t: 'metric'
   }]
 }];
-var COND_CATS = ['Source', 'Test', 'Specimen', 'Patient', 'Result', 'Time', 'Message'];
+var COND_CATS = ['Source', 'Test', 'Specimen', 'Patient', 'Result', 'Time', 'TAT', 'Message'];
 var ACTION_CATS = ['Routing', 'Validation', 'Reflex', 'Result', 'Notify', 'Output', 'Audit'];
 Object.assign(window, {
   RULE_TRIGGERS,
