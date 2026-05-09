@@ -23,10 +23,13 @@
   const TRIGGER_TO_EVENT = {
     'order.modified': 'order.updated',
     'result.amended': 'result.released',
+    // Legacy tat.threshold trigger fires on either TAT event published by tat-watcher.
+    'tat.threshold':  ['order.tat.warned', 'order.tat.breached'],
   };
 
   const matchesTrigger = (ruleTrigger, eventType) => {
     const mapped = TRIGGER_TO_EVENT[ruleTrigger] || ruleTrigger;
+    if (Array.isArray(mapped)) return mapped.includes(eventType);
     return mapped === eventType;
   };
 
@@ -155,6 +158,21 @@
       return start <= end ? (h >= start && h < end) : (h >= start || h < end);
     },
 
+    // TAT state — reads tatBreachLevel written by tat-watcher onto the order entity.
+    // If the order hasn't been scanned yet (new, or watcher hasn't run) the field is
+    // absent and both conditions return false — safe default: no false-positive alerts.
+    'order.tat.warned':   (a, c) => !!c.order && c.order.tatBreachLevel === 'warn',
+    'order.tat.breached': (a, c) => !!c.order && c.order.tatBreachLevel === 'breach',
+
+    // TAT elapsed — computes directly from order.orderedAt minus stored pause time.
+    // Does not need cfg/testsById; the pause accounting matches what tat-watcher stores.
+    'tat.elapsed.gt': (a, c) => {
+      if (!c.order || !c.order.orderedAt) return false;
+      const pausedMs = Math.max(0, Number(c.order.tatPausedMs) || 0);
+      const elapsedMin = Math.max(0, (Date.now() - c.order.orderedAt - pausedMs) / 60000);
+      return elapsedMin > Number(a.minutes);
+    },
+
     // Stubs — explicit so console doesn't warn about every primitive in catalog
     'order.location.is':         () => false,
     'order.payer.is':            () => false,
@@ -166,7 +184,6 @@
     'patient.fasting':           () => false,
     // result.delta.gt is now a real evaluator above — see "Delta check" comment.
     'time.holiday':              () => false,
-    'tat.elapsed.gt':            () => false,
     'message.type.is':           () => false,
     'message.field.matches':     () => false,
     'message.field.missing':     () => false,
@@ -412,6 +429,11 @@
     if (p.instrument) ctx.instrument = p.instrument;
 
     // Backfill from db where we have an id but not the entity itself.
+    // orderId in payload covers TAT events (order.tat.warned / order.tat.breached)
+    // which carry orderId but not the full order object.
+    if (!ctx.order && p.orderId) {
+      ctx.order = await window.db.get('orders', p.orderId);
+    }
     if (ctx.specimen && !ctx.order && ctx.specimen.orderId) {
       ctx.order = await window.db.get('orders', ctx.specimen.orderId);
     }
