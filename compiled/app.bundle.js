@@ -8899,6 +8899,15 @@ var DrawerTimeline = ({
   target
 }) => {
   var events = window.useEntities('audit_events', e => e.entityId === target.id);
+  var instruments = window.useEntities('instruments');
+  var instrumentsById = useMemoED(() => {
+    var m = {};
+    instruments.forEach(i => {
+      m[i.id] = i;
+      if (i.code) m[i.code] = i;
+    });
+    return m;
+  }, [instruments]);
   var sorted = useMemoED(() => [...events].sort((a, b) => (b.ts || 0) - (a.ts || 0)), [events]);
   if (sorted.length === 0) {
     return React.createElement("div", {
@@ -8966,7 +8975,23 @@ var DrawerTimeline = ({
       color: 'var(--ink-500)',
       marginTop: 2
     }
-  }, "Rule \"", ev.payload.ruleName, "\" \u2192 ", (ev.payload.actionResults || []).length, " action", (ev.payload.actionResults || []).length === 1 ? '' : 's')))));
+  }, "Rule \"", ev.payload.ruleName, "\" \u2192 ", (ev.payload.actionResults || []).length, " action", (ev.payload.actionResults || []).length === 1 ? '' : 's'), ev.type === 'lifecycle.transition' && ev.payload && ev.payload.from && ev.payload.to && React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--ink-500)',
+      marginTop: 2
+    }
+  }, ev.payload.from, " \u2192 ", ev.payload.to, ev.payload.reason ? React.createElement("span", {
+    style: {
+      color: 'var(--ink-400)'
+    }
+  }, " \xB7 ", ev.payload.reason) : null), ev.type === 'specimen.routed' && ev.payload && ev.payload.target && React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--ink-500)',
+      marginTop: 2
+    }
+  }, "\u2192 ", (instrumentsById[ev.payload.target] || {}).name || ev.payload.target)))));
 };
 var DrawerRelated = ({
   target,
@@ -11249,9 +11274,18 @@ var ActivityRow = ({
   ev,
   animate
 }) => {
+  var instruments = window.useEntities('instruments');
+  var instrumentsById = useMemoOS(() => {
+    var m = {};
+    instruments.forEach(i => {
+      m[i.id] = i;
+      if (i.code) m[i.code] = i;
+    });
+    return m;
+  }, [instruments]);
   var tone = EVENT_TONE[ev.type] || 'ghost';
   var label = EVENT_LABEL[ev.type] || ev.type;
-  var detail = summarizeEvent(ev);
+  var detail = summarizeEvent(ev, instrumentsById);
   return React.createElement("div", {
     className: animate ? 'slide-up' : '',
     style: {
@@ -11296,7 +11330,7 @@ var ActivityRow = ({
     }
   }, window.currentUserApi ? window.currentUserApi.displayName(ev.actor) : ev.actor));
 };
-var summarizeEvent = ev => {
+var summarizeEvent = (ev, instruments = {}) => {
   var p = ev.payload || {};
   if (ev.type === 'operator.safety.confirmed') {
     return `${p.actionId || 'safety action'} confirmed`;
@@ -11308,9 +11342,16 @@ var summarizeEvent = ev => {
   if (ev.type === 'rule.audit') {
     return p.message || '';
   }
+  if (ev.type === 'lifecycle.transition') {
+    return p.from && p.to ? `${p.from} → ${p.to}` : '';
+  }
   if (p.order && p.order.orderNumber) return `Order ${p.order.orderNumber}`;
-  if (p.specimen && p.specimen.accessionNumber) return `Accession ${p.specimen.accessionNumber}`;
-  if (p.specimen && p.specimen.barcode) return `Barcode ${p.specimen.barcode}`;
+  if (p.specimen && (p.specimen.accessionNumber || p.specimen.barcode)) {
+    var specimenLabel = p.specimen.accessionNumber ? `Accession ${p.specimen.accessionNumber}` : `Barcode ${p.specimen.barcode}`;
+    var targetRaw = p.target;
+    var targetName = targetRaw ? (instruments[targetRaw] || {}).name || targetRaw : null;
+    return targetName ? `${specimenLabel} → ${targetName}` : specimenLabel;
+  }
   if (p.result) return p.result.id;
   if (ev.entityType && ev.entityId) return `${ev.entityType} ${String(ev.entityId).slice(-6)}`;
   return '';
@@ -14696,6 +14737,15 @@ var Hl7IntakePanel = () => {
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 var ReportsPage = () => {
   var events = window.useEntities('audit_events');
+  var instruments = window.useEntities('instruments');
+  var instrumentsById = useMemoOS(() => {
+    var m = {};
+    instruments.forEach(i => {
+      m[i.id] = i;
+      if (i.code) m[i.code] = i;
+    });
+    return m;
+  }, [instruments]);
   var [q, setQ] = useStateOS('');
   var [filter, setFilter] = useStateOS('all');
   var [eventType, setEventType] = useStateOS('');
@@ -15040,7 +15090,7 @@ var ReportsPage = () => {
         fontSize: 11.5,
         color: 'var(--ink-700)'
       }
-    }, summarizeEvent(e))), React.createElement("td", null, e.entityId ? React.createElement("span", {
+    }, summarizeEvent(e, instrumentsById))), React.createElement("td", null, e.entityId ? React.createElement("span", {
       className: "mono",
       style: {
         fontSize: 10.5,
