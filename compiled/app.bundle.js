@@ -5639,7 +5639,7 @@ var NewOrderDrawer = ({
       marginLeft: 10,
       color: 'var(--ink-400)'
     }
-  }, "delivers via ", c.deliveryChannel))), React.createElement(SuggestionAction, {
+  }, "\xB7 via ", c.deliveryChannel))), React.createElement(SuggestionAction, {
     onClick: startNewClient,
     disabled: !canEditLabConfig,
     title: permissionTitle(canEditLabConfig, 'Add new client', 'edit lab configuration')
@@ -5934,7 +5934,10 @@ var SuggestionRow = ({
     fontSize: 12.5,
     color: 'var(--ink-700)',
     borderBottom: '1px solid var(--line-soft)',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
   }
 }, children);
 var SuggestionEmpty = ({
