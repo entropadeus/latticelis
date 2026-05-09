@@ -58,9 +58,15 @@ const EntityDrawer = () => {
           ))}
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
-          {tab === 'overview' && <DrawerOverview target={target}/>}
-          {tab === 'timeline' && <DrawerTimeline target={target}/>}
-          {tab === 'related'  && <DrawerRelated target={target} onOpen={(k, id) => setTarget({ kind: k, id })}/>}
+          {/* Re-key on tab id so the wrapper unmounts/remounts and the
+              fade-in animation re-fires when switching tabs. Without the
+              key, only the inner content swaps and the entry animation
+              never runs. */}
+          <div key={tab} className="fade-in">
+            {tab === 'overview' && <DrawerOverview target={target}/>}
+            {tab === 'timeline' && <DrawerTimeline target={target}/>}
+            {tab === 'related'  && <DrawerRelated target={target} onOpen={(k, id) => setTarget({ kind: k, id })}/>}
+          </div>
         </div>
       </div>
     </>

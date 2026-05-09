@@ -456,6 +456,7 @@ const EVENT_LABEL = {
 
 const ActivityPanel = () => {
   const events = window.useEntities('audit_events');
+  const animateNew = window.useDeferredEnter();
   const recent = useMemoOS(() => {
     return [...events]
       .sort((a, b) => (b.ts || 0) - (a.ts || 0))
@@ -483,7 +484,7 @@ const ActivityPanel = () => {
       ) : (
         <div style={{ maxHeight: 260, overflowY: 'auto' }}>
           {recent.map(ev => (
-            <ActivityRow key={ev.id} ev={ev}/>
+            <ActivityRow key={ev.id} ev={ev} animate={animateNew}/>
           ))}
         </div>
       )}
@@ -491,12 +492,12 @@ const ActivityPanel = () => {
   );
 };
 
-const ActivityRow = ({ ev }) => {
+const ActivityRow = ({ ev, animate }) => {
   const tone = EVENT_TONE[ev.type] || 'ghost';
   const label = EVENT_LABEL[ev.type] || ev.type;
   const detail = summarizeEvent(ev);
   return (
-    <div style={{
+    <div className={animate ? 'slide-up' : ''} style={{
       display: 'grid', gridTemplateColumns: '70px 1fr auto',
       alignItems: 'center', gap: 10,
       padding: '7px 14px',

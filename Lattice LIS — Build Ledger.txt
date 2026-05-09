@@ -256,6 +256,36 @@ _(statuses last refreshed 2026-05-07 evening; ✅ = end-to-end usable in browser
 
 _(newest first)_
 
+### Polish session - 2026-05-09 (local) - Drawer-click regression fix + motion polish (page transitions, row enter, tab crossfade)
+
+**Tackled:** User reported drawer interactables (tabs, the close button, related-tab rows, manual-entry inputs, etc.) silently no-op'ing, accompanied by a console spew: `createRoot() on a container that has already been passed to createRoot() before` + repeated `Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node` + `NotFoundError`. Root-caused to a double-mount: both the babel-standalone dev path AND the precompiled bundle were active in `index.html`, so React called `createRoot('#root')` twice, the two trees fought reconciliation, click handlers landed on the discarded fiber, and the second tree's commit phase tore out DOM nodes the first tree was still holding references to — exactly why "interactables don't work" looked like a click-routing bug but was a mount-graph bug. Same session: queued the design-system motion gaps surfaced earlier in conversation (page transitions, row enter on streaming lists, tab-content crossfade in the entity drawer).
+
+**Built:**
+
+1. **Sole-runtime guard in `index.html`.** The dev path was 28 `<script type="text/babel">` lines + the Babel CDN; it had been running alongside the precompiled bundle, so every page load mounted React twice. Comment-blocked the entire dev path with a header explaining the toggle (production = compiled bundle sole runtime; dev = uncomment block + comment compiled line) so future-me doesn't re-enable both. Cache bumped `20260509i → 20260509k` across every `.js` script tag + `__LIS_VERSION` + the compiled bundle URL.
+
+2. **Page transition.** `app.jsx` page wrapper switched from `fade-in` (opacity-only) to `slide-up` (out-quint, 6px translateY). Aligns with the design system note "out-quint for entries"; route changes now settle in rather than crossfade-flash. Reduce-motion still clamps everything to 1ms via the global media query.
+
+3. **Row enter on streaming lists.** New `useDeferredEnter` hook in `store.js` (returns `false` on first render, `true` thereafter via `useEffect(setTrue)`). Pattern: `<tr key={r.id} className={animateNew ? 'slide-up' : ''}>`. The browser fires CSS animations on element-insert only — rows present at first paint mount with `className=""` (no animation), and rows added later mount with `className="slide-up"` so the animation fires once on insert. No per-id bookkeeping, no flicker on re-render, no animation on the seeded initial set. Wired into OrdersPage, SpecimensPage, WorklistsPage (`order-workflow-pages.jsx`), ResultsPage (`result-pages.jsx`), ReportsPage activity log (`reports-pages.jsx`), and Dashboard ActivityPanel (`dashboard-pages.jsx`).
+
+4. **Tab content crossfade.** `entity-drawer.jsx`: tab content wrapped in a `key={tab}` div with `fade-in` so Overview / Timeline / Related re-mount and crossfade on switch instead of snapping.
+
+5. **Bundle rebuild.** `node scripts/build-jsx-bundle.cjs` → 673 kb post-rebase against codex's delta-check-thresholds tip (was 669 pre-merge), Babel standalone path. Both feature sets present: 6 `useDeferredEnter` callsites (motion) and 12 `delta`-prefixed identifiers (codex's per-analyte threshold work) confirmed in the integrated bundle. Cache bumped a second time to `k` post-rebase because codex independently used `j` for their own bundle rebuild.
+
+**Cache `20260509i → 20260509k`**, bundle 671 kb.
+
+**Verified (static):**
+- Bundle compiles clean, no transform errors.
+- `useDeferredEnter` references resolve to the new `window.useDeferredEnter` global.
+- `index.html` HTML comment block closes correctly at line 714; no orphaned `?v=20260509i` references remain.
+- `slide-up` keyframe + utility class were already present in `index.html` design tokens (lines 416, 429); `fade-in` likewise. No new CSS authored.
+
+**Honest gaps:**
+- **Browser verification still owed.** User runs the dev server (`python -m http.server 8000`); after this push the user is to hard-refresh and confirm: (a) React error spam gone, (b) drawer tabs/links/buttons respond to clicks (the original report), (c) page transitions feel right (6px lift, out-quint, ~180ms), (d) new audit/result rows slide up gently as they arrive (manual result entry or simulator-emitted result is the cleanest trigger), (e) drawer tab crossfade reads cleanly on Overview ↔ Timeline ↔ Related switches.
+- **Microcheck button** (Verify / Release / Save → check-stroke-draw-in success feedback) was in the original motion plan but pulled from this push. Touches every mutation site (drawer manual entry, results-page batch verify/release, correction modal, accessioning); needs its own scoped pass with a regression sweep across all the buttons it'd swap in for. Logged informally; can be re-raised next session.
+- **Admin CRUD lists** (Test Catalog, Locations, Clients, Users) deliberately NOT given row-enter animation. Their inserts are user-driven one-at-a-time-on-save, where `slide-up` would read as cheap "save success" feedback rather than the streaming-data signal it's meant to be on operational lists. Revisit only if labs flag the inconsistency.
+- **Dev path retired, not deleted.** Toggling back to live `.jsx` parsing requires uncommenting the babel block + commenting the compiled-bundle line; documented at the toggle site in `index.html`.
+
 ### Polish session - 2026-05-09 (local) - GUI bug hunt: TAT format, QC precision, range slider, client picker
 
 **Tackled:** Continued the post-permission-matrix walkthrough as `blona` (Lab Director, full perms) hunting visible bugs. Found four real ones across four different pages plus one previously-fixed clean (the order-drawer client picker overflow that was hard-clipping).

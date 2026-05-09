@@ -6,6 +6,7 @@ const ReportsPage = () => {
   const [actor, setActor] = useStateOS('');             // exact actor, '' = any
   const [entityType, setEntityType] = useStateOS('');   // exact entity type, '' = any
   const [timeWindow, setTimeWindow] = useStateOS('all'); // '1h'|'6h'|'24h'|'7d'|'all'
+  const animateNew = window.useDeferredEnter();
 
   // Build dropdown options from the live data.
   const distinctEventTypes = useMemoOS(() => {
@@ -203,6 +204,7 @@ const ReportsPage = () => {
                     : null;
                   return (
                     <tr key={e.id}
+                        className={animateNew ? 'slide-up' : ''}
                         style={canOpen ? { cursor: 'pointer' } : {}}
                         onClick={onRowClick}
                         title={canOpen ? `Open ${e.entityType} drawer` : undefined}>

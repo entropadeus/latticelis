@@ -16,6 +16,7 @@ const ResultsPage = () => {
   const canVerify = hasPermission('VERIFY_RESULT');
   const canRelease = hasPermission('RELEASE_RESULT');
   const canCorrect = hasPermission('CORRECT_RESULT');
+  const animateNew = window.useDeferredEnter();
 
   // Expose a global hook so the entity drawer's "Correct this result" button
   // can open the modal regardless of the originating page. Cleared on unmount
@@ -505,7 +506,7 @@ const ResultsPage = () => {
                 const isPending = r.status === 'preliminary' || r.status === 'pending';
                 const canBatchRelease = r.status === 'final' && !r.releasedAt;
                 return (
-                  <tr key={r.id} style={{ cursor: 'pointer' }}
+                  <tr key={r.id} className={animateNew ? 'slide-up' : ''} style={{ cursor: 'pointer' }}
                       onClick={() => window.openEntity && window.openEntity('result', r.id)}>
                     <td onClick={e => e.stopPropagation()}>
                       {canBatchRelease && (

@@ -180,7 +180,10 @@ const App = () => {
         background: 'var(--ivory-50)',
       }}>
         {showTopRail && <TopRail active={active} onNav={setActive}/>}
-        <div key={active} className="fade-in" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        {/* Page transition. `key={active}` re-mounts on route change so the
+            entry animation re-fires; `slide-up` is the out-quint, 6px-lift
+            entrance per the design system (out-quint for entries). */}
+        <div key={active} className="slide-up" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {activePage}
         </div>
         <StatusBar/>

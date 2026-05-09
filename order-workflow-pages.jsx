@@ -11,6 +11,9 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
   const [status, setStatus] = useStateOS('all');
   const [copiedOrderId, setCopiedOrderId] = useStateOS(null);
   const canCreateOrder = hasPermission('CREATE_ORDER');
+  // false on first render → no animation on initial paint; true thereafter →
+  // newly-arrived rows mount with `slide-up` and animate on insert.
+  const animateNew = window.useDeferredEnter();
 
   const pinnedClient = filterClientId ? clientById[filterClientId] : null;
 
@@ -99,7 +102,7 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
                 const loc = o.locationId ? locationById[o.locationId] : null;
                 const name = pat ? ((pat.lastName || '') + (pat.firstName ? ', ' + pat.firstName : '')).trim() : '';
                 return (
-                  <tr key={o.id} style={{ cursor: 'pointer' }}
+                  <tr key={o.id} className={animateNew ? 'slide-up' : ''} style={{ cursor: 'pointer' }}
                       onClick={() => window.openEntity && window.openEntity('order', o.id)}>
                     <td>
                       {o.orderNumber ? (
@@ -170,6 +173,7 @@ const SpecimensPage = () => {
 
   const [q, setQ] = useStateOS('');
   const [filter, setFilter] = useStateOS('all');
+  const animateNew = window.useDeferredEnter();
 
   const filtered = useMemoOS(() => {
     return specimens
@@ -227,7 +231,7 @@ const SpecimensPage = () => {
                 const ord = s.orderId ? orderById[s.orderId] : null;
                 const flags = Array.isArray(s.flags) ? s.flags : [];
                 return (
-                  <tr key={s.id} style={{ cursor: 'pointer' }}
+                  <tr key={s.id} className={animateNew ? 'slide-up' : ''} style={{ cursor: 'pointer' }}
                       onClick={() => window.openEntity && window.openEntity('specimen', s.id)}>
                     <td><span className="mono" style={{ color: 'var(--sage-700)' }}>{s.accessionNumber || '—'}</span></td>
                     <td><span className="mono">{s.barcode || '—'}</span></td>
@@ -280,6 +284,7 @@ const WorklistsPage = () => {
   const patientById = useMemoOS(() => Object.fromEntries(patients.map(p => [p.id, p])), [patients]);
   const testById = useMemoOS(() => Object.fromEntries(tests.map(t => [t.id, t])), [tests]);
   const canAccession = hasPermission('ACCESSION');
+  const animateNew = window.useDeferredEnter();
 
   // Build a routedTo → instrument lookup that handles BOTH key formats:
   // some specimens were routed by id (`inst_xxx` from the seeder), others
@@ -594,7 +599,7 @@ const WorklistsPage = () => {
                         const testCodes = o ? o.testIds.map(id => (testById[id] || {}).code).filter(Boolean).join(' ') : '';
                         const isChecked = checked.has(s.id);
                         return (
-                          <tr key={s.id} style={{ background: isChecked ? 'var(--sage-50)' : undefined, cursor: 'pointer' }}
+                          <tr key={s.id} className={animateNew ? 'slide-up' : ''} style={{ background: isChecked ? 'var(--sage-50)' : undefined, cursor: 'pointer' }}
                               onClick={() => window.openEntity && window.openEntity('specimen', s.id)}>
                             <td onClick={e => e.stopPropagation()}>
                               <input type="checkbox" checked={isChecked} onChange={() => toggleOne(s.id)}
