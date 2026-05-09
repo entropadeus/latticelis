@@ -144,6 +144,44 @@ const permissionTitle = (can, allowedTitle, deniedAction) =>
 
 Object.assign(window, { hasPermission, permissionTitle });
 
+// Odometer-style rolling number. Each digit is a 10-row column showing
+// 9..0 stacked top to bottom; we translateY to bring the target digit
+// into the 1em viewport. New digit slides DOWN from above, old digit
+// drops out the bottom — like a flip-clock but in pure CSS. When the
+// value updates rapidly (batch verify/release ticking down through
+// dozens of items), the chained CSS transitions keep the digits in
+// continuous motion instead of snapping.
+const SpinnyDigit = ({ digit }) => {
+  // Column order is descending [9..0] so that the "0" sits at the bottom
+  // of the column. To show digit `d`, scroll the column UP so the digit
+  // at row (9-d) is in the viewport. Increment/decrement = a small
+  // negative-Y delta = column slides DOWN visually = new digit enters
+  // from the top, old digit exits the bottom. Direction is consistent
+  // regardless of whether the value is going up or down.
+  const offset = -(9 - digit);
+  return (
+    <span className="spinny-digit">
+      <span className="spinny-track" style={{ transform: `translateY(${offset}em)` }}>
+        {[9,8,7,6,5,4,3,2,1,0].map(n => <span key={n}>{n}</span>)}
+      </span>
+    </span>
+  );
+};
+
+const RollingNumber = ({ value }) => {
+  const str = String(value == null ? 0 : value);
+  return (
+    <span className="spinny-num">
+      {str.split('').map((ch, i) => /^\d$/.test(ch)
+        ? <SpinnyDigit key={i} digit={parseInt(ch, 10)} />
+        : <span key={i}>{ch}</span>
+      )}
+    </span>
+  );
+};
+
+Object.assign(window, { RollingNumber });
+
 const safetyFact = (label, value) => ({
   label,
   value: value == null || value === '' ? '-' : String(value),

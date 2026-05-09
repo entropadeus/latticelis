@@ -426,14 +426,14 @@ const ResultsPage = () => {
             <button key="br" className="btn" data-variant="primary" data-size="sm" onClick={batchRelease}
               disabled={!canRelease}
               title={permissionTitle(canRelease, 'Release selected results', 'release results')}>
-              Release {checkedReleasable.length}
+              Release <RollingNumber value={checkedReleasable.length}/>
             </button>
           ),
           pendingCount > 0 && (
             <button key="va" className="btn" data-size="sm" onClick={verifyAllPreliminary}
               disabled={!canVerify}
               title={permissionTitle(canVerify, 'Verify all preliminary results', 'verify results')}>
-              <IconCheck size={13}/> Verify all {pendingCount} preliminary
+              <IconCheck size={13}/> Verify all <RollingNumber value={pendingCount}/> preliminary
             </button>
           ),
         ].filter(Boolean)}/>

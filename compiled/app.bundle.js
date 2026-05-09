@@ -9867,6 +9867,37 @@ Object.assign(window, {
   hasPermission,
   permissionTitle
 });
+var SpinnyDigit = ({
+  digit
+}) => {
+  var offset = -(9 - digit);
+  return React.createElement("span", {
+    className: "spinny-digit"
+  }, React.createElement("span", {
+    className: "spinny-track",
+    style: {
+      transform: `translateY(${offset}em)`
+    }
+  }, [9, 8, 7, 6, 5, 4, 3, 2, 1, 0].map(n => React.createElement("span", {
+    key: n
+  }, n))));
+};
+var RollingNumber = ({
+  value
+}) => {
+  var str = String(value == null ? 0 : value);
+  return React.createElement("span", {
+    className: "spinny-num"
+  }, str.split('').map((ch, i) => /^\d$/.test(ch) ? React.createElement(SpinnyDigit, {
+    key: i,
+    digit: parseInt(ch, 10)
+  }) : React.createElement("span", {
+    key: i
+  }, ch)));
+};
+Object.assign(window, {
+  RollingNumber
+});
 var safetyFact = (label, value) => ({
   label,
   value: value == null || value === '' ? '-' : String(value)
@@ -12584,7 +12615,9 @@ var ResultsPage = () => {
       onClick: batchRelease,
       disabled: !canRelease,
       title: permissionTitle(canRelease, 'Release selected results', 'release results')
-    }, "Release ", checkedReleasable.length), pendingCount > 0 && React.createElement("button", {
+    }, "Release ", React.createElement(RollingNumber, {
+      value: checkedReleasable.length
+    })), pendingCount > 0 && React.createElement("button", {
       key: "va",
       className: "btn",
       "data-size": "sm",
@@ -12593,7 +12626,9 @@ var ResultsPage = () => {
       title: permissionTitle(canVerify, 'Verify all preliminary results', 'verify results')
     }, React.createElement(IconCheck, {
       size: 13
-    }), " Verify all ", pendingCount, " preliminary")].filter(Boolean)
+    }), " Verify all ", React.createElement(RollingNumber, {
+      value: pendingCount
+    }), " preliminary")].filter(Boolean)
   }), batchOutcome && React.createElement("div", {
     className: "panel",
     style: {
