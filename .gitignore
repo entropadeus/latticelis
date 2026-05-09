@@ -13,6 +13,10 @@ _design/
 !README.md
 # Internal text notes (build ledger, scratchpads, etc.)
 *.txt
+# Exception: the build ledger is the cloud build agent's source of truth.
+# It needs to live in the repo so a fresh clone can read it. Other .txt
+# files (scratchpads, drafts) stay gitignored.
+!Lattice LIS — Build Ledger.txt
 
 # OS junk
 .DS_Store
