@@ -321,7 +321,7 @@ const NewOrderDrawer = ({ open, onClose }) => {
                         <span className="mono">{c.code}</span>
                         <span style={{ marginLeft: 10 }}>{c.name || '—'}</span>
                         <span style={{ marginLeft: 10, color: 'var(--ink-400)' }}>· {c.type.toLowerCase()}</span>
-                        {c.deliveryChannel && <span style={{ marginLeft: 10, color: 'var(--ink-400)' }}>delivers via {c.deliveryChannel}</span>}
+                        {c.deliveryChannel && <span style={{ marginLeft: 10, color: 'var(--ink-400)' }}>· via {c.deliveryChannel}</span>}
                       </SuggestionRow>
                     ))}
                     <SuggestionAction onClick={startNewClient}
@@ -526,6 +526,11 @@ const SuggestionRow = ({ onClick, children }) => (
       padding: '8px 12px', border: 0, background: 'transparent',
       fontSize: 12.5, color: 'var(--ink-700)',
       borderBottom: '1px solid var(--line-soft)', cursor: 'pointer',
+      // Truncate gracefully when row content exceeds drawer width — long
+      // client names + "via {channel}" suffix were getting hard-clipped by
+      // the parent's overflow:hidden, leaving "delivers via h…" with no
+      // ellipsis affordance. Now the trail dots make it readable.
+      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
     }}>{children}</button>
 );
 

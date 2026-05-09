@@ -132,7 +132,15 @@ const TatPanel = ({ results, specimens, orders }) => {
     };
   }, [results, specimens, orders]);
 
-  const fmt = (m) => m == null ? '—' : (m < 60 ? Math.round(m) + 'm' : (m / 60).toFixed(1) + 'h');
+  // Compact TAT: minutes under an hour, hours under a day, days beyond.
+  // The 1.4h vs 105.7h column-wrap problem comes from triple-digit hour
+  // strings — switching to days at 24h keeps every value at ≤ 5 chars.
+  const fmt = (m) => {
+    if (m == null) return '—';
+    if (m < 60) return Math.round(m) + 'm';
+    if (m < 24 * 60) return (m / 60).toFixed(1) + 'h';
+    return (m / (24 * 60)).toFixed(1) + 'd';
+  };
 
   return (
     <div className="panel" style={{ padding: 14, height: 220, display: 'flex', flexDirection: 'column' }}>
@@ -283,7 +291,15 @@ const ClientVolumePanel = ({ orders, results, specimens, clients }) => {
     return { rows, total: Object.values(ordersByClient).reduce((s, n) => s + n, 0) };
   }, [orders, results, specimens, clients]);
 
-  const fmt = (m) => m == null ? '—' : (m < 60 ? Math.round(m) + 'm' : (m / 60).toFixed(1) + 'h');
+  // Compact TAT: minutes under an hour, hours under a day, days beyond.
+  // The 1.4h vs 105.7h column-wrap problem comes from triple-digit hour
+  // strings — switching to days at 24h keeps every value at ≤ 5 chars.
+  const fmt = (m) => {
+    if (m == null) return '—';
+    if (m < 60) return Math.round(m) + 'm';
+    if (m < 24 * 60) return (m / 60).toFixed(1) + 'h';
+    return (m / (24 * 60)).toFixed(1) + 'd';
+  };
 
   return (
     <div className="panel" style={{ padding: 14, height: 220, display: 'flex', flexDirection: 'column' }}>
@@ -322,7 +338,7 @@ const ClientVolumePanel = ({ orders, results, specimens, clients }) => {
                   <div className="dashboard-bar-fill" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: widthPct + '%', background: 'var(--sage-600)', borderRadius: 999, transition: 'background 120ms linear, width 240ms var(--ease-out)' }}/>
                 </div>
                 <span className="mono tnum" style={{ color: 'var(--ink-900)', textAlign: 'right' }}>{row.count}</span>
-                <span className="mono" style={{ color: 'var(--ink-400)', fontSize: 11, textAlign: 'right' }}>TAT {fmt(row.tatMedian)}</span>
+                <span className="mono" style={{ color: 'var(--ink-400)', fontSize: 11, textAlign: 'right', whiteSpace: 'nowrap' }}>TAT {fmt(row.tatMedian)}</span>
               </div>
             );
           })}

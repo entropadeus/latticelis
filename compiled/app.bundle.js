@@ -5639,7 +5639,7 @@ var NewOrderDrawer = ({
       marginLeft: 10,
       color: 'var(--ink-400)'
     }
-  }, "delivers via ", c.deliveryChannel))), React.createElement(SuggestionAction, {
+  }, "\xB7 via ", c.deliveryChannel))), React.createElement(SuggestionAction, {
     onClick: startNewClient,
     disabled: !canEditLabConfig,
     title: permissionTitle(canEditLabConfig, 'Add new client', 'edit lab configuration')
@@ -5934,7 +5934,10 @@ var SuggestionRow = ({
     fontSize: 12.5,
     color: 'var(--ink-700)',
     borderBottom: '1px solid var(--line-soft)',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
   }
 }, children);
 var SuggestionEmpty = ({
@@ -10524,7 +10527,12 @@ var TatPanel = ({
       activeBreach: breach
     };
   }, [results, specimens, orders]);
-  var fmt = m => m == null ? '—' : m < 60 ? Math.round(m) + 'm' : (m / 60).toFixed(1) + 'h';
+  var fmt = m => {
+    if (m == null) return '—';
+    if (m < 60) return Math.round(m) + 'm';
+    if (m < 24 * 60) return (m / 60).toFixed(1) + 'h';
+    return (m / (24 * 60)).toFixed(1) + 'd';
+  };
   return React.createElement("div", {
     className: "panel",
     style: {
@@ -10857,7 +10865,12 @@ var ClientVolumePanel = ({
       total: Object.values(ordersByClient).reduce((s, n) => s + n, 0)
     };
   }, [orders, results, specimens, clients]);
-  var fmt = m => m == null ? '—' : m < 60 ? Math.round(m) + 'm' : (m / 60).toFixed(1) + 'h';
+  var fmt = m => {
+    if (m == null) return '—';
+    if (m < 60) return Math.round(m) + 'm';
+    if (m < 24 * 60) return (m / 60).toFixed(1) + 'h';
+    return (m / (24 * 60)).toFixed(1) + 'd';
+  };
   return React.createElement("div", {
     className: "panel",
     style: {
@@ -10960,7 +10973,8 @@ var ClientVolumePanel = ({
       style: {
         color: 'var(--ink-400)',
         fontSize: 11,
-        textAlign: 'right'
+        textAlign: 'right',
+        whiteSpace: 'nowrap'
       }
     }, "TAT ", fmt(row.tatMedian)));
   })));
@@ -17943,6 +17957,12 @@ var LeveyJenningsChart = ({
     fill: "var(--ink-400)"
   }, new Date(points[n - 1].ranAt).toISOString().slice(5, 16).replace('T', ' ')))));
 };
+var fmtQcNum = n => {
+  if (n == null || n === '') return '—';
+  var num = Number(n);
+  if (!Number.isFinite(num)) return '—';
+  return parseFloat(num.toFixed(2)).toString();
+};
 var WESTGARD_RULE_INFO = {
   '1-2s': {
     severity: 'warn',
@@ -18396,7 +18416,7 @@ var QcPage = ({
         fontSize: 11,
         color: 'var(--ink-400)'
       }
-    }, l.mean, "\xB1", l.sd)), React.createElement("div", {
+    }, fmtQcNum(l.mean), "\xB1", fmtQcNum(l.sd))), React.createElement("div", {
       style: {
         fontSize: 10.5,
         color: 'var(--ink-400)',
@@ -18552,9 +18572,9 @@ var QcPage = ({
     }
   }, "Mean ", React.createElement("span", {
     className: "mono tnum"
-  }, activeLevel.mean), " \xB7 SD ", React.createElement("span", {
+  }, fmtQcNum(activeLevel.mean)), " \xB7 SD ", React.createElement("span", {
     className: "mono tnum"
-  }, activeLevel.sd), " \xB7 units ", activeLevel.units || (testById[activeLevel.testId] || {}).units || '—')), React.createElement("button", {
+  }, fmtQcNum(activeLevel.sd)), " \xB7 units ", activeLevel.units || (testById[activeLevel.testId] || {}).units || '—')), React.createElement("button", {
     className: "btn",
     "data-size": "xs",
     onClick: () => startEditLevel(activeLevel),
