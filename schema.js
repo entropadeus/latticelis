@@ -257,6 +257,15 @@ const newTest = (init = {}) => ({
   // QC reagent has a tighter shelf life than 14 days (e.g. some coag and
   // urine chemistries) and the lab wants earlier warning.
   lotExpirationAmberDays: init.lotExpirationAmberDays == null ? null : Number(init.lotExpirationAmberDays),
+  // Per-test delta-check thresholds for the `result.delta.test` rules condition.
+  // `null` (or any non-finite / non-positive value) means "no per-test gate" —
+  // the condition returns false unless the threshold is explicitly set, so rules
+  // author `result.delta.test` only for analytes that have a configured limit.
+  // Percent threshold: absolute % change from prior result that triggers the rule.
+  // Absolute threshold: absolute numeric change (in the test's units) that triggers.
+  // Either can be set independently; the condition fires when EITHER is exceeded.
+  deltaCheckPercent:  init.deltaCheckPercent  == null ? null : Number(init.deltaCheckPercent),
+  deltaCheckAbsolute: init.deltaCheckAbsolute == null ? null : Number(init.deltaCheckAbsolute),
   active: init.active === undefined ? true : init.active,
   createdAt: init.createdAt || Date.now(),
   updatedAt: Date.now(),

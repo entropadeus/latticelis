@@ -141,6 +141,19 @@
       if (!c.result || c.result.deltaPct == null) return false;
       return Math.abs(c.result.deltaPct) > Number(a.pct);
     },
+    // Per-test delta check — reads deltaCheckPercent / deltaCheckAbsolute from the
+    // test record in ctx. Fires when EITHER configured threshold is exceeded.
+    // If neither field is set on the test, returns false (no gate to match).
+    // Requires the delta precomputation block (see onEvent) to have stamped
+    // deltaPct and deltaAbs onto ctx.result; otherwise returns false safely.
+    'result.delta.test': (a, c) => {
+      if (!c.result || !c.test || c.result.deltaPct == null) return false;
+      const exceedsPct = Number.isFinite(c.test.deltaCheckPercent) && c.test.deltaCheckPercent > 0
+        && Math.abs(c.result.deltaPct) > c.test.deltaCheckPercent;
+      const exceedsAbs = Number.isFinite(c.test.deltaCheckAbsolute) && c.test.deltaCheckAbsolute > 0
+        && c.result.deltaAbs != null && Math.abs(c.result.deltaAbs) > c.test.deltaCheckAbsolute;
+      return exceedsPct || exceedsAbs;
+    },
 
     // Time
     'time.day.in': (a) => {
@@ -507,8 +520,9 @@
         if (priorMatches.length > 0) {
           const prior = priorMatches[0];
           if (prior.value != null && Number(prior.value) !== 0) {
-            const pct = ((Number(ctx.result.value) - Number(prior.value)) / Number(prior.value)) * 100;
-            ctx = { ...ctx, result: { ...ctx.result, deltaPct: pct, deltaPriorId: prior.id } };
+            const deltaAbs = Number(ctx.result.value) - Number(prior.value);
+            const pct = (deltaAbs / Number(prior.value)) * 100;
+            ctx = { ...ctx, result: { ...ctx.result, deltaPct: pct, deltaAbs, deltaPriorId: prior.id } };
           }
         }
       }
