@@ -90,6 +90,17 @@ const LeveyJenningsChart = ({ results }) => {
 
 // Each rule's purpose, in plain language, so operators can decide what to disable.
 // Sources: Westgard JO. Multi-rule QC procedures. CLSI EP23-Ed2.
+// Display-friendly number: rounds to 2 decimals AND drops trailing zeros so
+// 4.833333333333333 → 4.83, but 15 stays 15 and 4.5 stays 4.5. Float values
+// in QC means/SDs come from upstream calculation (mean of a numeric panel
+// or a fraction like 5/6) and would otherwise leak 16-digit precision noise.
+const fmtQcNum = (n) => {
+  if (n == null || n === '') return '—';
+  const num = Number(n);
+  if (!Number.isFinite(num)) return '—';
+  return parseFloat(num.toFixed(2)).toString();
+};
+
 const WESTGARD_RULE_INFO = {
   '1-2s': { severity: 'warn',   summary: 'One control >2 SD. Warning, not rejection.', advisory: true },
   '1-3s': { severity: 'reject', summary: 'One control >3 SD. Rejection.',                advisory: false },
@@ -408,7 +419,7 @@ const QcPage = ({ onBack }) => {
                     <span className="dot" data-tone={tone}/>
                     <span style={{ fontSize: 12.5, fontWeight: 500 }}>{(t ? t.code : '?')} · {l.level}</span>
                     <span style={{ flex: 1 }}/>
-                    <span className="mono tnum" style={{ fontSize: 11, color: 'var(--ink-400)' }}>{l.mean}±{l.sd}</span>
+                    <span className="mono tnum" style={{ fontSize: 11, color: 'var(--ink-400)' }}>{fmtQcNum(l.mean)}±{fmtQcNum(l.sd)}</span>
                   </div>
                   <div style={{ fontSize: 10.5, color: 'var(--ink-400)', marginTop: 2, paddingLeft: 14, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <span>{l.material || '—'}{l.lotNumber ? ' · lot ' + l.lotNumber : ''}</span>
@@ -468,7 +479,7 @@ const QcPage = ({ onBack }) => {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 500 }}>{(testById[activeLevel.testId] || {}).code || '?'} · {activeLevel.level}</div>
                   <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
-                    Mean <span className="mono tnum">{activeLevel.mean}</span> · SD <span className="mono tnum">{activeLevel.sd}</span> · units {activeLevel.units || (testById[activeLevel.testId] || {}).units || '—'}
+                    Mean <span className="mono tnum">{fmtQcNum(activeLevel.mean)}</span> · SD <span className="mono tnum">{fmtQcNum(activeLevel.sd)}</span> · units {activeLevel.units || (testById[activeLevel.testId] || {}).units || '—'}
                   </div>
                 </div>
                 <button className="btn" data-size="xs" onClick={() => startEditLevel(activeLevel)}
