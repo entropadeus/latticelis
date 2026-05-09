@@ -17,7 +17,7 @@ const TestCatalogPage = ({ onBack }) => {
   const startNew = () => {
     if (!hasPermission('EDIT_TEST_CATALOG')) return;
     setEditingId(null);
-    setDraft({ code: '', name: '', shortName: '', loinc: '', units: '', refRangeLow: '', refRangeHigh: '', turnaroundMinutes: '', referenceRanges: [], criticalEscalationT1Sec: '', criticalEscalationT2Sec: '', lotExpirationAmberDays: '', active: true });
+    setDraft({ code: '', name: '', shortName: '', loinc: '', units: '', refRangeLow: '', refRangeHigh: '', turnaroundMinutes: '', referenceRanges: [], criticalEscalationT1Sec: '', criticalEscalationT2Sec: '', lotExpirationAmberDays: '', deltaCheckPercent: '', deltaCheckAbsolute: '', active: true });
   };
   const startEdit = (t) => {
     if (!hasPermission('EDIT_TEST_CATALOG')) return;
@@ -32,6 +32,8 @@ const TestCatalogPage = ({ onBack }) => {
       criticalEscalationT1Sec: t.criticalEscalationT1Sec == null ? '' : t.criticalEscalationT1Sec,
       criticalEscalationT2Sec: t.criticalEscalationT2Sec == null ? '' : t.criticalEscalationT2Sec,
       lotExpirationAmberDays: t.lotExpirationAmberDays == null ? '' : t.lotExpirationAmberDays,
+      deltaCheckPercent: t.deltaCheckPercent == null ? '' : t.deltaCheckPercent,
+      deltaCheckAbsolute: t.deltaCheckAbsolute == null ? '' : t.deltaCheckAbsolute,
       active: t.active !== false,
     });
   };
@@ -55,6 +57,8 @@ const TestCatalogPage = ({ onBack }) => {
       criticalEscalationT1Sec: parseSec(draft.criticalEscalationT1Sec),
       criticalEscalationT2Sec: parseSec(draft.criticalEscalationT2Sec),
       lotExpirationAmberDays: parseSec(draft.lotExpirationAmberDays),
+      deltaCheckPercent:  parseSec(draft.deltaCheckPercent),
+      deltaCheckAbsolute: parseSec(draft.deltaCheckAbsolute),
       referenceRanges: (draft.referenceRanges || []).map(r => window.schema.newReferenceRange(r)),
     };
     if (editingId) {
@@ -303,6 +307,27 @@ const TestCatalogPage = ({ onBack }) => {
                   "expiring soon" notification. Empty = use global default (14).
                   Useful when this test's reagent has a tighter shelf life than
                   most and the lab wants earlier warning.
+                </div>
+              </div>
+
+              <div style={{ marginTop: 6, marginBottom: 10, padding: 10, background: 'var(--ivory-50)', border: '1px solid var(--line)', borderRadius: 5 }}>
+                <div className="section-title" style={{ fontSize: 9.5, marginBottom: 6 }}>Delta check</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <CatalogField label="% change threshold">
+                    <input className="input mono tnum" placeholder="e.g. 20"
+                      value={draft.deltaCheckPercent}
+                      onChange={e => setDraft({ ...draft, deltaCheckPercent: e.target.value })}/>
+                  </CatalogField>
+                  <CatalogField label={`Absolute Δ (${draft.units || 'units'})`}>
+                    <input className="input mono tnum" placeholder="e.g. 1.5"
+                      value={draft.deltaCheckAbsolute}
+                      onChange={e => setDraft({ ...draft, deltaCheckAbsolute: e.target.value })}/>
+                  </CatalogField>
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>
+                  Per-test thresholds for the <span className="mono" style={{ fontSize: 10 }}>result.delta.test</span> rules condition.
+                  The condition fires when either threshold is exceeded. Empty = no per-test gate
+                  (use explicit values in individual rule conditions instead).
                 </div>
               </div>
 
