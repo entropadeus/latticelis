@@ -426,6 +426,19 @@
     'metric.increment':     async (a, c) => auditAction('STUB metric.increment ' + (a.metric || '?'), c),
   };
 
+  // Stub detection — self-maintaining: when a stub is implemented (function body
+  // changes from `() => false` or stops containing 'STUB '), it drops out naturally.
+  const STUB_COND_IDS = new Set(
+    Object.entries(CONDITION_EVALUATORS)
+      .filter(([, fn]) => /=>\s*false\s*$/.test(fn.toString().trim()))
+      .map(([k]) => k)
+  );
+  const STUB_ACTION_IDS = new Set(
+    Object.entries(ACTION_EXECUTORS)
+      .filter(([, fn]) => fn.toString().includes("'STUB "))
+      .map(([k]) => k)
+  );
+
   // -- Context builder ------------------------------------------------------
   // Pulls related entities from the db so condition primitives can reference
   // patient.age even when only specimen is in the event payload, etc.
@@ -607,6 +620,8 @@
     buildContext,
     CONDITION_EVALUATORS,
     ACTION_EXECUTORS,
+    STUB_COND_IDS,
+    STUB_ACTION_IDS,
   };
 
   start();

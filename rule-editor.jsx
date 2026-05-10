@@ -329,6 +329,7 @@ const BoolToggle = ({ value, onChange }) => (
 const ConditionRow = ({ node, onRemove, onUpdate }) => {
   const prim = CONDITION_PRIMITIVES.find(p => p.id === node.primitive);
   if (!prim) return null;
+  const isStub = window.rulesRuntime?.STUB_COND_IDS?.has(node.primitive);
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 8,
@@ -337,6 +338,7 @@ const ConditionRow = ({ node, onRemove, onUpdate }) => {
     }}>
       <span className="pill" data-tone="ghost" style={{ fontSize: 10, height: 18, padding: '0 6px' }}>{prim.cat}</span>
       <span style={{ fontSize: 12.5, color: 'var(--ink-700)', fontWeight: 500 }}>{prim.label}</span>
+      {isStub && <span className="pill" data-tone="amber" title="Not yet implemented — always evaluates to false" style={{ fontSize: 9.5, height: 16, padding: '0 5px', flexShrink: 0 }}>stub</span>}
       <button onClick={() => onUpdate({ negate: !node.negate })}
         title={node.negate ? 'Negated (NOT)' : 'Click to negate'}
         style={{
@@ -560,6 +562,7 @@ const ActionList = ({ actions, onUpdate, onRemove, onMove, onAdd }) => (
 const ActionRow = ({ action, index, onUpdate, onRemove, onUp, onDown, isFirst, isLast }) => {
   const prim = ACTION_PRIMITIVES.find(p => p.id === action.primitive);
   if (!prim) return null;
+  const isStub = window.rulesRuntime?.STUB_ACTION_IDS?.has(action.primitive);
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 8,
@@ -572,6 +575,7 @@ const ActionRow = ({ action, index, onUpdate, onRemove, onUp, onDown, isFirst, i
       </span>
       <span className="pill" data-tone="sage" style={{ fontSize: 10, height: 18, padding: '0 6px' }}>{prim.cat}</span>
       <span style={{ fontSize: 12.5, color: 'var(--ink-700)', fontWeight: 500, whiteSpace: 'nowrap' }}>{prim.label}</span>
+      {isStub && <span className="pill" data-tone="amber" title="Not yet implemented — logs STUB to audit trail instead of executing" style={{ fontSize: 9.5, height: 16, padding: '0 5px', flexShrink: 0 }}>stub</span>}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         {prim.args.map(a => (
           <ArgInput key={a.k} arg={a} value={action.args[a.k]}
@@ -689,6 +693,7 @@ const PrimitivePicker = ({ kind, onPick, onClose }) => {
 
   const all = kind === 'condition' ? CONDITION_PRIMITIVES : ACTION_PRIMITIVES;
   const cats = kind === 'condition' ? COND_CATS : ACTION_CATS;
+  const stubIds = kind === 'condition' ? window.rulesRuntime?.STUB_COND_IDS : window.rulesRuntime?.STUB_ACTION_IDS;
   const filtered = all.filter(p => {
     if (activeCat && p.cat !== activeCat) return false;
     if (q && !p.label.toLowerCase().includes(q.toLowerCase()) && !p.id.includes(q.toLowerCase())) return false;
@@ -782,9 +787,10 @@ const PrimitivePicker = ({ kind, onPick, onClose }) => {
                     <div style={{ fontSize: 12.5, color: 'var(--ink-900)', fontWeight: 500 }}>{p.label}</div>
                     <div className="mono" style={{ fontSize: 10.5, color: 'var(--ink-300)', marginTop: 1 }}>{p.id}</div>
                   </span>
-                  <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>
-                    {p.args.length === 0 ? 'no params' : p.args.length + (p.args.length === 1 ? ' param' : ' params')}
-                  </span>
+                  {stubIds?.has(p.id)
+                    ? <span className="pill" data-tone="amber" title="Not yet implemented" style={{ fontSize: 9.5, height: 16, padding: '0 5px', flexShrink: 0 }}>stub</span>
+                    : <span style={{ fontSize: 11, color: 'var(--ink-400)', flexShrink: 0 }}>{p.args.length === 0 ? 'no params' : p.args.length + (p.args.length === 1 ? ' param' : ' params')}</span>
+                  }
                 </button>
               ))}
               {filtered.length === 0 && (
