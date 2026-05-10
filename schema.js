@@ -551,6 +551,7 @@ const newUser = (init = {}) => ({
   passwordHash: init.passwordHash || null,
   passwordSalt: init.passwordSalt || null,
   passwordSetAt: init.passwordSetAt || null,
+  passwordSource: init.passwordSource || null,
   createdAt: init.createdAt || Date.now(),
   updatedAt: Date.now(),
 });

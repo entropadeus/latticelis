@@ -3,6 +3,7 @@
 // On `result.released`, walks: result → specimen → order → client. If the
 // client has a deliveryChannel set, simulates the delivery (records the channel
 // + endpoint + attempt timestamp on the result, publishes `result.delivered`).
+// No network call is made here; attempts are local simulation records only.
 // Real ASTM/HL7 plumbing replaces the "simulate" step in Tier 6 — the
 // observable shape (delivery fields on the result) stays identical, so every
 // page that displays delivery status keeps working.

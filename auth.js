@@ -98,6 +98,7 @@
       passwordHash: hash,
       passwordSalt: salt,
       passwordSetAt: Date.now(),
+      passwordSource: 'operator',
     });
     await window.db.put('users', next);
     return next;
@@ -111,6 +112,7 @@
       passwordHash: null,
       passwordSalt: null,
       passwordSetAt: null,
+      passwordSource: null,
     });
     await window.db.put('users', next);
     return next;
@@ -170,6 +172,26 @@
 
   const subscribeAuth = (fn) => { __subs.add(fn); return () => __subs.delete(fn); };
 
+  const needsBootstrap = async () => {
+    const all = await window.db.list('users').catch(() => []);
+    return all.length > 0 && !all.some(hasPassword);
+  };
+
+  const bootstrapFirstAdminPassword = async (username, plaintext) => {
+    if (!(await needsBootstrap())) return { ok: false, reason: 'setup_disabled' };
+    const user = await __findByUsername(username);
+    if (!user || user.status === 'INACTIVE') return { ok: false, reason: 'unknown_user' };
+    const roles = Array.isArray(user.roles) ? user.roles : [];
+    if (!roles.includes('IT_ADMIN') && !roles.includes('LAB_DIRECTOR')) {
+      return { ok: false, reason: 'not_admin' };
+    }
+    const next = await setPassword(user.id, plaintext);
+    localStorage.setItem(KEY, next.id);
+    if (window.currentUserApi) await window.currentUserApi.setCurrent(next.id);
+    __subs.forEach(fn => { try { fn(next.id); } catch (e) { console.error(e); } });
+    return { ok: true, user: next };
+  };
+
   // ── Public API ────────────────────────────────────────────────────────
 
   window.auth = {
@@ -182,5 +204,7 @@
     authedUserId,
     subscribeAuth,
     hasPassword,
+    needsBootstrap,
+    bootstrapFirstAdminPassword,
   };
 })();

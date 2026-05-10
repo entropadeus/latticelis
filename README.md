@@ -16,7 +16,7 @@ A browser-first Laboratory Information System prototype.
 
 Most lab information systems look and feel like 2005. Lattice LIS is a small experiment in what happens when you give those same workflows the same care that consumer-grade tools get — typography, motion, density, keyboard ergonomics — without sacrificing the dense, accession-centric layouts that lab techs actually need.
 
-It runs entirely in the browser today using IndexedDB for persistence, with a clean adapter boundary so the same code can graduate to Electron + SQLite without rewrites.
+It runs entirely in the browser today using local-only IndexedDB persistence. Records stay in the current browser profile; there is no cloud database, remote sync, or background upload path. Export/import are manual JSON file operations.
 
 ## Features
 
@@ -34,7 +34,7 @@ It runs entirely in the browser today using IndexedDB for persistence, with a cl
 | Layer       | Today                                        | Tomorrow                              |
 | ----------- | -------------------------------------------- | ------------------------------------- |
 | Views       | React + Babel-standalone (no build step)     | React + precompiled JSX bundle        |
-| Persistence | IndexedDB                                    | better-sqlite3 (Electron port)        |
+| Persistence | Local-only IndexedDB                         | Local SQLite (Electron port)          |
 | Events      | In-process semantic event bus + auto-audit   | Same surface, host-owned writes       |
 | Type system | Plain JS + JSDoc                             | Same                                  |
 

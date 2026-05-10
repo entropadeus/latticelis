@@ -214,10 +214,10 @@ const AdminPage = ({ onNav }) => {
           <button key="seedClr" className="btn" data-size="sm" onClick={clearDemo}
             disabled={seeding || !canRestoreSnapshot}
             title={permissionTitle(canRestoreSnapshot, 'Clear demo data', 'restore or reset data')}>Clear demo</button>,
-          <button key="exp" className="btn" data-size="sm" onClick={exportSnapshot}>Export</button>,
+          <button key="exp" className="btn" data-size="sm" onClick={exportSnapshot}>Export local</button>,
           <button key="imp" className="btn" data-size="sm" onClick={importSnapshot}
             disabled={!canRestoreSnapshot}
-            title={permissionTitle(canRestoreSnapshot, 'Import snapshot', 'restore or reset data')}>Import</button>,
+            title={permissionTitle(canRestoreSnapshot, 'Import local snapshot', 'restore or reset data')}>Import local</button>,
           <button key="rst" className="btn" data-size="sm" data-variant="danger" onClick={resetDb}
             disabled={!canRestoreSnapshot}
             title={permissionTitle(canRestoreSnapshot, 'Reset database', 'restore or reset data')}>Reset</button>,
@@ -233,7 +233,7 @@ const AdminPage = ({ onNav }) => {
             </span>
           ) },
           { l: 'Build', v: <span className="mono" title="Cache-bust build identifier">{(window.__LIS_VERSION || '0.x') + ''}</span> },
-          { l: 'Database', v: <><span className="dot" data-tone="ok" style={{ marginRight: 6 }}/>IndexedDB</> },
+          { l: 'Database', v: <span title="Local-only IndexedDB in this browser profile. No cloud sync."><span className="dot" data-tone="ok" style={{ marginRight: 6 }}/>Local only · IndexedDB</span> },
           { l: 'System time', v: new Date().toISOString().slice(0,16).replace('T', ' ') + ' UTC' },
         ].map((s, i) => (
           <div key={s.l} style={{ padding: '12px 16px', borderRight: i < 3 ? '1px solid var(--line)' : 'none' }}>
