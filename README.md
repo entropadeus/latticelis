@@ -10,6 +10,9 @@ A browser-first Laboratory Information System prototype and public work-in-progr
 
 [**Live demo →**](https://entropadeus.github.io/latticelis/)
 
+un: test
+pw: test
+
 ---
 
 ## What is this?
