@@ -121,37 +121,6 @@ const AdminPage = ({ onNav }) => {
     }
   };
 
-  const resetDb = async () => {
-    if (!hasPermission('RESTORE_SNAPSHOT')) return;
-    const snap = await window.db.exportAll();
-    const counts = Object.entries(snap.collections || {}).map(([name, rows]) => `${name}:${(rows || []).length}`).join(' ');
-    const ask = await safetyConfirm({
-      id: 'admin.database.reset',
-      tone: 'danger',
-      title: 'Reset database',
-      message: 'This wipes every collection in the browser database. Export first if anything matters.',
-      facts: [safetyFact('collections', counts || 'empty'), safetyFact('version', snap.version)],
-      requireTypedText: 'RESET',
-      entityType: 'database',
-      entityId: 'all',
-      confirmLabel: 'Reset database',
-      audit: false,
-    });
-    if (!ask.confirmed) return;
-    if (!hasPermission('RESTORE_SNAPSHOT')) return;
-    await window.db.dropAll();
-    if (window.events) {
-      window.events.publish('operator.safety.confirmed', {
-        actor: currentActorId(),
-        actionId: 'admin.database.reset',
-        entityType: 'database',
-        entityId: 'all',
-        typedText: ask.typedText,
-      });
-    }
-    await safetyNotice({ tone: 'info', title: 'Database reset', message: 'Database cleared.' });
-  };
-
   const [seeding, setSeeding] = useStateOS(false);
   const seedDemo = async () => {
     if (!hasPermission('RESTORE_SNAPSHOT')) return;
@@ -218,9 +187,6 @@ const AdminPage = ({ onNav }) => {
           <button key="imp" className="btn" data-size="sm" onClick={importSnapshot}
             disabled={!canRestoreSnapshot}
             title={permissionTitle(canRestoreSnapshot, 'Import local snapshot', 'restore or reset data')}>Import local</button>,
-          <button key="rst" className="btn" data-size="sm" data-variant="danger" onClick={resetDb}
-            disabled={!canRestoreSnapshot}
-            title={permissionTitle(canRestoreSnapshot, 'Reset database', 'restore or reset data')}>Reset</button>,
         ]}/>
       {/* Environment strip — honest about prototype status. The amber dot
           signals "this is not production"; the tooltip explains where to

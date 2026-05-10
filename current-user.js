@@ -126,6 +126,12 @@
     await refresh();
   };
 
+  const ensureDefaultUser = async () => {
+    const users = await seedUsers();
+    await refresh();
+    return users;
+  };
+
   // displayName(actor) — accepts a user id or a string actor like 'system'/'auto'/'rules'
   const displayName = (actor) => {
     if (!actor) return 'system';
@@ -138,7 +144,7 @@
   };
 
   window.currentUser = null;
-  window.currentUserApi = { setCurrent, subscribe, displayName, refresh };
+  window.currentUserApi = { setCurrent, subscribe, displayName, refresh, ensureDefaultUser };
 
   start();
 })();

@@ -21024,40 +21024,6 @@ var AdminPage = ({
       });
     }
   };
-  var resetDb = async () => {
-    if (!hasPermission('RESTORE_SNAPSHOT')) return;
-    var snap = await window.db.exportAll();
-    var counts = Object.entries(snap.collections || {}).map(([name, rows]) => `${name}:${(rows || []).length}`).join(' ');
-    var ask = await safetyConfirm({
-      id: 'admin.database.reset',
-      tone: 'danger',
-      title: 'Reset database',
-      message: 'This wipes every collection in the browser database. Export first if anything matters.',
-      facts: [safetyFact('collections', counts || 'empty'), safetyFact('version', snap.version)],
-      requireTypedText: 'RESET',
-      entityType: 'database',
-      entityId: 'all',
-      confirmLabel: 'Reset database',
-      audit: false
-    });
-    if (!ask.confirmed) return;
-    if (!hasPermission('RESTORE_SNAPSHOT')) return;
-    await window.db.dropAll();
-    if (window.events) {
-      window.events.publish('operator.safety.confirmed', {
-        actor: currentActorId(),
-        actionId: 'admin.database.reset',
-        entityType: 'database',
-        entityId: 'all',
-        typedText: ask.typedText
-      });
-    }
-    await safetyNotice({
-      tone: 'info',
-      title: 'Database reset',
-      message: 'Database cleared.'
-    });
-  };
   var [seeding, setSeeding] = useStateOS(false);
   var seedDemo = async () => {
     if (!hasPermission('RESTORE_SNAPSHOT')) return;
@@ -21161,15 +21127,7 @@ var AdminPage = ({
       onClick: importSnapshot,
       disabled: !canRestoreSnapshot,
       title: permissionTitle(canRestoreSnapshot, 'Import local snapshot', 'restore or reset data')
-    }, "Import local"), React.createElement("button", {
-      key: "rst",
-      className: "btn",
-      "data-size": "sm",
-      "data-variant": "danger",
-      onClick: resetDb,
-      disabled: !canRestoreSnapshot,
-      title: permissionTitle(canRestoreSnapshot, 'Reset database', 'restore or reset data')
-    }, "Reset")]
+    }, "Import local")]
   }), React.createElement("div", {
     className: "panel",
     style: {
