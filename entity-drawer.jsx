@@ -946,6 +946,12 @@ const DeliverySection = ({ result }) => {
 
 const DrawerTimeline = ({ target }) => {
   const events = window.useEntities('audit_events', e => e.entityId === target.id);
+  const instruments = window.useEntities('instruments');
+  const instrumentsById = useMemoED(() => {
+    const m = {};
+    instruments.forEach(i => { m[i.id] = i; if (i.code) m[i.code] = i; });
+    return m;
+  }, [instruments]);
   const sorted = useMemoED(() => [...events].sort((a, b) => (b.ts || 0) - (a.ts || 0)), [events]);
   if (sorted.length === 0) {
     return <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>No events recorded for this entity yet.</div>;
@@ -987,6 +993,17 @@ const DrawerTimeline = ({ target }) => {
             {ev.payload && ev.payload.ruleName && (
               <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 2 }}>
                 Rule "{ev.payload.ruleName}" → {(ev.payload.actionResults || []).length} action{(ev.payload.actionResults || []).length === 1 ? '' : 's'}
+              </div>
+            )}
+            {ev.type === 'lifecycle.transition' && ev.payload && ev.payload.from && ev.payload.to && (
+              <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 2 }}>
+                {ev.payload.from} → {ev.payload.to}
+                {ev.payload.reason ? <span style={{ color: 'var(--ink-400)' }}> · {ev.payload.reason}</span> : null}
+              </div>
+            )}
+            {ev.type === 'specimen.routed' && ev.payload && ev.payload.target && (
+              <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 2 }}>
+                → {(instrumentsById[ev.payload.target] || {}).name || ev.payload.target}
               </div>
             )}
           </div>

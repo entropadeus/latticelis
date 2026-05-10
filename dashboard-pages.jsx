@@ -493,9 +493,15 @@ const ActivityPanel = () => {
 };
 
 const ActivityRow = ({ ev, animate }) => {
+  const instruments = window.useEntities('instruments');
+  const instrumentsById = useMemoOS(() => {
+    const m = {};
+    instruments.forEach(i => { m[i.id] = i; if (i.code) m[i.code] = i; });
+    return m;
+  }, [instruments]);
   const tone = EVENT_TONE[ev.type] || 'ghost';
   const label = EVENT_LABEL[ev.type] || ev.type;
-  const detail = summarizeEvent(ev);
+  const detail = summarizeEvent(ev, instrumentsById);
   return (
     <div className={animate ? 'slide-up' : ''} style={{
       display: 'grid', gridTemplateColumns: '70px 1fr auto',
@@ -525,7 +531,8 @@ const ActivityRow = ({ ev, animate }) => {
   );
 };
 
-const summarizeEvent = (ev) => {
+// instruments is an optional id/code → record map for resolving raw instrument IDs.
+const summarizeEvent = (ev, instruments = {}) => {
   const p = ev.payload || {};
   if (ev.type === 'operator.safety.confirmed') {
     return `${p.actionId || 'safety action'} confirmed`;
@@ -537,9 +544,20 @@ const summarizeEvent = (ev) => {
   if (ev.type === 'rule.audit') {
     return p.message || '';
   }
+  if (ev.type === 'lifecycle.transition') {
+    return p.from && p.to ? `${p.from} → ${p.to}` : '';
+  }
   if (p.order && p.order.orderNumber) return `Order ${p.order.orderNumber}`;
-  if (p.specimen && p.specimen.accessionNumber) return `Accession ${p.specimen.accessionNumber}`;
-  if (p.specimen && p.specimen.barcode) return `Barcode ${p.specimen.barcode}`;
+  if (p.specimen && (p.specimen.accessionNumber || p.specimen.barcode)) {
+    const specimenLabel = p.specimen.accessionNumber
+      ? `Accession ${p.specimen.accessionNumber}`
+      : `Barcode ${p.specimen.barcode}`;
+    const targetRaw = p.target;
+    const targetName = targetRaw
+      ? ((instruments[targetRaw] || {}).name || targetRaw)
+      : null;
+    return targetName ? `${specimenLabel} → ${targetName}` : specimenLabel;
+  }
   if (p.result) return p.result.id;
   if (ev.entityType && ev.entityId) return `${ev.entityType} ${String(ev.entityId).slice(-6)}`;
   return '';

@@ -1,5 +1,11 @@
 const ReportsPage = () => {
   const events = window.useEntities('audit_events');
+  const instruments = window.useEntities('instruments');
+  const instrumentsById = useMemoOS(() => {
+    const m = {};
+    instruments.forEach(i => { m[i.id] = i; if (i.code) m[i.code] = i; });
+    return m;
+  }, [instruments]);
   const [q, setQ] = useStateOS('');
   const [filter, setFilter] = useStateOS('all');
   const [eventType, setEventType] = useStateOS('');     // exact event type, '' = any
@@ -229,7 +235,7 @@ const ReportsPage = () => {
                           );
                         })()}
                       </td>
-                      <td><span style={{ fontSize: 11.5, color: 'var(--ink-700)' }}>{summarizeEvent(e)}</span></td>
+                      <td><span style={{ fontSize: 11.5, color: 'var(--ink-700)' }}>{summarizeEvent(e, instrumentsById)}</span></td>
                       <td>
                         {e.entityId ? (
                           <span className="mono" style={{ fontSize: 10.5, color: canOpen ? 'var(--sage-700)' : 'var(--ink-400)', textDecoration: canOpen ? 'underline' : 'none' }}>
