@@ -76,14 +76,13 @@ const LoginPage = ({ onSuccess }) => {
       {/* ── Brand panel ─────────────────────────────────────────────── */}
       <div className="login-brand">
         <div>
-          {/* Lockup — geometric mark + wordmark. SVG inline so first-paint doesn't wait on a fetch. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.25">
-              <circle cx="16" cy="16" r="13"/>
-              <circle cx="16" cy="16" r="7"/>
-              <line x1="16" y1="3" x2="16" y2="29"/>
-              <line x1="3" y1="16" x2="29" y2="16"/>
-            </svg>
+          {/* Lockup — actual brand mark (assets/lattice-logo.png) + wordmark.
+              Same asset the sidebar uses in the running app, so the auth
+              screen carries identical brand identity. Larger here (44px) for
+              presence on a hero-sized brand panel. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
+            <img src="assets/lattice-logo.png" alt="Lattice LIS" width="44" height="44"
+              style={{ display: 'block', objectFit: 'contain', flex: '0 0 auto', borderRadius: 6 }}/>
             <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.05 }}>
               <span style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-0.012em' }}>Lattice LIS</span>
               <span style={{ fontSize: 10.5, color: 'rgba(246,244,238,0.55)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 4 }}>

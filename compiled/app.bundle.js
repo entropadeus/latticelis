@@ -10176,35 +10176,21 @@ var LoginPage = ({
     style: {
       display: 'flex',
       alignItems: 'center',
-      gap: 12,
+      gap: 14,
       marginBottom: 28
     }
-  }, React.createElement("svg", {
-    width: "32",
-    height: "32",
-    viewBox: "0 0 32 32",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: "1.25"
-  }, React.createElement("circle", {
-    cx: "16",
-    cy: "16",
-    r: "13"
-  }), React.createElement("circle", {
-    cx: "16",
-    cy: "16",
-    r: "7"
-  }), React.createElement("line", {
-    x1: "16",
-    y1: "3",
-    x2: "16",
-    y2: "29"
-  }), React.createElement("line", {
-    x1: "3",
-    y1: "16",
-    x2: "29",
-    y2: "16"
-  })), React.createElement("div", {
+  }, React.createElement("img", {
+    src: "assets/lattice-logo.png",
+    alt: "Lattice LIS",
+    width: "44",
+    height: "44",
+    style: {
+      display: 'block',
+      objectFit: 'contain',
+      flex: '0 0 auto',
+      borderRadius: 6
+    }
+  }), React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',
