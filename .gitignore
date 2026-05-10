@@ -1,7 +1,15 @@
 # Build artifacts
 .build-cache/
 node_modules/
+dist/
 ui-audit-shots/
+vendor/
+
+# Local Electron packaging experiment
+electron/
+package.json
+package-lock.json
+scripts/sync-renderer-vendor.cjs
 
 # Internal / AI scaffolding
 .claude/

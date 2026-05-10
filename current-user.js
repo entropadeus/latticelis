@@ -17,15 +17,10 @@
   let __cur = null;       // last-seen user object (or null if none chosen)
   let __started = false;
 
-  // ── Auto-seed: at least one user must exist or the picker is empty. ───────
-  // We seed two operators on first run so the switcher has options and shows
-  // something other than "no user". Both have role hints that align with
-  // Appendix A's Role enum (LAB_ASSISTANT, MEDICAL_TECHNOLOGIST).
-
-  // Dev-only local login. The user asked for exactly one local account:
-  // username `test`, password `test`. This is intentionally weak and should
-  // not ship outside local development. The password is hashed before storage;
-  // the plaintext exists here only to force the requested local reset.
+  // ── First-launch default user ───────────────────────────────────────────
+  // Local prototype default: exactly one account, username `test`,
+  // password `test`. The plaintext exists here only so a brand-new local
+  // browser profile / Electron data dir can bootstrap itself.
   const DEV_USER = {
     id: 'usr_local_test',
     username: 'test',
@@ -36,19 +31,36 @@
     status: 'ACTIVE',
   };
   const DEV_PASSWORD = 'test';
+  const LEGACY_SEED_USER_IDS = new Set([
+    'usr_seed_director',
+    'usr_seed_supervisor',
+    'usr_seed_med_tech',
+    'usr_seed_lab_assistant',
+    'usr_seed_it_admin',
+    'usr_owner_blona',
+  ]);
 
   const seedUsers = async () => {
     const existing = await window.db.list('users').catch(() => []);
     const newUser = (window.schema && window.schema.newUser) || ((init) => init);
     const now = Date.now();
-    for (const u of existing) {
-      if (u && u.id && u.id !== DEV_USER.id) await window.db.delete('users', u.id);
+
+    for (const u of existing.filter(u => u && LEGACY_SEED_USER_IDS.has(u.id))) {
+      await window.db.delete('users', u.id);
     }
+
+    const afterLegacyCleanup = existing.filter(u => u && !LEGACY_SEED_USER_IDS.has(u.id));
+    const current = afterLegacyCleanup.find(u => u && u.id === DEV_USER.id);
+    const hasNonDefaultUsers = afterLegacyCleanup.some(u => u && u.id !== DEV_USER.id);
+
+    if (hasNonDefaultUsers) {
+      return afterLegacyCleanup;
+    }
+
     const salt = window.auth && window.auth.generateSalt ? window.auth.generateSalt() : null;
     const hash = salt && window.auth && window.auth.hashPassword
       ? await window.auth.hashPassword(DEV_PASSWORD, salt)
       : null;
-    const current = existing.find(u => u && u.id === DEV_USER.id);
     const record = newUser({
       ...(current || {}),
       ...DEV_USER,
@@ -63,7 +75,7 @@
       if (localStorage.getItem('lattice.authedUserId') !== DEV_USER.id) localStorage.removeItem('lattice.authedUserId');
       if (localStorage.getItem(KEY) !== DEV_USER.id) localStorage.removeItem(KEY);
     } catch (e) {}
-    console.log('[current-user] local users reset to test account only');
+    console.log('[current-user] local default user ready: test');
     return [record];
   };
 
