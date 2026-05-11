@@ -11,6 +11,7 @@ const MappersPage = ({ onBack }) => {
       .filter(m => !needle || (m.name + ' ' + (m.text || '')).toLowerCase().includes(needle))
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [all, q]);
+  const pager = usePagination(filtered);
 
   const TEMPLATE = `# New mapper
 name      = Untitled Mapper
@@ -128,13 +129,14 @@ order.priority     = map(Priority, S=stat, R=routine)
             <input className="input" placeholder="Search…" style={{ height: 28 }}
               value={q} onChange={e => setQ(e.target.value)}/>
           </div>
+          {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {filtered.length === 0 ? (
               <div className="empty" style={{ padding: '40px 24px' }}>
                 <div className="empty-title">No mappers</div>
                 <div className="empty-sub">Click "New mapper" to start.</div>
               </div>
-            ) : filtered.map(m => {
+            ) : pager.slice.map(m => {
               const meta = window.mappers.parse(m.text || '').meta;
               const isSel = editingId === m.id;
               return (
@@ -158,6 +160,7 @@ order.priority     = map(Priority, S=stat, R=routine)
               );
             })}
           </div>
+          {filtered.length > 0 && <TablePagination {...pager}/>}
         </div>
 
         {draft ? (
