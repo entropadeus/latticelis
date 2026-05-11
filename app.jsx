@@ -156,6 +156,19 @@ const App = () => {
       case 'qc':          return <QcPage onBack={() => setActive('admin')}/>;
       case 'notifications': return <NotificationsPage onBack={() => setActive('admin')}/>;
       case 'users':       return <UsersPage onBack={() => setActive('admin')}/>;
+      // ── Outreach-shaped buckets (TaskCenter + AdminCenter) ─────────────
+      case 'this-location': return <window.ThisLocationPage onNav={setActive}/>;
+      case 'preferences':   return <window.PreferencesPage/>;
+      case 'admin-reports': return <window.AdminReportsPage onNav={setActive}/>;
+      case 'system-setup':  return <window.SystemSetupPage onNav={setActive}/>;
+      case 'billing':       return <window.BillingPage onNav={setActive}/>;
+      case 'customization': return <window.CustomizationPage onNav={setActive}/>;
+      case 'insurance':     return <window.InsurancePage onNav={setActive}/>;
+      case 'other-setup':   return <window.OtherSetupPage onNav={setActive}/>;
+      case 'patient-setup': return <window.PatientSetupPage onNav={setActive}/>;
+      case 'toxicology':    return <window.ToxicologyPage onNav={setActive}/>;
+      case 'manage':        return <window.ManagePage onNav={setActive}/>;
+      case 'monitor':       return <window.MonitorPage onNav={setActive}/>;
       default:            return <DashboardPage/>;
     }
   }, [active, rules, ordersFilterClientId, authedUser && authedUser.id]);
@@ -171,7 +184,7 @@ const App = () => {
   return (
     <div className="app" data-nav={navStyle}>
       {showSidebar && <Sidebar active={active} onNav={setActive} collapsed={navStyle === 'hybrid'}/>}
-      <Topbar onCmdK={() => setCmdOpen(true)}/>
+      <Topbar onCmdK={() => setCmdOpen(true)} onNav={setActive}/>
       <main style={{
         gridColumn: showSidebar ? '2 / 3' : '1 / 2',
         gridRow: '2 / 3',
