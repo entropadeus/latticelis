@@ -563,7 +563,7 @@
       const notif = window.schema.newNotification({
         id: id('notif', c.id.slice(-6)),
         kind: 'role',
-        target: c.criticalEscalationTier === 2 ? 'LAB_DIRECTOR / oncall' : 'LAB_SUPERVISOR',
+        target: c.criticalEscalationTier === 2 ? 'LAB_DIRECTOR' : 'LAB_SUPERVISOR',
         msg: 'T' + c.criticalEscalationTier + ' ESCALATION — critical result unacknowledged',
         ctx: { resultId: c.id, specimenId: c.specimenId },
         createdAt: c.criticalEscalatedAt || NOW - 60 * 1000,

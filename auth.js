@@ -157,6 +157,10 @@
 
   const signOut = () => {
     localStorage.removeItem(KEY);
+    // Also clear the legacy switcher key (current-user.js's 'lattice.currentUserId').
+    // Otherwise refresh() would fall back to it and silently re-authenticate
+    // the user we just signed out.
+    try { localStorage.removeItem('lattice.currentUserId'); } catch (e) {}
     if (window.currentUserApi) {
       // Clear the visible operator. current-user.js will treat null as logged-out.
       window.currentUser = null;

@@ -168,7 +168,7 @@
       lines.push(buildOBR({
         setId: obrSetId,
         placer: order.placerOrderNumber || '',
-        filler: order.orderNumber || specimen && specimen.accessionNumber || '',
+        filler: order.fillerOrderNumber || order.orderNumber || specimen && specimen.accessionNumber || '',
         test,
         priority: order.priority,
         requested: order.orderedAt,
