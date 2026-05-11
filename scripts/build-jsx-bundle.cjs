@@ -36,6 +36,7 @@ const jsxFiles = [
   'notification-pages.jsx',
   'users-pages.jsx',
   'admin-pages.jsx',
+  'outreach-pages.jsx',
   'accessioning.jsx',
   'app.jsx',
 ];
