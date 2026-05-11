@@ -149,9 +149,30 @@
     }
     const authedId = (() => { try { return localStorage.getItem('lattice.authedUserId'); } catch (e) { return null; } })();
     const legacyId = localStorage.getItem(KEY);
+    // Clear orphaned session pointers — if the referenced user no longer
+    // exists, the pointer is dead and we should clear it so the next reload
+    // lands on the login page instead of resolving a deleted ghost.
+    try {
+      if (authedId && !users.some(u => u.id === authedId)) {
+        localStorage.removeItem('lattice.authedUserId');
+      }
+      if (legacyId && !users.some(u => u.id === legacyId)) {
+        localStorage.removeItem(KEY);
+      }
+    } catch (e) {}
     let cur = null;
     if (authedId) cur = users.find(u => u.id === authedId) || null;
     if (!cur && legacyId) cur = users.find(u => u.id === legacyId) || null;
+    // Inactive users get force-signed-out. Status changes via the Users admin
+    // page propagate through db.subscribe → refresh, so deactivating a logged-in
+    // user actually kicks them out instead of waiting for a manual reload.
+    if (cur && cur.status === 'INACTIVE') {
+      try {
+        localStorage.removeItem('lattice.authedUserId');
+        localStorage.removeItem(KEY);
+      } catch (e) {}
+      cur = null;
+    }
     // No auto-fallback to users[0] anymore — that defeats the login gate.
     __cur = cur;
     window.currentUser = cur;
