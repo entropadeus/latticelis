@@ -37,9 +37,12 @@ const App = () => {
 
   // Reset active page when the signed-in identity changes so a fresh sign-in
   // doesn't land on a Forbidden page left over from the previous operator.
+  // Per-user `preferences.defaultLanding` overrides 'dashboard' when set;
   // useEffect-driven, only fires when the user *id* actually changes.
   useEffectApp(() => {
-    if (authedUser) setActive('dashboard');
+    if (!authedUser) return;
+    const pref = authedUser.preferences && authedUser.preferences.defaultLanding;
+    setActive(pref || 'dashboard');
   }, [authedUser && authedUser.id]);
   const [cmdOpen, setCmdOpen] = useStateApp(false);
   const [newOrderOpen, setNewOrderOpen] = useStateApp(false);
@@ -167,8 +170,18 @@ const App = () => {
       case 'customization': return <window.CustomizationPage onNav={setActive}/>;
       case 'insurance':     return <window.InsurancePage onNav={setActive}/>;
       case 'other-setup':   return <window.OtherSetupPage onNav={setActive}/>;
-      case 'patient-setup': return <window.PatientSetupPage onNav={setActive}/>;
+      case 'patient-setup': return <PatientSetupPage onBack={() => setActive('admin')}/>;
       case 'toxicology':    return <window.ToxicologyPage onNav={setActive}/>;
+      // ── Billing sub-pages ──────────────────────────────────────────────
+      case 'charge-codes':       return <ChargeCodesPage onBack={() => setActive('billing')}/>;
+      case 'claims':             return <ClaimsPage onBack={() => setActive('billing')}/>;
+      // ── Insurance sub-pages ────────────────────────────────────────────
+      case 'payors':             return <PayorsPage onBack={() => setActive('insurance')}/>;
+      case 'plans':              return <PlansPage onBack={() => setActive('insurance')}/>;
+      case 'patient-insurance':  return <PatientInsurancePage onBack={() => setActive('insurance')}/>;
+      // ── Toxicology sub-pages ───────────────────────────────────────────
+      case 'tox-panels':         return <ToxPanelsPage onBack={() => setActive('toxicology')}/>;
+      case 'coc':                return <ChainOfCustodyPage onBack={() => setActive('toxicology')}/>;
       case 'manage':        return <window.ManagePage onNav={setActive}/>;
       case 'monitor':       return <window.MonitorPage onNav={setActive}/>;
       default:            return <DashboardPage/>;

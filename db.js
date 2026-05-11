@@ -15,9 +15,10 @@
 // can be lifted later via BroadcastChannel without changing the adapter contract.
 
 const DB_NAME = 'lattice-lis';
-// 8 added the 'notifications' collection. 9 adds hl7_partners + hl7_messages
-// for partner integrations (logical EMR counterparties) and the message log.
-const DB_VERSION = 9;
+// 8 added the 'notifications' collection. 9 added hl7_partners + hl7_messages.
+// 10 adds billing (charge_codes, claims), insurance (payors, plans,
+// patient_insurance), and tox (tox_panels) collections.
+const DB_VERSION = 10;
 const STORAGE_SCOPE = Object.freeze({
   mode: 'local-only',
   driver: 'indexeddb',
@@ -51,6 +52,23 @@ const COLLECTIONS = [
   // outbound rows are written by the sender (hl7-transport.send). The
   // Message Log page reads this collection.
   'hl7_messages',
+  // charge_codes: CPT/HCPCS codes mapped to tests with a default fee.
+  // Lab-config feeScheduleMultiplier scales these at claim build time.
+  'charge_codes',
+  // claims: one per order with billed/paid/denied status. Linked to a
+  // payor via patient_insurance when billTo='INSURANCE'.
+  'claims',
+  // payors + plans + patient_insurance: standard insurance triple.
+  // payors holds carrier records (BCBS, Aetna, Medicare, …); plans is
+  // the per-payor product list (PPO, HMO, …); patient_insurance is the
+  // per-patient enrollment with member id, group, effective dates.
+  'payors',
+  'plans',
+  'patient_insurance',
+  // tox_panels: configurable UDS panels with screen + confirm test pairs
+  // and per-analyte cutoffs. Drives the confirmation cascade when a
+  // screen result trips the cutoff.
+  'tox_panels',
 ];
 
 let __dbPromise = null;

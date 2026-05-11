@@ -44,6 +44,13 @@ const newPatient = (init = {}) => ({
   // delivery itself follows order.deliveryChannel + client.deliveryChannel
   // overrides — see `delivery-watcher.js`. Empty falls back to client default.
   preferredContact: init.preferredContact || '',  // ''|'phone'|'email'|'mail'|'portal'
+  // Toxicology flags — gates COC capture at accessioning and triggers
+  // confirmation cascade rules when the patient's tox flag is on.
+  toxFlag: init.toxFlag === true,
+  toxClient: init.toxClient || '',                // e.g. employer, court, MRO
+  // Duplicate-detection: candidate-matches stash. Populated by patient-matcher
+  // when a near-duplicate is detected; cleared on confirmed merge.
+  dupeCandidateIds: Array.isArray(init.dupeCandidateIds) ? init.dupeCandidateIds : [],
   createdAt: init.createdAt || Date.now(),
   updatedAt: Date.now(),
 });
@@ -79,6 +86,16 @@ const newOrder = (init = {}) => ({
   // delivery channel: empty = inherit from client.partnerId, which in turn
   // falls back to "any active partner that accepts ORU^R01".
   partnerId: init.partnerId || null,
+  // Billing
+  billTo: init.billTo || '',                   // ''|'CLIENT'|'PATIENT'|'INSURANCE' (empty = inherit from client.billType)
+  patientInsuranceId: init.patientInsuranceId || null,  // if billTo='INSURANCE'
+  diagnosisPrimary: init.diagnosisPrimary || '',  // ICD-10 primary (drives medical-necessity rules)
+  claimStatus: init.claimStatus || '',          // ''|'open'|'submitted'|'paid'|'denied'|'rejected'|'self_pay'
+  // Prior authorization. PA workflow is per-order because the same patient
+  // might need PA on one test and not another. Empty = none required;
+  // 'required' triggers a hold rule; 'authorized' carries the auth number.
+  paStatus: init.paStatus || '',               // ''|'not_required'|'required'|'pending'|'authorized'|'denied'
+  paAuthNumber: init.paAuthNumber || '',
   orderedAt: __time(init.orderedAt, Date.now()),
   collectedAt: __time(init.collectedAt, null),
   receivedAt: __time(init.receivedAt, null),
@@ -149,6 +166,17 @@ const newSpecimen = (init = {}) => ({
   routedTo: init.routedTo || null,      // instrument id
   flags: init.flags || [],
   notes: init.notes || '',
+  // Chain of custody — populated only for forensic / DOT / employer tox.
+  // The COC tab in the entity drawer reads/writes this object. The
+  // existence of `chainOfCustody.sealNumber` is the canonical signal
+  // that this specimen is forensic-style; the toxFlag on the patient
+  // is just a hint to prompt the operator to capture COC.
+  chainOfCustody: init.chainOfCustody || null,
+  // Pickup tracking — populated by courier dispatch. Distinct from
+  // collectedAt/receivedAt: pickedUpAt is when the courier scanned it
+  // into the route, deliveredAt is when it arrived at the lab.
+  pickupRouteId: init.pickupRouteId || null,
+  pickedUpAt: init.pickedUpAt || null,
   createdAt: init.createdAt || Date.now(),
   updatedAt: Date.now(),
 });
@@ -644,6 +672,19 @@ const newUser = (init = {}) => ({
   passwordSalt: init.passwordSalt || null,
   passwordSetAt: init.passwordSetAt || null,
   passwordSource: init.passwordSource || null,
+  // Per-user preferences. All optional with sensible defaults so an existing
+  // user record without a preferences block reads as "default everything".
+  // Read by app.jsx (defaultLanding), Topbar location switcher
+  // (defaultLocationId), notification toasts (mutedNotifKinds), and the
+  // display helpers (tzPref).
+  preferences: init.preferences || {
+    defaultLanding: '',         // ''|'dashboard'|'orders'|'specimens'|'results'|'accession'|'patients'|'reports'
+    defaultLocationId: '',      // locations.id; '' = no override (active location applies)
+    mutedNotifKinds: [],        // ['system','role','user','provider'] — empty = nothing muted
+    tzPref: '',                 // ''|'local'|'utc'|'lab' — '' falls back to browser local
+    densityPref: '',            // ''|'comfortable'|'compact' — overrides global tweak
+    keyboardHints: true,        // show keyboard shortcut hints on hover
+  },
   createdAt: init.createdAt || Date.now(),
   updatedAt: Date.now(),
 });
@@ -710,6 +751,138 @@ const newLabConfig = (init = {}) => ({
     ? init.tatRecipients.filter(r => typeof r === 'string')
     : [...TAT_RECIPIENTS_DEFAULT],
   tatRecipientsByPriority: __coerceTatRecipientsByPriority(init.tatRecipientsByPriority),
+  // ── Patient setup ────────────────────────────────────────────────────
+  // MRN format. `prefix` + zero-padded sequence number of `digits` width.
+  // `mode` controls how new patients are minted: 'sequence' uses the next
+  // counter; 'random' uses a random N-digit number; 'external' means MRN
+  // is supplied by the EMR (typical for inbound HL7).
+  patientSetup: init.patientSetup || {
+    mrnPrefix: 'MRN-',
+    mrnDigits: 6,
+    mrnMode: 'sequence',        // 'sequence'|'random'|'external'
+    requiredFields: ['mrn', 'lastName', 'firstName', 'dob', 'sex'],
+    duplicateRules: {
+      matchOn: ['lastName', 'dob'],   // candidates flagged when these match
+      blockOnExact: false,            // hard-stop on exact match (true) or allow with warning
+    },
+  },
+  // ── Billing ──────────────────────────────────────────────────────────
+  // Default fee schedule applied when client/test combo has no override.
+  // Charge codes carry their own `defaultFee`; this is a global modifier
+  // (e.g. 0.85 for a contracted discount).
+  billing: init.billing || {
+    feeScheduleMultiplier: 1.0,
+    requireDiagnosis: true,        // block release until ICD-10 present
+    statementCycle: 'monthly',     // 'weekly'|'biweekly'|'monthly'
+    defaultPayorType: 'COMMERCIAL', // for new payor records
+  },
+  // ── Toxicology ───────────────────────────────────────────────────────
+  // Confirmation cascade: when a screen result is positive, auto-add the
+  // confirmation panel. The actual rule rows live in the rules engine;
+  // this flag governs whether the cascade is active.
+  toxicology: init.toxicology || {
+    cascadeEnabled: true,
+    cocRequired: true,             // chain-of-custody mandatory for tox specimens
+    cutoffMultiplier: 1.0,         // applied to confirmation cutoffs
+    mroReviewRequired: false,      // Medical Review Officer signoff before release
+  },
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+// ── Billing entities ───────────────────────────────────────────────────
+
+const newChargeCode = (init = {}) => ({
+  id: init.id || __id('charge'),
+  cptCode: init.cptCode || '',         // CPT/HCPCS code (e.g. '82947' for glucose)
+  description: init.description || '',
+  testId: init.testId || null,         // tests.id — '' for non-test charges
+  defaultFee: Number.isFinite(Number(init.defaultFee)) ? Number(init.defaultFee) : 0,
+  modifiers: Array.isArray(init.modifiers) ? init.modifiers : [],
+  active: init.active === undefined ? true : init.active,
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+const newClaim = (init = {}) => ({
+  id: init.id || __id('claim'),
+  orderId: init.orderId || null,
+  patientId: init.patientId || null,
+  payorId: init.payorId || null,
+  patientInsuranceId: init.patientInsuranceId || null,
+  billTo: init.billTo || 'INSURANCE',
+  charges: Array.isArray(init.charges) ? init.charges : [],  // [{ chargeCodeId, cptCode, fee, qty }]
+  billedAmount: Number(init.billedAmount) || 0,
+  paidAmount: Number(init.paidAmount) || 0,
+  status: init.status || 'open',       // 'open'|'submitted'|'paid'|'denied'|'rejected'|'self_pay'
+  submittedAt: init.submittedAt || null,
+  paidAt: init.paidAt || null,
+  denialReason: init.denialReason || '',
+  notes: init.notes || '',
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+// ── Insurance entities ──────────────────────────────────────────────────
+
+const newPayor = (init = {}) => ({
+  id: init.id || __id('payor'),
+  name: init.name || '',
+  code: init.code || '',
+  type: init.type || 'COMMERCIAL',    // 'COMMERCIAL'|'MEDICARE'|'MEDICAID'|'TRICARE'|'WORKERS_COMP'|'SELF_PAY'
+  payorId: init.payorId || '',         // external payor id (CMS, X12 trading partner)
+  address: init.address || null,
+  phone: init.phone || '',
+  electronicClaims: init.electronicClaims === undefined ? true : init.electronicClaims,
+  active: init.active === undefined ? true : init.active,
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+const newPlan = (init = {}) => ({
+  id: init.id || __id('plan'),
+  payorId: init.payorId || null,
+  name: init.name || '',
+  type: init.type || 'PPO',            // 'HMO'|'PPO'|'EPO'|'POS'|'HDHP'|'MEDICARE_A'|'MEDICARE_B'|…
+  requiresPA: init.requiresPA === true,
+  paTests: Array.isArray(init.paTests) ? init.paTests : [],   // test codes that always require PA on this plan
+  copay: Number(init.copay) || 0,
+  active: init.active === undefined ? true : init.active,
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+const newPatientInsurance = (init = {}) => ({
+  id: init.id || __id('pins'),
+  patientId: init.patientId || null,
+  planId: init.planId || null,
+  memberId: init.memberId || '',
+  groupNumber: init.groupNumber || '',
+  rank: init.rank || 'PRIMARY',       // 'PRIMARY'|'SECONDARY'|'TERTIARY'
+  effectiveFrom: init.effectiveFrom || '',  // YYYY-MM-DD
+  effectiveTo: init.effectiveTo || '',
+  eligibilityStatus: init.eligibilityStatus || 'unknown',  // 'unknown'|'active'|'inactive'|'pending'
+  eligibilityCheckedAt: init.eligibilityCheckedAt || null,
+  subscriberRelation: init.subscriberRelation || 'self',   // 'self'|'spouse'|'child'|'other'
+  subscriberName: init.subscriberName || '',
+  active: init.active === undefined ? true : init.active,
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+// ── Toxicology entities ────────────────────────────────────────────────
+
+const newToxPanel = (init = {}) => ({
+  id: init.id || __id('tox'),
+  name: init.name || '',                       // e.g. '5-panel UDS'
+  category: init.category || 'employment',     // 'employment'|'dot'|'court'|'clinical'|'pain_mgmt'
+  // Screen tests (immunoassay) and the cutoffs (ng/mL) at which they flag positive.
+  screenTests: Array.isArray(init.screenTests) ? init.screenTests : [],  // [{ analyte, cutoff }]
+  // Confirmation tests (GC-MS / LC-MS) — added automatically when screen positive.
+  confirmTests: Array.isArray(init.confirmTests) ? init.confirmTests : [],
+  cocRequired: init.cocRequired === undefined ? true : init.cocRequired,
+  notes: init.notes || '',
+  active: init.active === undefined ? true : init.active,
   createdAt: init.createdAt || Date.now(),
   updatedAt: Date.now(),
 });
@@ -732,6 +905,9 @@ window.schema = {
   newLocation, newLabelTemplate,
   newQcLevel, newQcResult, newQcRuleViolation,
   newHl7Partner, newHl7Message,
+  newChargeCode, newClaim,
+  newPayor, newPlan, newPatientInsurance,
+  newToxPanel,
   newLabConfig, LAB_CONFIG_ID,
   TAT_THRESHOLD_DEFAULTS, TAT_RECIPIENTS_DEFAULT, TAT_PRIORITY_KEYS,
   ROLES, ROLE_IDS, ROLE_BY_ID, PERMISSIONS,

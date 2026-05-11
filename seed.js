@@ -34,6 +34,24 @@
   // 12 tests covering chemistry + heme + cardiac. Each carries a realistic
   // adult range; HGB additionally has an F-only range to exercise the
   // demographic resolver. TROP carries per-test escalation thresholds.
+  // Test code → CPT mapping. Used to seed the charge_codes catalog and to
+  // build claims off real test ids. CPT codes are CMS-published values
+  // for these analytes; fees are mid-market 2024 averages.
+  const TEST_CPT = {
+    GLU:  { cpt: '82947', fee: 12.00 },
+    BUN:  { cpt: '84520', fee: 11.00 },
+    CR:   { cpt: '82565', fee: 11.50 },
+    NA:   { cpt: '84295', fee: 12.00 },
+    K:    { cpt: '84132', fee: 12.00 },
+    CL:   { cpt: '82435', fee: 12.00 },
+    WBC:  { cpt: '85025', fee: 17.50 },  // CBC w/auto-diff
+    RBC:  { cpt: '85025', fee: 17.50 },
+    HGB:  { cpt: '85018', fee: 8.00 },
+    HCT:  { cpt: '85014', fee: 8.00 },
+    PLT:  { cpt: '85049', fee: 8.50 },
+    TROP: { cpt: '84484', fee: 28.00 },
+  };
+
   const TESTS = [
     { code: 'GLU',  name: 'Glucose',              units: 'mg/dL',   loinc: '2345-7',  low: 70,  high: 99,  cat: 'chem' },
     { code: 'BUN',  name: 'Blood Urea Nitrogen',  units: 'mg/dL',   loinc: '3094-0',  low: 7,   high: 25,  cat: 'chem' },
@@ -707,6 +725,297 @@
       partnersOut.push(rec);
     }
 
+    // ── 12. Billing — charge codes + claims ───────────────────────────
+    // One charge_code per test (TEST_CPT map). Fees are mid-market 2024
+    // averages, scaled by the lab-config feeScheduleMultiplier (1.0 by
+    // default). After codes, generate claims for completed orders so the
+    // Claims page has realistic open/submitted/paid/denied state.
+    const chargeOut = [];
+    const codeByTestId = {};
+    for (const t of TESTS) {
+      const map = TEST_CPT[t.code];
+      if (!map) continue;
+      const test = await window.db.list('tests', x => x.code === t.code);
+      const testId = test[0] && test[0].id;
+      if (!testId) continue;
+      const cc = window.schema.newChargeCode({
+        id: id('charge', t.code),
+        cptCode: map.cpt,
+        description: t.name,
+        testId,
+        defaultFee: map.fee,
+        active: true,
+      });
+      await window.db.put('charge_codes', cc);
+      chargeOut.push(cc);
+      codeByTestId[testId] = cc;
+    }
+
+    // ── 13. Insurance — payors + plans + patient_insurance ───────────
+    const PAYORS = [
+      { code: 'BCBS',     name: 'Blue Cross Blue Shield', type: 'COMMERCIAL', payorId: '00040', electronicClaims: true },
+      { code: 'AETNA',    name: 'Aetna',                  type: 'COMMERCIAL', payorId: '60054', electronicClaims: true },
+      { code: 'CIGNA',    name: 'Cigna',                  type: 'COMMERCIAL', payorId: '62308', electronicClaims: true },
+      { code: 'UHC',      name: 'UnitedHealthcare',       type: 'COMMERCIAL', payorId: '87726', electronicClaims: true },
+      { code: 'MEDICARE', name: 'Medicare Part B',        type: 'MEDICARE',   payorId: '00510', electronicClaims: true },
+      { code: 'MEDICAID', name: 'State Medicaid',         type: 'MEDICAID',   payorId: '78001', electronicClaims: true },
+      { code: 'TRICARE',  name: 'TRICARE',                type: 'TRICARE',    payorId: '99726', electronicClaims: true },
+    ];
+    const payorsOut = [];
+    for (const p of PAYORS) {
+      const rec = window.schema.newPayor({ id: id('payor', p.code), ...p, active: true });
+      await window.db.put('payors', rec);
+      payorsOut.push(rec);
+    }
+    // Two plans per payor (PPO + HMO; Medicare → A + B).
+    const PLAN_TEMPLATES = {
+      COMMERCIAL: [
+        { suffix: 'PPO', name: 'PPO',  type: 'PPO',  copay: 25,  requiresPA: false, paTests: [] },
+        { suffix: 'HMO', name: 'HMO',  type: 'HMO',  copay: 15,  requiresPA: true,  paTests: ['TROP'] },
+      ],
+      MEDICARE: [
+        { suffix: 'PARTA', name: 'Part A', type: 'MEDICARE_A', copay: 0,  requiresPA: false, paTests: [] },
+        { suffix: 'PARTB', name: 'Part B', type: 'MEDICARE_B', copay: 0,  requiresPA: false, paTests: [] },
+      ],
+      MEDICAID: [
+        { suffix: 'STD', name: 'Standard', type: 'MEDICAID', copay: 0, requiresPA: true, paTests: ['TROP'] },
+      ],
+      TRICARE: [
+        { suffix: 'STD', name: 'TRICARE Select', type: 'TRICARE', copay: 10, requiresPA: false, paTests: [] },
+      ],
+    };
+    const plansOut = [];
+    const tropTest = (await window.db.list('tests', t => t.code === 'TROP'))[0];
+    for (const payor of payorsOut) {
+      const templates = PLAN_TEMPLATES[payor.type] || PLAN_TEMPLATES.COMMERCIAL;
+      for (const tmpl of templates) {
+        const paTestIds = (tmpl.paTests || []).map(c => c === 'TROP' && tropTest ? tropTest.id : null).filter(Boolean);
+        const plan = window.schema.newPlan({
+          id: id('plan', payor.code + '_' + tmpl.suffix),
+          payorId: payor.id,
+          name: payor.name + ' ' + tmpl.name,
+          type: tmpl.type, copay: tmpl.copay,
+          requiresPA: tmpl.requiresPA, paTests: paTestIds,
+          active: true,
+        });
+        await window.db.put('plans', plan);
+        plansOut.push(plan);
+      }
+    }
+    // Assign primary insurance to ~70% of patients, with weighted distribution.
+    const insOut = [];
+    let insSeq = 1;
+    for (const pat of patients) {
+      const seed = parseInt(pat.id.replace(/\D/g, '').slice(-3), 10) || 0;
+      const hasIns = (seed % 10) < 7;  // 70%
+      if (!hasIns) continue;
+      const plan = plansOut[seed % plansOut.length];
+      const ins = window.schema.newPatientInsurance({
+        id: id('pins', insSeq++),
+        patientId: pat.id,
+        planId: plan.id,
+        memberId: 'MBR-' + String(seed * 7919 % 100000000).padStart(8, '0'),
+        groupNumber: 'GRP-' + (1000 + (seed % 9000)),
+        rank: 'PRIMARY',
+        subscriberRelation: 'self',
+        eligibilityStatus: (seed % 10) < 8 ? 'active' : 'unknown',
+        eligibilityCheckedAt: (seed % 10) < 8 ? NOW - (seed % 30) * 86400000 : null,
+        effectiveFrom: '2024-01-01',
+        active: true,
+      });
+      await window.db.put('patient_insurance', ins);
+      insOut.push(ins);
+    }
+
+    // ── 14. Claims — one per completed order ─────────────────────────
+    // Build charge lines from order.testIds via codeByTestId. Status
+    // distribution: 50% paid, 25% submitted, 15% open, 10% denied.
+    const claimsOut = [];
+    let claimSeq = 1;
+    const insByPatient = {};
+    for (const ins of insOut) {
+      if (!insByPatient[ins.patientId]) insByPatient[ins.patientId] = ins;
+    }
+    const completedOrders = ordersOut.filter(o => o.status === 'completed');
+    for (const o of completedOrders) {
+      const ins = insByPatient[o.patientId];
+      const charges = [];
+      for (const tid of (o.testIds || [])) {
+        const cc = codeByTestId[tid];
+        if (!cc) continue;
+        charges.push({
+          chargeCodeId: cc.id, cptCode: cc.cptCode,
+          fee: cc.defaultFee, qty: 1,
+        });
+      }
+      const billedAmount = charges.reduce((s, c) => s + c.fee * c.qty, 0);
+      const seed = parseInt(o.id.replace(/\D/g, '').slice(-3), 10) || 0;
+      const roll = seed % 100;
+      let status, paidAmount, paidAt, submittedAt, denialReason;
+      if (!ins) {
+        status = 'self_pay'; paidAmount = 0; paidAt = null; submittedAt = null; denialReason = '';
+      } else if (roll < 50) {
+        status = 'paid';
+        paidAmount = Math.round(billedAmount * 0.85 * 100) / 100;
+        submittedAt = (o.orderedAt || NOW) + 86400000 * 2;
+        paidAt = submittedAt + 86400000 * 14;
+        denialReason = '';
+      } else if (roll < 75) {
+        status = 'submitted';
+        submittedAt = (o.orderedAt || NOW) + 86400000 * 2;
+        paidAmount = 0; paidAt = null; denialReason = '';
+      } else if (roll < 90) {
+        status = 'open';
+        submittedAt = null; paidAmount = 0; paidAt = null; denialReason = '';
+      } else {
+        status = 'denied';
+        submittedAt = (o.orderedAt || NOW) + 86400000 * 2;
+        paidAt = null; paidAmount = 0;
+        denialReason = ['Authorization missing', 'Patient not on plan effective date', 'Medical necessity not documented'][seed % 3];
+      }
+      const claim = window.schema.newClaim({
+        id: id('claim', claimSeq++),
+        orderId: o.id,
+        patientId: o.patientId,
+        payorId: ins ? plansOut.find(p => p.id === ins.planId).payorId : null,
+        patientInsuranceId: ins ? ins.id : null,
+        billTo: ins ? 'INSURANCE' : 'PATIENT',
+        charges, billedAmount, paidAmount,
+        status, submittedAt, paidAt, denialReason,
+      });
+      await window.db.put('claims', claim);
+      claimsOut.push(claim);
+      // Mirror status on the order so order drawer can show it.
+      await window.db.put('orders', { ...o, claimStatus: status, updatedAt: Date.now() });
+    }
+
+    // ── 15. Toxicology — UDS panels ──────────────────────────────────
+    const TOX_PANELS = [
+      {
+        code: '5panel', name: '5-panel UDS', category: 'employment',
+        screen: [
+          { analyte: 'AMP',  cutoff: 500 },
+          { analyte: 'COC',  cutoff: 150 },
+          { analyte: 'OPI',  cutoff: 2000 },
+          { analyte: 'PCP',  cutoff: 25 },
+          { analyte: 'THC',  cutoff: 50 },
+        ],
+        confirm: [
+          { analyte: 'AMP',  cutoff: 250 },
+          { analyte: 'COC',  cutoff: 100 },
+          { analyte: 'OPI',  cutoff: 2000 },
+          { analyte: 'PCP',  cutoff: 25 },
+          { analyte: 'THC',  cutoff: 15 },
+        ],
+        cocRequired: true,
+        notes: 'SAMHSA-mandated panel for federally-regulated employment testing.',
+      },
+      {
+        code: '10panel', name: '10-panel UDS', category: 'employment',
+        screen: [
+          { analyte: 'AMP',  cutoff: 500 },
+          { analyte: 'METH', cutoff: 500 },
+          { analyte: 'COC',  cutoff: 150 },
+          { analyte: 'OPI',  cutoff: 2000 },
+          { analyte: 'OXY',  cutoff: 100 },
+          { analyte: 'BZO',  cutoff: 200 },
+          { analyte: 'BAR',  cutoff: 200 },
+          { analyte: 'MDMA', cutoff: 500 },
+          { analyte: 'PCP',  cutoff: 25 },
+          { analyte: 'THC',  cutoff: 50 },
+        ],
+        confirm: [
+          { analyte: 'AMP',  cutoff: 250 },
+          { analyte: 'METH', cutoff: 250 },
+          { analyte: 'COC',  cutoff: 100 },
+          { analyte: 'OPI',  cutoff: 2000 },
+          { analyte: 'OXY',  cutoff: 50 },
+          { analyte: 'BZO',  cutoff: 100 },
+          { analyte: 'BAR',  cutoff: 100 },
+          { analyte: 'MDMA', cutoff: 250 },
+          { analyte: 'PCP',  cutoff: 25 },
+          { analyte: 'THC',  cutoff: 15 },
+        ],
+        cocRequired: true,
+        notes: 'Extended employment panel with synthetic + prescription drug classes.',
+      },
+      {
+        code: 'pain', name: 'Pain Management Panel', category: 'pain_mgmt',
+        screen: [
+          { analyte: 'OPI', cutoff: 300 },
+          { analyte: 'OXY', cutoff: 100 },
+          { analyte: 'BZO', cutoff: 200 },
+          { analyte: 'MTD', cutoff: 300 },
+          { analyte: 'BUP', cutoff: 5 },
+          { analyte: 'FYL', cutoff: 1 },
+          { analyte: 'TRA', cutoff: 100 },
+          { analyte: 'THC', cutoff: 50 },
+        ],
+        confirm: [
+          { analyte: 'OPI', cutoff: 100 },
+          { analyte: 'OXY', cutoff: 50 },
+          { analyte: 'BZO', cutoff: 100 },
+          { analyte: 'MTD', cutoff: 50 },
+          { analyte: 'BUP', cutoff: 1 },
+          { analyte: 'FYL', cutoff: 0.5 },
+          { analyte: 'TRA', cutoff: 25 },
+          { analyte: 'THC', cutoff: 15 },
+        ],
+        cocRequired: false,
+        notes: 'Compliance monitoring for chronic opioid therapy. COC optional.',
+      },
+    ];
+    const toxOut = [];
+    for (const tp of TOX_PANELS) {
+      const rec = window.schema.newToxPanel({
+        id: id('tox', tp.code),
+        name: tp.name,
+        category: tp.category,
+        screenTests: tp.screen,
+        confirmTests: tp.confirm,
+        cocRequired: tp.cocRequired,
+        notes: tp.notes,
+        active: true,
+      });
+      await window.db.put('tox_panels', rec);
+      toxOut.push(rec);
+    }
+    // Flag ~6 patients as tox so the Chain of Custody page has rows.
+    // Half of their specimens get a pre-sealed COC; the other half land
+    // in "awaiting seal" state.
+    const toxPatientIds = patients.slice(0, 6).map(p => p.id);
+    for (let i = 0; i < toxPatientIds.length; i++) {
+      const pid = toxPatientIds[i];
+      const p = await window.db.get('patients', pid);
+      if (!p) continue;
+      await window.db.put('patients', {
+        ...p, toxFlag: true,
+        toxClient: ['Acme Trucking (DOT)', 'County Court', 'Self-pay clinic', 'Employer (pre-employment)', 'Pain mgmt follow-up', 'Court-ordered'][i % 6],
+        updatedAt: Date.now(),
+      });
+      // Half get sealed COC.
+      if (i % 2 === 0) {
+        const specs = await window.db.list('specimens', s => s.patientId === pid);
+        for (const s of specs.slice(0, 1)) {
+          const sealNumber = 'COC-' + new Date(s.collectedAt || NOW).toISOString().slice(0,10).replace(/-/g,'') + '-' + String(1000 + i * 137).slice(0, 4);
+          await window.db.put('specimens', {
+            ...s,
+            chainOfCustody: {
+              sealNumber,
+              sealedAt: s.collectedAt || NOW - 86400000,
+              sealedBy: 'system',
+              sealedByName: 'Demo Collector',
+              breaks: i === 2 ? [{ at: NOW - 3600000 * 12, by: 'system', byName: 'Demo Bench Tech', reason: 'Aliquot to confirmation lab' }] : [],
+              closedAt: i === 0 ? NOW - 3600000 : null,
+              closedBy: i === 0 ? 'system' : null,
+              closedByName: i === 0 ? 'Demo Director' : null,
+            },
+            updatedAt: Date.now(),
+          });
+        }
+      }
+    }
+
     return {
       patients: patients.length,
       clients: CLIENTS.length,
@@ -718,6 +1027,12 @@
       results: resultsOut.length,
       qcResults: qcOut.length,
       partners: partnersOut.length,
+      chargeCodes: chargeOut.length,
+      payors: payorsOut.length,
+      plans: plansOut.length,
+      patientInsurance: insOut.length,
+      claims: claimsOut.length,
+      toxPanels: toxOut.length,
       notifications: criticalsUnacked.slice(0, 6).length,
       criticalsUnacked: criticalsUnacked.length,
       auditEventsWritten: auditSeq - 1,
