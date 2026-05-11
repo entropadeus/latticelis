@@ -21,13 +21,16 @@
   // Local prototype default: exactly one account, username `test`,
   // password `test`. The plaintext exists here only so a brand-new local
   // browser profile / Electron data dir can bootstrap itself.
+  // Holds every role in the catalog so it clears every PERMISSIONS gate
+  // and shows up in every role-filtered surface (TAT recipients, critical
+  // escalation, notification targets) — a true full-admin test account.
   const DEV_USER = {
     id: 'usr_local_test',
     username: 'test',
     firstName: 'Test',
     lastName: 'User',
     credentials: [],
-    roles: ['LAB_DIRECTOR', 'IT_ADMIN'],
+    roles: ['LAB_DIRECTOR', 'LAB_SUPERVISOR', 'PATHOLOGIST', 'MEDICAL_TECHNOLOGIST', 'LAB_ASSISTANT', 'IT_ADMIN'],
     status: 'ACTIVE',
   };
   const DEV_PASSWORD = 'test';
