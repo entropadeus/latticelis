@@ -421,6 +421,7 @@ const ClientsPage = ({ onBack }) => {
       .filter(c => !needle || [c.code, c.name, c.contactName, c.type].filter(Boolean).join(' ').toLowerCase().includes(needle))
       .sort((a, b) => (a.code || '').localeCompare(b.code || ''));
   }, [clients, q]);
+  const pager = usePagination(filtered);
 
   const startNew = () => {
     if (!hasPermission('EDIT_LAB_CONFIG')) return;
@@ -520,6 +521,7 @@ const ClientsPage = ({ onBack }) => {
             <div style={{ flex: 1 }}/>
             <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{filtered.length} of {clients.length}</span>
           </div>
+          {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {filtered.length === 0 ? (
               <div className="empty" style={{ padding: '40px 24px' }}>
@@ -537,7 +539,7 @@ const ClientsPage = ({ onBack }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(c => (
+                  {pager.slice.map(c => (
                     <tr key={c.id} style={{ opacity: c.active === false ? 0.5 : 1, background: editingId === c.id ? 'var(--sage-50)' : undefined }}>
                       <td onClick={() => toggleActive(c)}
                         style={{ cursor: canEditLabConfig ? 'pointer' : 'not-allowed' }}
@@ -566,6 +568,7 @@ const ClientsPage = ({ onBack }) => {
               </table>
             )}
           </div>
+          {filtered.length > 0 && <TablePagination {...pager}/>}
         </div>
 
         {draft && (
@@ -695,6 +698,7 @@ const LocationsPage = ({ onBack }) => {
       .filter(l => !needle || [l.code, l.name, l.type, l.notes].filter(Boolean).join(' ').toLowerCase().includes(needle))
       .sort((a, b) => (a.code || '').localeCompare(b.code || ''));
   }, [all, q]);
+  const pager = usePagination(filtered);
 
   const startNew = () => {
     if (!hasPermission('EDIT_LAB_CONFIG')) return;
@@ -806,6 +810,7 @@ const LocationsPage = ({ onBack }) => {
             <div style={{ flex: 1 }}/>
             <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{filtered.length} of {all.length}</span>
           </div>
+          {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {filtered.length === 0 ? (
               <div className="empty" style={{ padding: '40px 24px' }}>
@@ -824,7 +829,7 @@ const LocationsPage = ({ onBack }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(l => (
+                  {pager.slice.map(l => (
                     <tr key={l.id} style={{ opacity: l.active === false ? 0.5 : 1, background: editingId === l.id ? 'var(--sage-50)' : undefined }}>
                       <td onClick={() => toggleActive(l)}
                         style={{ cursor: canEditLabConfig ? 'pointer' : 'not-allowed' }}
@@ -859,6 +864,7 @@ const LocationsPage = ({ onBack }) => {
               </table>
             )}
           </div>
+          {filtered.length > 0 && <TablePagination {...pager}/>}
         </div>
 
         {draft && (
