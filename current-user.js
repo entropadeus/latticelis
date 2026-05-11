@@ -54,12 +54,14 @@
 
     const afterLegacyCleanup = existing.filter(u => u && !LEGACY_SEED_USER_IDS.has(u.id));
     const current = afterLegacyCleanup.find(u => u && u.id === DEV_USER.id);
-    const hasNonDefaultUsers = afterLegacyCleanup.some(u => u && u.id !== DEV_USER.id);
 
-    if (hasNonDefaultUsers) {
-      return afterLegacyCleanup;
-    }
-
+    // Always ensure the test/test admin record exists with the right roles,
+    // ACTIVE status, and a known-good password. Previously this bailed when
+    // any non-default users were present, which left the dev account
+    // missing in any DB that had other accounts — producing "unknown account
+    // or account inactive" on login. The dev account is now a guaranteed
+    // back door for local prototype work; real installations should remove
+    // this seeder before going to production.
     const salt = window.auth && window.auth.generateSalt ? window.auth.generateSalt() : null;
     const hash = salt && window.auth && window.auth.hashPassword
       ? await window.auth.hashPassword(DEV_PASSWORD, salt)
@@ -75,11 +77,26 @@
     });
     await window.db.put('users', record);
     try {
-      if (localStorage.getItem('lattice.authedUserId') !== DEV_USER.id) localStorage.removeItem('lattice.authedUserId');
-      if (localStorage.getItem(KEY) !== DEV_USER.id) localStorage.removeItem(KEY);
+      const authed = localStorage.getItem('lattice.authedUserId');
+      if (authed && authed !== record.id) {
+        const allUsers = await window.db.list('users').catch(() => []);
+        if (!allUsers.some(u => u && u.id === authed)) {
+          localStorage.removeItem('lattice.authedUserId');
+        }
+      }
+      const legacy = localStorage.getItem(KEY);
+      if (legacy && legacy !== record.id) {
+        const allUsers = await window.db.list('users').catch(() => []);
+        if (!allUsers.some(u => u && u.id === legacy)) {
+          localStorage.removeItem(KEY);
+        }
+      }
     } catch (e) {}
     console.log('[current-user] local default user ready: test');
-    return [record];
+    return [
+      ...afterLegacyCleanup.filter(u => u && u.id !== record.id),
+      record,
+    ];
   };
 
   // Auth-aware refresh:
