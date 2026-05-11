@@ -187,7 +187,7 @@
     },
 
     // Stubs — explicit so console doesn't warn about every primitive in catalog
-    'order.location.is':         () => false,
+    'order.location.is':         (a, c) => !!c.location && (c.location.id === a.location || c.location.name === a.location),
     'order.payer.is':            () => false,
     'order.source.is':           () => false,
     'test.panel.contains':       () => false,
@@ -415,8 +415,38 @@
     'route.split':          async (a, c) => auditAction('STUB route.split count=' + (a.count || 0), c),
     'order.requireDx':      async (_, c) => auditAction('STUB order.requireDx', c),
     'order.requireAuth':    async (_, c) => auditAction('STUB order.requireAuth', c),
-    'order.duplicate.warn': async (a, c) => auditAction('STUB duplicate.warn within ' + (a.hours || 0) + 'h', c),
-    'order.reflex.replace': async (a, c) => auditAction('STUB reflex.replace ' + (a.from || '?') + ' → ' + (a.to || '?'), c),
+    'order.duplicate.warn': async (a, c) => {
+      if (!c.order) return { ok: false, reason: 'no order in context' };
+      const hours = Math.max(0.1, Number(a.hours) || 24);
+      const since = Date.now() - hours * 3600000;
+      const patientId = c.order.patientId;
+      if (!patientId) return { ok: true, found: 0 };
+      const recentOrders = await window.db.list('orders', o =>
+        o.patientId === patientId && o.id !== c.order.id && (o.createdAt || 0) >= since
+      );
+      const currentTestIds = new Set(Array.isArray(c.order.testIds) ? c.order.testIds : []);
+      const duplicates = recentOrders.filter(o => (o.testIds || []).some(tid => currentTestIds.has(tid)));
+      if (duplicates.length === 0) return { ok: true, found: 0 };
+      window.events.publish('notification', {
+        kind: 'system',
+        msg: `Duplicate order: ${duplicates.length} recent order(s) for this patient share test(s) with ${c.order.orderNumber || c.order.id.slice(-6)} (within ${hours}h).`,
+        viaRule: true,
+        ctx: { orderId: c.order.id, duplicateOrderIds: duplicates.map(o => o.id) },
+      });
+      await auditAction(`duplicate.warn: ${duplicates.length} duplicate(s) within ${hours}h`, c);
+      return { ok: true, found: duplicates.length };
+    },
+    'order.reflex.replace': async (a, c) => {
+      if (!c.order || !a.from || !a.to) return { ok: false, reason: 'missing order or from/to args' };
+      const cancelResult = await ACTION_EXECUTORS['order.reflex.cancel']({ test: a.from }, c);
+      if (!cancelResult.ok && !cancelResult.notPresent) return cancelResult;
+      // Re-fetch the order so the add sees the cancel's removal of testIds.
+      const freshOrder = await window.db.get('orders', c.order.id);
+      const addResult = await ACTION_EXECUTORS['order.reflex.add']({ test: a.to }, { ...c, order: freshOrder });
+      if (!addResult.ok) return addResult;
+      await auditAction(`reflex.replace ${a.from} → ${a.to}`, c);
+      return { ok: true, from: a.from, to: a.to, addedTestId: addResult.addedTestId };
+    },
     'order.panel.expand':   async (_, c) => auditAction('STUB panel.expand', c),
     'result.range.apply':   async (a, c) => auditAction('STUB range.apply ' + (a.range || '?'), c),
     'message.send.hl7':     async (a, c) => auditAction('STUB hl7.send ' + (a.type || '?') + ' via ' + (a.iface || '?'), c),
@@ -475,6 +505,9 @@
     if (ctx.result && !ctx.test && ctx.result.testId) {
       ctx.test = await window.db.get('tests', ctx.result.testId);
     }
+    if (ctx.order && ctx.order.locationId && !ctx.location) {
+      ctx.location = await window.db.get('locations', ctx.order.locationId);
+    }
 
     return ctx;
   };
@@ -491,6 +524,7 @@
     if (ctx.result)     next.result     = await window.db.get('results', ctx.result.id);
     if (ctx.test)       next.test       = await window.db.get('tests', ctx.test.id);
     if (ctx.instrument) next.instrument = await window.db.get('instruments', ctx.instrument.id);
+    if (ctx.location)   next.location   = await window.db.get('locations',   ctx.location.id);
     return next;
   };
 
