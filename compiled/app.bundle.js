@@ -9361,6 +9361,7 @@ var ClientsPage = function (_a) {
         return __spreadArray([], clients, true).filter(function (c) { return !needle || [c.code, c.name, c.contactName, c.type].filter(Boolean).join(' ').toLowerCase().includes(needle); })
             .sort(function (a, b) { return (a.code || '').localeCompare(b.code || ''); });
     }, [clients, q]);
+    var pager = usePagination(filtered);
     var startNew = function () {
         if (!hasPermission('EDIT_LAB_CONFIG'))
             return;
@@ -9512,6 +9513,7 @@ var ClientsPage = function (_a) {
                         filtered.length,
                         " of ",
                         clients.length)),
+                filtered.length > 0 && React.createElement(TablePagination, __assign({}, pager, { pos: "top" })),
                 React.createElement("div", { style: { flex: 1, overflowY: 'auto' } }, filtered.length === 0 ? (React.createElement("div", { className: "empty", style: { padding: '40px 24px' } },
                     React.createElement("div", { className: "empty-title" }, clients.length === 0 ? 'No clients yet' : 'No clients match'),
                     React.createElement("div", { className: "empty-sub" }, clients.length === 0 ? 'Add a referring clinic. Orders will pin one at the time of entry.' : 'Adjust the search.'))) : (React.createElement("table", { className: "tbl" },
@@ -9525,7 +9527,7 @@ var ClientsPage = function (_a) {
                             React.createElement("th", null, "Contact"),
                             React.createElement("th", null, "Orders"),
                             React.createElement("th", { style: { width: 100 } }))),
-                    React.createElement("tbody", null, filtered.map(function (c) { return (React.createElement("tr", { key: c.id, style: { opacity: c.active === false ? 0.5 : 1, background: editingId === c.id ? 'var(--sage-50)' : undefined } },
+                    React.createElement("tbody", null, pager.slice.map(function (c) { return (React.createElement("tr", { key: c.id, style: { opacity: c.active === false ? 0.5 : 1, background: editingId === c.id ? 'var(--sage-50)' : undefined } },
                         React.createElement("td", { onClick: function () { return toggleActive(c); }, style: { cursor: canEditLabConfig ? 'pointer' : 'not-allowed' }, title: permissionTitle(canEditLabConfig, c.active === false ? 'Inactive - click to activate' : 'Active - click to deactivate', 'edit lab configuration') },
                             React.createElement("span", { className: "dot", "data-tone": c.active === false ? 'idle' : 'ok' })),
                         React.createElement("td", null,
@@ -9541,7 +9543,8 @@ var ClientsPage = function (_a) {
                         React.createElement("td", null,
                             React.createElement("div", { style: { display: 'flex', gap: 4 } },
                                 React.createElement("button", { className: "btn", "data-size": "xs", onClick: function () { return startEdit(c); }, disabled: !canEditLabConfig, title: permissionTitle(canEditLabConfig, 'Edit client', 'edit lab configuration') }, "Edit"),
-                                React.createElement("button", { className: "btn", "data-variant": "danger", "data-size": "xs", onClick: function () { return remove(c); }, disabled: !canEditLabConfig, title: permissionTitle(canEditLabConfig, 'Delete client', 'edit lab configuration') }, "Delete"))))); })))))),
+                                React.createElement("button", { className: "btn", "data-variant": "danger", "data-size": "xs", onClick: function () { return remove(c); }, disabled: !canEditLabConfig, title: permissionTitle(canEditLabConfig, 'Delete client', 'edit lab configuration') }, "Delete"))))); }))))),
+                filtered.length > 0 && React.createElement(TablePagination, __assign({}, pager))),
             draft && (React.createElement("div", { className: "panel", style: { display: 'flex', flexDirection: 'column', overflow: 'hidden' } },
                 React.createElement("div", { style: { padding: '10px 14px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 } },
                     React.createElement("span", { style: { fontSize: 12.5, fontWeight: 500 } }, editingId ? 'Edit client' : 'New client'),
@@ -9625,6 +9628,7 @@ var LocationsPage = function (_a) {
         return __spreadArray([], all, true).filter(function (l) { return !needle || [l.code, l.name, l.type, l.notes].filter(Boolean).join(' ').toLowerCase().includes(needle); })
             .sort(function (a, b) { return (a.code || '').localeCompare(b.code || ''); });
     }, [all, q]);
+    var pager = usePagination(filtered);
     var startNew = function () {
         if (!hasPermission('EDIT_LAB_CONFIG'))
             return;
@@ -9780,6 +9784,7 @@ var LocationsPage = function (_a) {
                         filtered.length,
                         " of ",
                         all.length)),
+                filtered.length > 0 && React.createElement(TablePagination, __assign({}, pager, { pos: "top" })),
                 React.createElement("div", { style: { flex: 1, overflowY: 'auto' } }, filtered.length === 0 ? (React.createElement("div", { className: "empty", style: { padding: '40px 24px' } },
                     React.createElement("div", { className: "empty-title" }, all.length === 0 ? 'No locations yet' : 'No locations match'),
                     React.createElement("div", { className: "empty-sub" }, all.length === 0 ? 'Create the lab and any draw stations or partner facilities.' : 'Adjust the search.'))) : (React.createElement("table", { className: "tbl" },
@@ -9792,7 +9797,7 @@ var LocationsPage = function (_a) {
                             React.createElement("th", null, "Departments"),
                             React.createElement("th", { style: { width: 80, textAlign: 'right' } }, "Orders"),
                             React.createElement("th", { style: { width: 100 } }))),
-                    React.createElement("tbody", null, filtered.map(function (l) { return (React.createElement("tr", { key: l.id, style: { opacity: l.active === false ? 0.5 : 1, background: editingId === l.id ? 'var(--sage-50)' : undefined } },
+                    React.createElement("tbody", null, pager.slice.map(function (l) { return (React.createElement("tr", { key: l.id, style: { opacity: l.active === false ? 0.5 : 1, background: editingId === l.id ? 'var(--sage-50)' : undefined } },
                         React.createElement("td", { onClick: function () { return toggleActive(l); }, style: { cursor: canEditLabConfig ? 'pointer' : 'not-allowed' }, title: permissionTitle(canEditLabConfig, l.active === false ? 'Inactive - click to activate' : 'Active - click to deactivate', 'edit lab configuration') },
                             React.createElement("span", { className: "dot", "data-tone": l.active === false ? 'idle' : 'ok' })),
                         React.createElement("td", null,
@@ -9812,7 +9817,8 @@ var LocationsPage = function (_a) {
                         React.createElement("td", null,
                             React.createElement("div", { style: { display: 'flex', gap: 4 } },
                                 React.createElement("button", { className: "btn", "data-size": "xs", onClick: function () { return startEdit(l); }, disabled: !canEditLabConfig, title: permissionTitle(canEditLabConfig, 'Edit location', 'edit lab configuration') }, "Edit"),
-                                React.createElement("button", { className: "btn", "data-variant": "danger", "data-size": "xs", onClick: function () { return remove(l); }, disabled: !canEditLabConfig, title: permissionTitle(canEditLabConfig, 'Delete location', 'edit lab configuration') }, "Delete"))))); })))))),
+                                React.createElement("button", { className: "btn", "data-variant": "danger", "data-size": "xs", onClick: function () { return remove(l); }, disabled: !canEditLabConfig, title: permissionTitle(canEditLabConfig, 'Delete location', 'edit lab configuration') }, "Delete"))))); }))))),
+                filtered.length > 0 && React.createElement(TablePagination, __assign({}, pager))),
             draft && (React.createElement("div", { className: "panel", style: { display: 'flex', flexDirection: 'column', overflow: 'hidden' } },
                 React.createElement("div", { style: { padding: '10px 14px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 } },
                     React.createElement("span", { style: { fontSize: 12.5, fontWeight: 500 } }, editingId ? 'Edit location' : 'New location'),
@@ -9947,6 +9953,7 @@ var LabelsPage = function (_a) {
         return __spreadArray([], all, true).filter(function (t) { return !needle || [t.code, t.name, t.specimenType, t.testCode].filter(Boolean).join(' ').toLowerCase().includes(needle); })
             .sort(function (a, b) { return (a.code || '').localeCompare(b.code || ''); });
     }, [all, q]);
+    var pager = usePagination(filtered);
     var startNew = function () {
         if (!hasPermission('EDIT_LABEL_TEMPLATES'))
             return;
@@ -10149,6 +10156,7 @@ var LabelsPage = function (_a) {
                         filtered.length,
                         " of ",
                         all.length)),
+                filtered.length > 0 && React.createElement(TablePagination, __assign({}, pager, { pos: "top" })),
                 React.createElement("div", { style: { flex: 1, overflowY: 'auto' } }, filtered.length === 0 ? (React.createElement("div", { className: "empty", style: { padding: '40px 24px' } },
                     React.createElement("div", { className: "empty-title" }, all.length === 0 ? 'No label templates yet' : 'No templates match'),
                     React.createElement("div", { className: "empty-sub" }, all.length === 0 ? 'Templates target a specimen type or test class. Most-specific match wins at print time.' : 'Adjust the search.'))) : (React.createElement("table", { className: "tbl" },
@@ -10162,7 +10170,7 @@ var LabelsPage = function (_a) {
                             React.createElement("th", { style: { width: 90 } }, "Size"),
                             React.createElement("th", null, "Printer"),
                             React.createElement("th", { style: { width: 130 } }))),
-                    React.createElement("tbody", null, filtered.map(function (t) { return (React.createElement("tr", { key: t.id, style: { opacity: t.active === false ? 0.5 : 1, background: editingId === t.id ? 'var(--sage-50)' : undefined } },
+                    React.createElement("tbody", null, pager.slice.map(function (t) { return (React.createElement("tr", { key: t.id, style: { opacity: t.active === false ? 0.5 : 1, background: editingId === t.id ? 'var(--sage-50)' : undefined } },
                         React.createElement("td", { onClick: function () { return toggleActive(t); }, style: { cursor: canEditLabelTemplates ? 'pointer' : 'not-allowed' }, title: permissionTitle(canEditLabelTemplates, t.active === false ? 'Inactive - click to activate' : 'Active - click to deactivate', 'edit label templates') },
                             React.createElement("span", { className: "dot", "data-tone": t.active === false ? 'idle' : 'ok' })),
                         React.createElement("td", null,
@@ -10183,7 +10191,8 @@ var LabelsPage = function (_a) {
                             React.createElement("div", { style: { display: 'flex', gap: 4 } },
                                 React.createElement("button", { className: "btn", "data-size": "xs", onClick: function () { return showPreview(t); } }, "Preview"),
                                 React.createElement("button", { className: "btn", "data-size": "xs", onClick: function () { return startEdit(t); }, disabled: !canEditLabelTemplates, title: permissionTitle(canEditLabelTemplates, 'Edit label template', 'edit label templates') }, "Edit"),
-                                React.createElement("button", { className: "btn", "data-variant": "danger", "data-size": "xs", onClick: function () { return remove(t); }, disabled: !canEditLabelTemplates, title: permissionTitle(canEditLabelTemplates, 'Delete label template', 'edit label templates') }, "Delete"))))); })))))),
+                                React.createElement("button", { className: "btn", "data-variant": "danger", "data-size": "xs", onClick: function () { return remove(t); }, disabled: !canEditLabelTemplates, title: permissionTitle(canEditLabelTemplates, 'Delete label template', 'edit label templates') }, "Delete"))))); }))))),
+                filtered.length > 0 && React.createElement(TablePagination, __assign({}, pager))),
             draft && (React.createElement("div", { className: "panel", style: { display: 'flex', flexDirection: 'column', overflow: 'hidden' } },
                 React.createElement("div", { style: { padding: '10px 14px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 } },
                     React.createElement("span", { style: { fontSize: 12.5, fontWeight: 500 } }, editingId ? 'Edit template' : 'New template'),
@@ -10390,6 +10399,7 @@ var MappersPage = function (_a) {
         return __spreadArray([], all, true).filter(function (m) { return !needle || (m.name + ' ' + (m.text || '')).toLowerCase().includes(needle); })
             .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
     }, [all, q]);
+    var pager = usePagination(filtered);
     var TEMPLATE = "# New mapper\nname      = Untitled Mapper\ndirection = inbound\nformat    = csv\nheader    = true\ndelimiter = ,\n\n# Map source columns to LIS entity fields:\npatient.mrn        = MRN\npatient.lastName   = LastName\npatient.firstName  = FirstName\n\norder.orderNumber  = OrderID\norder.testIds      = split(TestCodes, \";\")\norder.priority     = map(Priority, S=stat, R=routine)\n";
     var startNew = function () {
         if (!hasPermission('EDIT_INTERFACES'))
@@ -10538,9 +10548,10 @@ var MappersPage = function (_a) {
             React.createElement("div", { className: "panel", style: { display: 'flex', flexDirection: 'column', overflow: 'hidden' } },
                 React.createElement("div", { style: { padding: 10, borderBottom: '1px solid var(--line)' } },
                     React.createElement("input", { className: "input", placeholder: "Search\u2026", style: { height: 28 }, value: q, onChange: function (e) { return setQ(e.target.value); } })),
+                filtered.length > 0 && React.createElement(TablePagination, __assign({}, pager, { pos: "top" })),
                 React.createElement("div", { style: { flex: 1, overflowY: 'auto' } }, filtered.length === 0 ? (React.createElement("div", { className: "empty", style: { padding: '40px 24px' } },
                     React.createElement("div", { className: "empty-title" }, "No mappers"),
-                    React.createElement("div", { className: "empty-sub" }, "Click \"New mapper\" to start."))) : filtered.map(function (m) {
+                    React.createElement("div", { className: "empty-sub" }, "Click \"New mapper\" to start."))) : pager.slice.map(function (m) {
                     var meta = window.mappers.parse(m.text || '').meta;
                     var isSel = editingId === m.id;
                     return (React.createElement("button", { key: m.id, type: "button", onClick: function () { return startEdit(m); }, style: {
@@ -10558,7 +10569,8 @@ var MappersPage = function (_a) {
                             (meta && meta.format) || '—',
                             " \u00B7 ",
                             (meta && meta.direction) || '—')));
-                }))),
+                })),
+                filtered.length > 0 && React.createElement(TablePagination, __assign({}, pager))),
             draft ? (React.createElement("div", { className: "panel", style: { display: 'flex', flexDirection: 'column', overflow: 'hidden' } },
                 React.createElement("div", { style: { padding: '10px 14px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 } },
                     React.createElement("span", { style: { fontSize: 12.5, fontWeight: 500 } }, editingId ? 'Edit mapper' : 'New mapper'),
