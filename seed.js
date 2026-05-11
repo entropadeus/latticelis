@@ -609,6 +609,104 @@
       }
     }
 
+    // ── 11. HL7 partner presets ─────────────────────────────────────────
+    // A handful of recognizable EMR/LIS counterparties so the Partners admin
+    // page isn't empty out of the box. Each is inactive by default — the
+    // operator must flip `active` and set their own endpoint before any
+    // outbound traffic flows. Demo, not production: the wire transport is
+    // still the loopback stub from hl7-transport.js.
+    const PARTNER_PRESETS = [
+      {
+        code: 'athena',
+        name: 'Athena Health',
+        vendor: 'athena',
+        partnerApp: 'ATHENA',
+        partnerFacility: 'PRACTICE',
+        transport: 'http',
+        endpoint: 'https://api.platform.athenahealth.com/v1/{practiceid}/hl7',
+        inboundTypes: ['ORM^O01', 'ADT^A04', 'ADT^A08'],
+        outboundTypes: ['ORU^R01'],
+        ackMode: 'sync',
+        notes: 'Athena uses a REST + HL7 hybrid: orders arrive as ORM, results return as ORU via their HL7 gateway. Endpoint placeholder; configure per-practice ID.',
+      },
+      {
+        code: 'harvest',
+        name: 'Harvest LIS',
+        vendor: 'harvest',
+        partnerApp: 'HARVEST',
+        partnerFacility: 'LAB',
+        transport: 'mllp',
+        endpoint: '10.0.0.0:6661',
+        inboundTypes: ['ORM^O01', 'ORR^O02'],
+        outboundTypes: ['ORU^R01', 'ACK^R01'],
+        ackMode: 'sync',
+        notes: 'Reference-lab connection. MLLP over TLS; production endpoint must be set by IT before activation.',
+      },
+      {
+        code: 'epic',
+        name: 'Epic Beaker',
+        vendor: 'epic',
+        partnerApp: 'EPIC',
+        partnerFacility: 'BEAKER',
+        transport: 'mllp',
+        endpoint: '10.0.0.0:5550',
+        inboundTypes: ['ORM^O01', 'ADT^A04', 'ADT^A08', 'ADT^A31'],
+        outboundTypes: ['ORU^R01'],
+        ackMode: 'sync',
+        notes: 'Epic Beaker integration. Expect Z-segments for downstream routing; see partner quirks.',
+        quirks: { 'ZBR-1': 'beakerReceivingDept' },
+      },
+      {
+        code: 'cerner',
+        name: 'Cerner PathNet',
+        vendor: 'cerner',
+        partnerApp: 'PATHNET',
+        partnerFacility: 'HOSPITAL',
+        transport: 'mllp',
+        endpoint: '10.0.0.0:5551',
+        inboundTypes: ['ORM^O01', 'ADT^A04', 'ADT^A08'],
+        outboundTypes: ['ORU^R01'],
+        ackMode: 'sync',
+        notes: 'Cerner PathNet integration; OBX-3 expected as LOINC.',
+      },
+      {
+        code: 'generic',
+        name: 'Generic HL7 v2 partner',
+        vendor: 'generic',
+        partnerApp: '',
+        partnerFacility: '',
+        transport: 'loopback',
+        endpoint: '',
+        inboundTypes: ['ORM^O01'],
+        outboundTypes: ['ORU^R01'],
+        ackMode: 'sync',
+        notes: 'Catch-all fallback: any inbound with an MSH that does not match a more specific partner is routed here. Used by demos and by the HL7 Intake panel when no partner is explicitly chosen.',
+        active: true,
+      },
+    ];
+    const partnersOut = [];
+    for (const p of PARTNER_PRESETS) {
+      const rec = window.schema.newHl7Partner({
+        id: id('partner', p.code),
+        name: p.name,
+        vendor: p.vendor,
+        sendingApp: 'LATTICE',
+        sendingFacility: 'MAIN',
+        partnerApp: p.partnerApp,
+        partnerFacility: p.partnerFacility,
+        transport: p.transport,
+        endpoint: p.endpoint,
+        inboundTypes: p.inboundTypes,
+        outboundTypes: p.outboundTypes,
+        ackMode: p.ackMode,
+        quirks: p.quirks || {},
+        active: p.active === true,                 // default inactive except generic
+        notes: p.notes || '',
+      });
+      await window.db.put('hl7_partners', rec);
+      partnersOut.push(rec);
+    }
+
     return {
       patients: patients.length,
       clients: CLIENTS.length,
@@ -619,6 +717,7 @@
       specimens: specimensOut.length,
       results: resultsOut.length,
       qcResults: qcOut.length,
+      partners: partnersOut.length,
       notifications: criticalsUnacked.slice(0, 6).length,
       criticalsUnacked: criticalsUnacked.length,
       auditEventsWritten: auditSeq - 1,

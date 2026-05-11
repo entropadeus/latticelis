@@ -730,6 +730,8 @@ var NAV = [
             { kind: 'item', id: 'billing', label: 'Billing', icon: 'IconReports' },
             { kind: 'item', id: 'customization', label: 'Customization', icon: 'IconLabel', anyPermission: ['EDIT_LABEL_TEMPLATES', 'EDIT_LAB_CONFIG', 'EDIT_TEST_CATALOG'] },
             { kind: 'item', id: 'interfaces', label: 'Device Engine Setup', icon: 'IconInterface', permission: 'EDIT_INTERFACES' },
+            { kind: 'item', id: 'partners', label: 'HL7 Partners', icon: 'IconInterface', permission: 'EDIT_INTERFACES' },
+            { kind: 'item', id: 'hl7-messages', label: 'HL7 Message Log', icon: 'IconReports', permission: 'EDIT_INTERFACES' },
             { kind: 'item', id: 'insurance', label: 'Insurance', icon: 'IconShield' },
             { kind: 'item', id: 'tests', label: 'Order Choice Setup', icon: 'IconBeaker', permission: 'EDIT_TEST_CATALOG' },
             { kind: 'item', id: 'other-setup', label: 'Other Setup', icon: 'IconMap', anyPermission: ['EDIT_LAB_CONFIG', 'EDIT_INTERFACES'] },
@@ -8429,7 +8431,7 @@ var Hl7IntakePanel = function () {
         setParsed(out);
     };
     var ingest = function () { return __awaiter(void 0, void 0, void 0, function () {
-        var check, ask, freshCheck, patient, testIds, _loop_1, _i, _a, t, todayStart_1, allOrders, todayCount, order, e_2;
+        var check, ask, freshCheck, patient, testIds, _loop_1, _i, _a, t, todayStart_1, allOrders, todayCount, order, hl7MessageId, parsedHeader_1, partner, partners, cli, msgRec, e_2, e_3;
         return __generator(this, function (_b) {
             switch (_b.label) {
                 case 0:
@@ -8480,7 +8482,7 @@ var Hl7IntakePanel = function () {
                     setCommitting(true);
                     _b.label = 6;
                 case 6:
-                    _b.trys.push([6, 16, 17, 18]);
+                    _b.trys.push([6, 27, 28, 29]);
                     return [4, window.db.list('patients', function (p) { return p.mrn === parsed.patient.mrn; })];
                 case 7:
                     patient = (_b.sent())[0];
@@ -8554,17 +8556,76 @@ var Hl7IntakePanel = function () {
                         patient: patient,
                         viaInterface: 'hl7-orm-intake',
                     });
-                    setResult({ ok: true, orderId: order.id, orderNumber: order.orderNumber, patientMrn: patient.mrn, testCount: testIds.length });
-                    return [3, 18];
+                    hl7MessageId = null;
+                    _b.label = 16;
                 case 16:
-                    e_2 = _b.sent();
-                    console.error('[hl7-intake] ingest failed', e_2);
-                    setResult({ ok: false, error: e_2.message || String(e_2) });
-                    return [3, 18];
+                    _b.trys.push([16, 25, , 26]);
+                    parsedHeader_1 = window.hl7Mllp && window.hl7Mllp.parseHeader
+                        ? window.hl7Mllp.parseHeader(text) : null;
+                    partner = null;
+                    if (!parsedHeader_1) return [3, 18];
+                    return [4, window.db.list('hl7_partners', function (p) { return p.active !== false; })];
                 case 17:
+                    partners = _b.sent();
+                    partner = partners.find(function (p) {
+                        return (!p.partnerApp || p.partnerApp === parsedHeader_1.sendingApp) &&
+                            (!p.partnerFacility || p.partnerFacility === parsedHeader_1.sendingFacility);
+                    }) || null;
+                    _b.label = 18;
+                case 18:
+                    if (!(!partner && clientId)) return [3, 21];
+                    return [4, window.db.get('clients', clientId)];
+                case 19:
+                    cli = _b.sent();
+                    if (!(cli && cli.partnerId)) return [3, 21];
+                    return [4, window.db.get('hl7_partners', cli.partnerId)];
+                case 20:
+                    partner = _b.sent();
+                    _b.label = 21;
+                case 21:
+                    msgRec = window.schema.newHl7Message({
+                        direction: 'inbound',
+                        partnerId: partner ? partner.id : null,
+                        controlId: parsedHeader_1 ? parsedHeader_1.controlId : '',
+                        messageType: parsedHeader_1 ? parsedHeader_1.messageType : 'ORM^O01',
+                        sendingApp: parsedHeader_1 ? parsedHeader_1.sendingApp : '',
+                        sendingFacility: parsedHeader_1 ? parsedHeader_1.sendingFacility : '',
+                        receivingApp: parsedHeader_1 ? parsedHeader_1.receivingApp : 'LATTICE',
+                        receivingFacility: parsedHeader_1 ? parsedHeader_1.receivingFacility : 'MAIN',
+                        raw: text,
+                        status: 'accepted',
+                        attemptCount: 1,
+                        lastAttemptAt: Date.now(),
+                        ackCode: 'AA',
+                        orderId: order.id,
+                        patientId: patient.id,
+                    });
+                    return [4, window.db.put('hl7_messages', msgRec)];
+                case 22:
+                    _b.sent();
+                    hl7MessageId = msgRec.id;
+                    if (!partner) return [3, 24];
+                    return [4, window.db.put('hl7_partners', __assign(__assign({}, partner), { lastSeenAt: Date.now(), updatedAt: Date.now() }))];
+                case 23:
+                    _b.sent();
+                    _b.label = 24;
+                case 24: return [3, 26];
+                case 25:
+                    e_2 = _b.sent();
+                    console.warn('[hl7-intake] message log write failed', e_2);
+                    return [3, 26];
+                case 26:
+                    setResult({ ok: true, orderId: order.id, orderNumber: order.orderNumber, patientMrn: patient.mrn, testCount: testIds.length, hl7MessageId: hl7MessageId });
+                    return [3, 29];
+                case 27:
+                    e_3 = _b.sent();
+                    console.error('[hl7-intake] ingest failed', e_3);
+                    setResult({ ok: false, error: e_3.message || String(e_3) });
+                    return [3, 29];
+                case 28:
                     setCommitting(false);
                     return [7];
-                case 18: return [2];
+                case 29: return [2];
             }
         });
     }); };
@@ -8648,6 +8709,423 @@ var Hl7IntakePanel = function () {
                     "Failed: ",
                     result.error)))))))));
 };
+var PARTNER_TRANSPORTS = ['loopback', 'mllp', 'http', 'sftp'];
+var PARTNER_ACK_MODES = ['sync', 'async', 'none'];
+var PARTNER_TYPES = ['ORM^O01', 'ORU^R01', 'ADT^A04', 'ADT^A08', 'ADT^A31', 'ACK^R01', 'ORR^O02', 'QRY^A19'];
+var PartnerVendorPill = function (_a) {
+    var vendor = _a.vendor;
+    if (!vendor)
+        return React.createElement("span", { className: "pill", "data-tone": "ghost" }, "\u2014");
+    var TONE = { athena: 'info', harvest: 'sage', epic: 'amber', cerner: 'rust', generic: 'ghost' };
+    return React.createElement("span", { className: "pill", "data-tone": TONE[vendor] || 'ghost' }, vendor);
+};
+var PartnersPage = function (_a) {
+    var onBack = _a.onBack;
+    var partners = window.useEntities('hl7_partners');
+    var canEdit = hasPermission('EDIT_INTERFACES');
+    var _b = useStateOS(''), q = _b[0], setQ = _b[1];
+    var _c = useStateOS(null), editingId = _c[0], setEditingId = _c[1];
+    var _d = useStateOS(null), draft = _d[0], setDraft = _d[1];
+    var _e = useStateOS(null), savedFlash = _e[0], setSavedFlash = _e[1];
+    var filtered = useMemoOS(function () {
+        var needle = q.trim().toLowerCase();
+        return __spreadArray([], partners, true).filter(function (p) { return !needle || [p.name, p.vendor, p.partnerApp, p.partnerFacility, p.endpoint].filter(Boolean).join(' ').toLowerCase().includes(needle); })
+            .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+    }, [partners, q]);
+    var pager = usePagination(filtered);
+    var startNew = function () {
+        if (!canEdit)
+            return;
+        setEditingId(null);
+        setDraft(window.schema.newHl7Partner({ name: 'New partner', vendor: 'generic', active: false }));
+    };
+    var startEdit = function (p) { if (!canEdit)
+        return; setEditingId(p.id); setDraft(__assign({}, p)); };
+    var cancel = function () { setEditingId(null); setDraft(null); };
+    var save = function () { return __awaiter(void 0, void 0, void 0, function () {
+        var id, existing, next;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    if (!canEdit || !draft)
+                        return [2];
+                    id = draft.id;
+                    return [4, window.db.get('hl7_partners', id)];
+                case 1:
+                    existing = _a.sent();
+                    next = __assign(__assign(__assign({}, (existing || {})), draft), { updatedAt: Date.now() });
+                    if (!existing)
+                        next.createdAt = next.createdAt || Date.now();
+                    return [4, window.db.put('hl7_partners', next)];
+                case 2:
+                    _a.sent();
+                    setSavedFlash(next.id);
+                    setTimeout(function () { return setSavedFlash(null); }, 1200);
+                    cancel();
+                    return [2];
+            }
+        });
+    }); };
+    var remove = function (p) { return __awaiter(void 0, void 0, void 0, function () {
+        var ask;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    if (!canEdit)
+                        return [2];
+                    return [4, safetyConfirm({
+                            id: 'admin.partner.delete',
+                            tone: 'danger',
+                            title: 'Delete HL7 partner',
+                            message: 'This removes the partner record. Existing message log rows linked to this partner stay (with a null partnerId).',
+                            facts: [
+                                safetyFact('partner', p.name),
+                                safetyFact('vendor', p.vendor || '-'),
+                                safetyFact('transport', p.transport || '-'),
+                                safetyFact('active', p.active === false ? 'no' : 'yes'),
+                            ],
+                            entityType: 'hl7_partner',
+                            entityId: p.id,
+                            confirmLabel: 'Delete partner',
+                        })];
+                case 1:
+                    ask = _a.sent();
+                    if (!ask.confirmed)
+                        return [2];
+                    return [4, window.db.delete('hl7_partners', p.id)];
+                case 2:
+                    _a.sent();
+                    if (editingId === p.id)
+                        cancel();
+                    return [2];
+            }
+        });
+    }); };
+    var toggleActive = function (p) { return __awaiter(void 0, void 0, void 0, function () {
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    if (!canEdit)
+                        return [2];
+                    return [4, window.db.put('hl7_partners', __assign(__assign({}, p), { active: p.active === false, updatedAt: Date.now() }))];
+                case 1:
+                    _a.sent();
+                    return [2];
+            }
+        });
+    }); };
+    var sendTest = function (p) { return __awaiter(void 0, void 0, void 0, function () {
+        var ts, ctl, raw, out;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    if (!canEdit)
+                        return [2];
+                    if (!window.hl7Transport || !window.hl7)
+                        return [2];
+                    ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
+                    ctl = 'TEST' + ts;
+                    raw = [
+                        "MSH|^~\\&|".concat(p.sendingApp || 'LATTICE', "|").concat(p.sendingFacility || 'MAIN', "|").concat(p.partnerApp || '', "|").concat(p.partnerFacility || '', "|").concat(ts, "||ORU^R01|").concat(ctl, "|P|2.5"),
+                        'PID|1||TEST-MRN||Test^Patient||19700101|U',
+                        "OBR|1|TEST-ORD|TEST-FILLER|GLU^Glucose^L|R|".concat(ts),
+                        'OBX|1|NM|GLU^Glucose^L||95|mg/dL|70-99|N|||F',
+                    ].join('\r');
+                    return [4, window.hl7Transport.send(p.id, raw, { messageType: 'ORU^R01' })];
+                case 1:
+                    out = _a.sent();
+                    setSavedFlash(p.id + (out.ok ? ':ok' : ':fail'));
+                    setTimeout(function () { return setSavedFlash(null); }, 1500);
+                    return [2];
+            }
+        });
+    }); };
+    var setDraftField = function (key, value) { return setDraft(function (d) {
+        var _a;
+        return (__assign(__assign({}, d), (_a = {}, _a[key] = value, _a)));
+    }); };
+    var toggleType = function (which, t) {
+        setDraft(function (d) {
+            var _a;
+            var arr = Array.isArray(d[which]) ? __spreadArray([], d[which], true) : [];
+            var i = arr.indexOf(t);
+            if (i >= 0)
+                arr.splice(i, 1);
+            else
+                arr.push(t);
+            return __assign(__assign({}, d), (_a = {}, _a[which] = arr, _a));
+        });
+    };
+    return (React.createElement(Page, { label: "HL7 Partners" },
+        React.createElement(PageHeader, { title: "HL7 Partners", sub: "EMR / LIS counterparties \u2014 Athena, Harvest, Epic, Cerner, \u2026", actions: __spreadArray(__spreadArray([], (onBack ? [React.createElement("button", { key: "b", className: "btn", "data-size": "sm", "data-variant": "ghost", onClick: onBack },
+                    React.createElement(IconChevRight, { size: 13, style: { transform: 'rotate(180deg)' } }),
+                    " Admin")] : []), true), [
+                React.createElement("button", { key: "n", className: "btn", "data-size": "sm", "data-variant": "primary", onClick: startNew, disabled: !canEdit, title: permissionTitle(canEdit, 'Add HL7 partner', 'edit interfaces') },
+                    React.createElement(IconPlus, { size: 13 }),
+                    " Add partner"),
+            ], false) }),
+        React.createElement("div", { className: "panel", style: { marginBottom: 12, display: 'flex', flexDirection: 'column' } },
+            React.createElement("div", { style: { padding: '8px 12px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 } },
+                React.createElement("input", { className: "input", value: q, onChange: function (e) { return setQ(e.target.value); }, placeholder: "Search partners\u2026", style: { width: 260, height: 28 } }),
+                React.createElement("div", { style: { flex: 1 } }),
+                React.createElement("span", { style: { fontSize: 11.5, color: 'var(--ink-400)' } },
+                    filtered.length,
+                    " of ",
+                    partners.length)),
+            filtered.length > 0 && React.createElement(TablePagination, __assign({}, pager, { pos: "top" })),
+            React.createElement("div", { style: { flex: 1, overflowY: 'auto' } }, filtered.length === 0 ? (React.createElement(EmptyTable, { columns: ['Partner', 'Vendor', 'Sender ↔ Receiver', 'Transport', 'Endpoint', 'Last seen', 'Status'], message: "No partners configured", sub: "Run seed.demo() to populate presets (Athena, Harvest, Epic, Cerner, Generic) \u2014 or add one above." })) : (React.createElement("table", { className: "tbl" },
+                React.createElement("thead", null,
+                    React.createElement("tr", null,
+                        React.createElement("th", null, "Partner"),
+                        React.createElement("th", null, "Vendor"),
+                        React.createElement("th", null, "Sender \u2194 Receiver"),
+                        React.createElement("th", null, "Transport"),
+                        React.createElement("th", null, "Endpoint"),
+                        React.createElement("th", null, "Last seen"),
+                        React.createElement("th", null, "Status"),
+                        React.createElement("th", null))),
+                React.createElement("tbody", null, pager.slice.map(function (p) { return (React.createElement("tr", { key: p.id, style: { opacity: p.active === false ? 0.55 : 1, background: editingId === p.id ? 'var(--sage-50)' : undefined } },
+                    React.createElement("td", null,
+                        React.createElement("span", { style: { fontWeight: 500 } }, p.name || '—')),
+                    React.createElement("td", null,
+                        React.createElement(PartnerVendorPill, { vendor: p.vendor })),
+                    React.createElement("td", null,
+                        React.createElement("span", { className: "mono", style: { color: 'var(--ink-500)', fontSize: 11.5 } },
+                            (p.sendingApp || '?') + '|' + (p.sendingFacility || '?'),
+                            ' → ',
+                            (p.partnerApp || '?') + '|' + (p.partnerFacility || '?'))),
+                    React.createElement("td", null,
+                        React.createElement("span", { className: "pill", "data-tone": "ghost" }, p.transport || '—')),
+                    React.createElement("td", null,
+                        React.createElement("span", { className: "mono", style: { color: 'var(--ink-500)', fontSize: 11.5 } }, p.endpoint || '—')),
+                    React.createElement("td", null,
+                        React.createElement("span", { className: "mono", style: { color: 'var(--ink-400)', fontSize: 11.5 } }, formatDateTime(p.lastSeenAt))),
+                    React.createElement("td", null,
+                        React.createElement("span", { className: "pill", "data-tone": p.active === false ? 'ghost' : 'sage' }, p.active === false ? 'inactive' : 'active'),
+                        savedFlash === (p.id + ':ok') && React.createElement("span", { className: "pill", "data-tone": "sage", style: { marginLeft: 6 } }, "sent \u2713"),
+                        savedFlash === (p.id + ':fail') && React.createElement("span", { className: "pill", "data-tone": "rust", style: { marginLeft: 6 } }, "send failed")),
+                    React.createElement("td", { style: { textAlign: 'right', whiteSpace: 'nowrap' } },
+                        React.createElement("button", { className: "btn", "data-size": "xs", "data-variant": "ghost", onClick: function () { return sendTest(p); }, disabled: !canEdit || p.active === false, title: p.active === false ? 'Activate partner first' : 'Send a synthetic ORU^R01 to this partner' }, "Send test"),
+                        React.createElement("button", { className: "btn", "data-size": "xs", "data-variant": "ghost", onClick: function () { return toggleActive(p); }, disabled: !canEdit }, p.active === false ? 'Activate' : 'Deactivate'),
+                        React.createElement("button", { className: "btn", "data-size": "xs", "data-variant": "ghost", onClick: function () { return startEdit(p); }, disabled: !canEdit }, "Edit"),
+                        React.createElement("button", { className: "btn", "data-size": "xs", "data-variant": "ghost", onClick: function () { return remove(p); }, disabled: !canEdit }, "Delete")))); }))))),
+            filtered.length > 0 && React.createElement(TablePagination, __assign({}, pager))),
+        draft && (React.createElement("div", { className: "panel", style: { padding: 14, marginBottom: 12 } },
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 } },
+                React.createElement("span", { style: { fontSize: 13, fontWeight: 500 } }, editingId ? 'Edit partner' : 'New partner'),
+                React.createElement("div", { style: { flex: 1 } }),
+                React.createElement("button", { className: "btn", "data-size": "sm", "data-variant": "ghost", onClick: cancel }, "Cancel"),
+                React.createElement("button", { className: "btn", "data-size": "sm", "data-variant": "primary", onClick: save, disabled: !draft.name }, "Save")),
+            React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 } },
+                React.createElement("div", null,
+                    React.createElement("div", { className: "field-label" }, "Name"),
+                    React.createElement("input", { className: "input", value: draft.name || '', onChange: function (e) { return setDraftField('name', e.target.value); }, style: { width: '100%' } })),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "field-label" }, "Vendor"),
+                    React.createElement("select", { className: "input", value: draft.vendor || 'generic', onChange: function (e) { return setDraftField('vendor', e.target.value); }, style: { width: '100%' } }, ['athena', 'harvest', 'epic', 'cerner', 'generic'].map(function (v) { return React.createElement("option", { key: v, value: v }, v); }))),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "field-label" }, "Our sending app (MSH-3)"),
+                    React.createElement("input", { className: "input", value: draft.sendingApp || '', onChange: function (e) { return setDraftField('sendingApp', e.target.value); }, style: { width: '100%' } })),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "field-label" }, "Our sending facility (MSH-4)"),
+                    React.createElement("input", { className: "input", value: draft.sendingFacility || '', onChange: function (e) { return setDraftField('sendingFacility', e.target.value); }, style: { width: '100%' } })),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "field-label" }, "Partner app (their MSH-3 inbound; MSH-5 outbound)"),
+                    React.createElement("input", { className: "input", value: draft.partnerApp || '', onChange: function (e) { return setDraftField('partnerApp', e.target.value); }, style: { width: '100%' } })),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "field-label" }, "Partner facility (their MSH-4 inbound; MSH-6 outbound)"),
+                    React.createElement("input", { className: "input", value: draft.partnerFacility || '', onChange: function (e) { return setDraftField('partnerFacility', e.target.value); }, style: { width: '100%' } })),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "field-label" }, "Transport"),
+                    React.createElement("select", { className: "input", value: draft.transport || 'loopback', onChange: function (e) { return setDraftField('transport', e.target.value); }, style: { width: '100%' } }, PARTNER_TRANSPORTS.map(function (t) { return React.createElement("option", { key: t, value: t }, t); }))),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "field-label" }, "Endpoint (host:port, URL, path \u2014 opaque to facade)"),
+                    React.createElement("input", { className: "input", value: draft.endpoint || '', onChange: function (e) { return setDraftField('endpoint', e.target.value); }, style: { width: '100%' } })),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "field-label" }, "ACK mode"),
+                    React.createElement("select", { className: "input", value: draft.ackMode || 'sync', onChange: function (e) { return setDraftField('ackMode', e.target.value); }, style: { width: '100%' } }, PARTNER_ACK_MODES.map(function (t) { return React.createElement("option", { key: t, value: t }, t); }))),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "field-label" }, "Active"),
+                    React.createElement("label", { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--ink-700)' } },
+                        React.createElement("input", { type: "checkbox", checked: draft.active !== false, onChange: function (e) { return setDraftField('active', e.target.checked); } }),
+                        "Partner can send/receive messages")),
+                React.createElement("div", { style: { gridColumn: '1 / -1' } },
+                    React.createElement("div", { className: "field-label" }, "Inbound message types we accept"),
+                    React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, PARTNER_TYPES.map(function (t) {
+                        var on = (draft.inboundTypes || []).includes(t);
+                        return (React.createElement("button", { key: t, type: "button", onClick: function () { return toggleType('inboundTypes', t); }, className: "pill", "data-tone": on ? 'sage' : 'ghost', style: { height: 22, padding: '0 8px', cursor: 'pointer', border: '1px solid var(--line)' } },
+                            React.createElement("span", { className: "mono" }, t)));
+                    }))),
+                React.createElement("div", { style: { gridColumn: '1 / -1' } },
+                    React.createElement("div", { className: "field-label" }, "Outbound message types we send"),
+                    React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, PARTNER_TYPES.map(function (t) {
+                        var on = (draft.outboundTypes || []).includes(t);
+                        return (React.createElement("button", { key: t, type: "button", onClick: function () { return toggleType('outboundTypes', t); }, className: "pill", "data-tone": on ? 'sage' : 'ghost', style: { height: 22, padding: '0 8px', cursor: 'pointer', border: '1px solid var(--line)' } },
+                            React.createElement("span", { className: "mono" }, t)));
+                    }))),
+                React.createElement("div", { style: { gridColumn: '1 / -1' } },
+                    React.createElement("div", { className: "field-label" }, "Notes (operator-facing)"),
+                    React.createElement("textarea", { value: draft.notes || '', onChange: function (e) { return setDraftField('notes', e.target.value); }, rows: 2, style: { width: '100%', padding: 8, fontSize: 12.5, fontFamily: 'inherit', border: '1px solid var(--line)', borderRadius: 4, background: 'var(--ivory-50)', resize: 'vertical', outline: 'none' } })))))));
+};
+var MSG_DIRECTIONS = ['all', 'inbound', 'outbound'];
+var MSG_STATUSES_OUT = ['queued', 'sending', 'acked', 'nakked', 'timed-out', 'failed'];
+var MSG_STATUSES_IN = ['received', 'accepted', 'rejected', 'errored'];
+var MessageStatusPill = function (_a) {
+    var status = _a.status;
+    var tone = status === 'acked' || status === 'accepted' ? 'sage' :
+        status === 'queued' || status === 'sending' || status === 'received' ? 'info' :
+            status === 'nakked' || status === 'rejected' ? 'amber' :
+                status === 'failed' || status === 'errored' || status === 'timed-out' ? 'rust' : 'ghost';
+    return React.createElement("span", { className: "pill", "data-tone": tone }, status || '—');
+};
+var MessageLogPage = function (_a) {
+    var onBack = _a.onBack;
+    var messages = window.useEntities('hl7_messages');
+    var partners = window.useEntities('hl7_partners');
+    var canEdit = hasPermission('EDIT_INTERFACES');
+    var _b = useStateOS('all'), direction = _b[0], setDirection = _b[1];
+    var _c = useStateOS(''), statusFilter = _c[0], setStatusFilter = _c[1];
+    var _d = useStateOS(''), partnerFilter = _d[0], setPartnerFilter = _d[1];
+    var _e = useStateOS(''), q = _e[0], setQ = _e[1];
+    var _f = useStateOS(null), expandedId = _f[0], setExpandedId = _f[1];
+    var _g = useStateOS(null), resendFlash = _g[0], setResendFlash = _g[1];
+    var partnerById = useMemoOS(function () { return Object.fromEntries(partners.map(function (p) { return [p.id, p]; })); }, [partners]);
+    var filtered = useMemoOS(function () {
+        var needle = q.trim().toLowerCase();
+        return __spreadArray([], messages, true).filter(function (m) { return direction === 'all' ? true : m.direction === direction; })
+            .filter(function (m) { return !statusFilter || m.status === statusFilter; })
+            .filter(function (m) { return !partnerFilter || m.partnerId === partnerFilter; })
+            .filter(function (m) { return !needle || [m.controlId, m.messageType, m.sendingApp, m.sendingFacility, m.errorReason, m.raw].filter(Boolean).join(' ').toLowerCase().includes(needle); })
+            .sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+    }, [messages, direction, statusFilter, partnerFilter, q]);
+    var pager = usePagination(filtered);
+    var counts = useMemoOS(function () { return ({
+        inbound: messages.filter(function (m) { return m.direction === 'inbound'; }).length,
+        outbound: messages.filter(function (m) { return m.direction === 'outbound'; }).length,
+        acked: messages.filter(function (m) { return m.status === 'acked' || m.status === 'accepted'; }).length,
+        failed: messages.filter(function (m) { return ['failed', 'errored', 'nakked', 'rejected', 'timed-out'].includes(m.status); }).length,
+    }); }, [messages]);
+    var statusOptions = direction === 'inbound' ? MSG_STATUSES_IN
+        : direction === 'outbound' ? MSG_STATUSES_OUT
+            : __spreadArray(__spreadArray([], MSG_STATUSES_OUT, true), MSG_STATUSES_IN, true);
+    var resend = function (m) { return __awaiter(void 0, void 0, void 0, function () {
+        var out;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    if (!canEdit)
+                        return [2];
+                    if (m.direction !== 'outbound')
+                        return [2];
+                    if (!window.hl7Transport)
+                        return [2];
+                    return [4, window.hl7Transport.send(m.partnerId, m.raw, {
+                            messageType: m.messageType,
+                            orderId: m.orderId, resultId: m.resultId, patientId: m.patientId,
+                        })];
+                case 1:
+                    out = _a.sent();
+                    setResendFlash(m.id + ':' + (out.ok ? 'ok' : 'fail'));
+                    setTimeout(function () { return setResendFlash(null); }, 1500);
+                    return [2];
+            }
+        });
+    }); };
+    return (React.createElement(Page, { label: "HL7 Message Log" },
+        React.createElement(PageHeader, { title: "HL7 Message Log", sub: "Every HL7 message we sent or received \u2014 wire-level audit & replay.", actions: onBack ? [React.createElement("button", { key: "b", className: "btn", "data-size": "sm", "data-variant": "ghost", onClick: onBack },
+                    React.createElement(IconChevRight, { size: 13, style: { transform: 'rotate(180deg)' } }),
+                    " Admin")] : [] }),
+        React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 } },
+            React.createElement(KpiPanel, { label: "Inbound", value: counts.inbound }),
+            React.createElement(KpiPanel, { label: "Outbound", value: counts.outbound }),
+            React.createElement(KpiPanel, { label: "ACKed / Accepted", value: counts.acked }),
+            React.createElement(KpiPanel, { label: "Failed / NAKked", value: counts.failed, tone: counts.failed > 0 ? 'rust' : null })),
+        React.createElement("div", { className: "panel", style: { display: 'flex', flexDirection: 'column' } },
+            React.createElement("div", { style: { padding: '8px 12px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+                React.createElement("div", { style: { display: 'flex', gap: 4 } }, MSG_DIRECTIONS.map(function (d) { return (React.createElement("button", { key: d, className: "btn", "data-size": "xs", "data-variant": direction === d ? 'primary' : 'ghost', onClick: function () { setDirection(d); setStatusFilter(''); } }, d)); })),
+                React.createElement("select", { className: "input", value: statusFilter, onChange: function (e) { return setStatusFilter(e.target.value); }, style: { height: 28 } },
+                    React.createElement("option", { value: "" }, "All statuses"),
+                    statusOptions.map(function (s) { return React.createElement("option", { key: s, value: s }, s); })),
+                React.createElement("select", { className: "input", value: partnerFilter, onChange: function (e) { return setPartnerFilter(e.target.value); }, style: { height: 28 } },
+                    React.createElement("option", { value: "" }, "All partners"),
+                    partners.map(function (p) { return React.createElement("option", { key: p.id, value: p.id }, p.name); })),
+                React.createElement("input", { className: "input", value: q, onChange: function (e) { return setQ(e.target.value); }, placeholder: "Search control id / type / raw\u2026", style: { height: 28, flex: 1, minWidth: 220 } }),
+                React.createElement("span", { style: { fontSize: 11.5, color: 'var(--ink-400)' } },
+                    filtered.length,
+                    " of ",
+                    messages.length)),
+            filtered.length > 0 && React.createElement(TablePagination, __assign({}, pager, { pos: "top" })),
+            React.createElement("div", { style: { flex: 1, overflowY: 'auto', minHeight: 0 } }, filtered.length === 0 ? (React.createElement(EmptyTable, { columns: ['When', 'Direction', 'Partner', 'Type', 'Control ID', 'Status'], message: "No HL7 messages logged yet", sub: "Once a result releases (outbound ORU^R01) or you paste a message in the HL7 Intake panel (inbound ORM^O01), it shows here." })) : (React.createElement("table", { className: "tbl" },
+                React.createElement("thead", null,
+                    React.createElement("tr", null,
+                        React.createElement("th", null, "When"),
+                        React.createElement("th", null, "Dir"),
+                        React.createElement("th", null, "Partner"),
+                        React.createElement("th", null, "Type"),
+                        React.createElement("th", null, "Control ID"),
+                        React.createElement("th", null, "Status"),
+                        React.createElement("th", null, "ACK"),
+                        React.createElement("th", null))),
+                React.createElement("tbody", null, pager.slice.map(function (m) {
+                    var partner = partnerById[m.partnerId];
+                    var isExpanded = expandedId === m.id;
+                    return (React.createElement(React.Fragment, { key: m.id },
+                        React.createElement("tr", { onClick: function () { return setExpandedId(isExpanded ? null : m.id); }, style: { cursor: 'pointer', background: isExpanded ? 'var(--ivory-100)' : undefined } },
+                            React.createElement("td", null,
+                                React.createElement("span", { className: "mono", style: { fontSize: 11.5, color: 'var(--ink-500)' } }, formatDateTime(m.createdAt))),
+                            React.createElement("td", null,
+                                React.createElement("span", { className: "pill", "data-tone": m.direction === 'inbound' ? 'info' : 'ghost' }, m.direction === 'inbound' ? '↓ in' : '↑ out')),
+                            React.createElement("td", null, partner ? partner.name : React.createElement("span", { style: { color: 'var(--ink-400)' } }, "\u2014")),
+                            React.createElement("td", null,
+                                React.createElement("span", { className: "mono", style: { fontSize: 11.5 } }, m.messageType || '—')),
+                            React.createElement("td", null,
+                                React.createElement("span", { className: "mono", style: { fontSize: 11.5, color: 'var(--ink-500)' } }, m.controlId || '—')),
+                            React.createElement("td", null,
+                                React.createElement(MessageStatusPill, { status: m.status })),
+                            React.createElement("td", null, m.ackCode ? React.createElement("span", { className: "pill", "data-tone": m.ackCode === 'AA' ? 'sage' : 'rust' }, m.ackCode) : React.createElement("span", { style: { color: 'var(--ink-300)' } }, "\u2014")),
+                            React.createElement("td", { style: { textAlign: 'right', whiteSpace: 'nowrap' } }, m.direction === 'outbound' && ['failed', 'nakked', 'timed-out', 'errored'].includes(m.status) && (React.createElement("button", { className: "btn", "data-size": "xs", "data-variant": "ghost", onClick: function (e) { e.stopPropagation(); resend(m); }, disabled: !canEdit || !m.partnerId, title: !m.partnerId ? 'No partner — cannot re-send' : 'Re-queue through the same transport' }, resendFlash === (m.id + ':ok') ? 'Sent ✓' : resendFlash === (m.id + ':fail') ? 'Failed' : 'Re-send')))),
+                        isExpanded && (React.createElement("tr", null,
+                            React.createElement("td", { colSpan: 8, style: { background: 'var(--ivory-50)', padding: 12 } },
+                                React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 } },
+                                    React.createElement("div", null,
+                                        React.createElement("div", { className: "section-title", style: { fontSize: 10, marginBottom: 4 } }, "Routing"),
+                                        React.createElement("div", { style: { fontSize: 12, color: 'var(--ink-700)', display: 'grid', gridTemplateColumns: '90px 1fr', rowGap: 3 } },
+                                            React.createElement("span", { style: { color: 'var(--ink-400)' } }, "Sender"),
+                                            React.createElement("span", { className: "mono" }, (m.sendingApp || '—') + ' | ' + (m.sendingFacility || '—')),
+                                            React.createElement("span", { style: { color: 'var(--ink-400)' } }, "Receiver"),
+                                            React.createElement("span", { className: "mono" }, (m.receivingApp || '—') + ' | ' + (m.receivingFacility || '—')),
+                                            React.createElement("span", { style: { color: 'var(--ink-400)' } }, "Partner"),
+                                            React.createElement("span", null, partner ? partner.name : '(unassigned)'),
+                                            React.createElement("span", { style: { color: 'var(--ink-400)' } }, "Attempts"),
+                                            React.createElement("span", null, m.attemptCount || 0),
+                                            React.createElement("span", { style: { color: 'var(--ink-400)' } }, "Last attempt"),
+                                            React.createElement("span", { className: "mono" }, formatDateTime(m.lastAttemptAt)),
+                                            m.errorReason ? React.createElement(React.Fragment, null,
+                                                React.createElement("span", { style: { color: 'var(--ink-400)' } }, "Error"),
+                                                React.createElement("span", { style: { color: 'var(--err-700)' } }, m.errorReason)) : null)),
+                                    React.createElement("div", null,
+                                        React.createElement("div", { className: "section-title", style: { fontSize: 10, marginBottom: 4 } }, "Linked records"),
+                                        React.createElement("div", { style: { fontSize: 12, color: 'var(--ink-700)', display: 'grid', gridTemplateColumns: '90px 1fr', rowGap: 3 } },
+                                            React.createElement("span", { style: { color: 'var(--ink-400)' } }, "Order"),
+                                            React.createElement("span", { className: "mono" }, m.orderId || '—'),
+                                            React.createElement("span", { style: { color: 'var(--ink-400)' } }, "Result"),
+                                            React.createElement("span", { className: "mono" }, m.resultId || '—'),
+                                            React.createElement("span", { style: { color: 'var(--ink-400)' } }, "Patient"),
+                                            React.createElement("span", { className: "mono" }, m.patientId || '—'),
+                                            React.createElement("span", { style: { color: 'var(--ink-400)' } }, "ACK ctrl"),
+                                            React.createElement("span", { className: "mono" }, m.ackControlId || '—')))),
+                                React.createElement("div", { style: { marginTop: 12 } },
+                                    React.createElement("div", { className: "section-title", style: { fontSize: 10, marginBottom: 4 } }, "Raw HL7"),
+                                    React.createElement("pre", { style: {
+                                            margin: 0, padding: 10, background: '#fff',
+                                            border: '1px solid var(--line)', borderRadius: 4,
+                                            fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--ink-900)',
+                                            whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 220, overflowY: 'auto',
+                                        } }, m.raw || '(empty)')))))));
+                }))))),
+            filtered.length > 0 && React.createElement(TablePagination, __assign({}, pager)))));
+};
+Object.assign(window, { PartnersPage: PartnersPage, MessageLogPage: MessageLogPage });
 
 //# sourceURL=interop-pages.jsx
 
@@ -13824,6 +14302,8 @@ var App = function () {
             case 'worklists': return React.createElement(WorklistsPage, null);
             case 'instruments': return React.createElement(InstrumentsPage, { onBack: function () { return setActive('admin'); } });
             case 'interfaces': return React.createElement(InterfacesPage, { onBack: function () { return setActive('admin'); } });
+            case 'partners': return React.createElement(PartnersPage, { onBack: function () { return setActive('admin'); } });
+            case 'hl7-messages': return React.createElement(MessageLogPage, { onBack: function () { return setActive('admin'); } });
             case 'rules': return React.createElement(RulesEnginePage, { rules: rules, setRules: setRules, onBack: function () { return setActive('admin'); } });
             case 'reports': return React.createElement(ReportsPage, null);
             case 'admin': return React.createElement(AdminPage, { onNav: setActive });

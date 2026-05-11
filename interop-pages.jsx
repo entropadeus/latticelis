@@ -608,7 +608,52 @@ const Hl7IntakePanel = () => {
         entityType: 'order', entityId: order.id, order, patient,
         viaInterface: 'hl7-orm-intake',
       });
-      setResult({ ok: true, orderId: order.id, orderNumber: order.orderNumber, patientMrn: patient.mrn, testCount: testIds.length });
+      // Log the inbound message so the Message Log surfaces this intake.
+      // We resolve a partner by MSH (sendingApp/Facility) when possible; falls
+      // back to the client's partnerId. Either way the row links to the
+      // patient/order we created so the log can backlink.
+      let hl7MessageId = null;
+      try {
+        const parsedHeader = window.hl7Mllp && window.hl7Mllp.parseHeader
+          ? window.hl7Mllp.parseHeader(text) : null;
+        let partner = null;
+        if (parsedHeader) {
+          const partners = await window.db.list('hl7_partners', p => p.active !== false);
+          partner = partners.find(p =>
+            (!p.partnerApp || p.partnerApp === parsedHeader.sendingApp) &&
+            (!p.partnerFacility || p.partnerFacility === parsedHeader.sendingFacility)
+          ) || null;
+        }
+        if (!partner && clientId) {
+          const cli = await window.db.get('clients', clientId);
+          if (cli && cli.partnerId) partner = await window.db.get('hl7_partners', cli.partnerId);
+        }
+        const msgRec = window.schema.newHl7Message({
+          direction: 'inbound',
+          partnerId: partner ? partner.id : null,
+          controlId: parsedHeader ? parsedHeader.controlId : '',
+          messageType: parsedHeader ? parsedHeader.messageType : 'ORM^O01',
+          sendingApp:       parsedHeader ? parsedHeader.sendingApp : '',
+          sendingFacility:  parsedHeader ? parsedHeader.sendingFacility : '',
+          receivingApp:     parsedHeader ? parsedHeader.receivingApp : 'LATTICE',
+          receivingFacility: parsedHeader ? parsedHeader.receivingFacility : 'MAIN',
+          raw: text,
+          status: 'accepted',
+          attemptCount: 1,
+          lastAttemptAt: Date.now(),
+          ackCode: 'AA',
+          orderId: order.id,
+          patientId: patient.id,
+        });
+        await window.db.put('hl7_messages', msgRec);
+        hl7MessageId = msgRec.id;
+        if (partner) {
+          await window.db.put('hl7_partners', { ...partner, lastSeenAt: Date.now(), updatedAt: Date.now() });
+        }
+      } catch (e) {
+        console.warn('[hl7-intake] message log write failed', e);
+      }
+      setResult({ ok: true, orderId: order.id, orderNumber: order.orderNumber, patientMrn: patient.mrn, testCount: testIds.length, hl7MessageId });
     } catch (e) {
       console.error('[hl7-intake] ingest failed', e);
       setResult({ ok: false, error: e.message || String(e) });
@@ -728,7 +773,470 @@ const Hl7IntakePanel = () => {
   );
 };
 
-// ===== Reports = Activity Log =====
-// Repurposed: full audit-event timeline with filters. The "reports" sense
-// (operational/regulatory) lands later — for now this is the most useful
-// thing we can show given the audit data we collect.
+// ===== HL7 Partners — logical EMR/LIS counterparties =====
+//
+// One partner row per upstream organization (Athena tenant, Harvest reference
+// lab, Epic hospital, etc.). Distinct from the wire-level Interfaces page:
+// here you declare *who* you're exchanging messages with and what kind, not
+// *how* the bytes get there. The transport facade (hl7-transport.js) reads
+// these rows to route outbound messages and resolve inbound senders by MSH.
+const PARTNER_TRANSPORTS = ['loopback', 'mllp', 'http', 'sftp'];
+const PARTNER_ACK_MODES  = ['sync', 'async', 'none'];
+const PARTNER_TYPES = ['ORM^O01', 'ORU^R01', 'ADT^A04', 'ADT^A08', 'ADT^A31', 'ACK^R01', 'ORR^O02', 'QRY^A19'];
+
+const PartnerVendorPill = ({ vendor }) => {
+  if (!vendor) return <span className="pill" data-tone="ghost">—</span>;
+  const TONE = { athena: 'info', harvest: 'sage', epic: 'amber', cerner: 'rust', generic: 'ghost' };
+  return <span className="pill" data-tone={TONE[vendor] || 'ghost'}>{vendor}</span>;
+};
+
+const PartnersPage = ({ onBack }) => {
+  const partners = window.useEntities('hl7_partners');
+  const canEdit = hasPermission('EDIT_INTERFACES');
+  const [q, setQ] = useStateOS('');
+  const [editingId, setEditingId] = useStateOS(null);
+  const [draft, setDraft] = useStateOS(null);
+  const [savedFlash, setSavedFlash] = useStateOS(null);
+
+  const filtered = useMemoOS(() => {
+    const needle = q.trim().toLowerCase();
+    return [...partners]
+      .filter(p => !needle || [p.name, p.vendor, p.partnerApp, p.partnerFacility, p.endpoint].filter(Boolean).join(' ').toLowerCase().includes(needle))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [partners, q]);
+  const pager = usePagination(filtered);
+
+  const startNew = () => {
+    if (!canEdit) return;
+    setEditingId(null);
+    setDraft(window.schema.newHl7Partner({ name: 'New partner', vendor: 'generic', active: false }));
+  };
+  const startEdit = (p) => { if (!canEdit) return; setEditingId(p.id); setDraft({ ...p }); };
+  const cancel = () => { setEditingId(null); setDraft(null); };
+
+  const save = async () => {
+    if (!canEdit || !draft) return;
+    const id = draft.id;
+    const existing = await window.db.get('hl7_partners', id);
+    const next = { ...(existing || {}), ...draft, updatedAt: Date.now() };
+    if (!existing) next.createdAt = next.createdAt || Date.now();
+    await window.db.put('hl7_partners', next);
+    setSavedFlash(next.id);
+    setTimeout(() => setSavedFlash(null), 1200);
+    cancel();
+  };
+
+  const remove = async (p) => {
+    if (!canEdit) return;
+    const ask = await safetyConfirm({
+      id: 'admin.partner.delete',
+      tone: 'danger',
+      title: 'Delete HL7 partner',
+      message: 'This removes the partner record. Existing message log rows linked to this partner stay (with a null partnerId).',
+      facts: [
+        safetyFact('partner', p.name),
+        safetyFact('vendor', p.vendor || '-'),
+        safetyFact('transport', p.transport || '-'),
+        safetyFact('active', p.active === false ? 'no' : 'yes'),
+      ],
+      entityType: 'hl7_partner',
+      entityId: p.id,
+      confirmLabel: 'Delete partner',
+    });
+    if (!ask.confirmed) return;
+    await window.db.delete('hl7_partners', p.id);
+    if (editingId === p.id) cancel();
+  };
+
+  const toggleActive = async (p) => {
+    if (!canEdit) return;
+    await window.db.put('hl7_partners', { ...p, active: p.active === false, updatedAt: Date.now() });
+  };
+
+  const sendTest = async (p) => {
+    if (!canEdit) return;
+    if (!window.hl7Transport || !window.hl7) return;
+    // Minimal ORU^R01 with synthetic fields — enough to exercise the
+    // outbound path and produce a row in the Message Log. Real release
+    // events still drive the real path; this button only verifies wiring.
+    const ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
+    const ctl = 'TEST' + ts;
+    const raw = [
+      `MSH|^~\\&|${p.sendingApp || 'LATTICE'}|${p.sendingFacility || 'MAIN'}|${p.partnerApp || ''}|${p.partnerFacility || ''}|${ts}||ORU^R01|${ctl}|P|2.5`,
+      'PID|1||TEST-MRN||Test^Patient||19700101|U',
+      `OBR|1|TEST-ORD|TEST-FILLER|GLU^Glucose^L|R|${ts}`,
+      'OBX|1|NM|GLU^Glucose^L||95|mg/dL|70-99|N|||F',
+    ].join('\r');
+    const out = await window.hl7Transport.send(p.id, raw, { messageType: 'ORU^R01' });
+    setSavedFlash(p.id + (out.ok ? ':ok' : ':fail'));
+    setTimeout(() => setSavedFlash(null), 1500);
+  };
+
+  const setDraftField = (key, value) => setDraft(d => ({ ...d, [key]: value }));
+  const toggleType = (which, t) => {
+    setDraft(d => {
+      const arr = Array.isArray(d[which]) ? [...d[which]] : [];
+      const i = arr.indexOf(t);
+      if (i >= 0) arr.splice(i, 1); else arr.push(t);
+      return { ...d, [which]: arr };
+    });
+  };
+
+  return (
+    <Page label="HL7 Partners">
+      <PageHeader title="HL7 Partners" sub="EMR / LIS counterparties — Athena, Harvest, Epic, Cerner, …"
+        actions={[
+          ...(onBack ? [<button key="b" className="btn" data-size="sm" data-variant="ghost" onClick={onBack}><IconChevRight size={13} style={{ transform: 'rotate(180deg)' }}/> Admin</button>] : []),
+          <button key="n" className="btn" data-size="sm" data-variant="primary"
+            onClick={startNew} disabled={!canEdit}
+            title={permissionTitle(canEdit, 'Add HL7 partner', 'edit interfaces')}><IconPlus size={13}/> Add partner</button>,
+        ]}/>
+
+      <div className="panel" style={{ marginBottom: 12, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input className="input" value={q} onChange={e => setQ(e.target.value)} placeholder="Search partners…"
+            style={{ width: 260, height: 28 }}/>
+          <div style={{ flex: 1 }}/>
+          <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{filtered.length} of {partners.length}</span>
+        </div>
+        {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {filtered.length === 0 ? (
+            <EmptyTable
+              columns={['Partner', 'Vendor', 'Sender ↔ Receiver', 'Transport', 'Endpoint', 'Last seen', 'Status']}
+              message="No partners configured"
+              sub="Run seed.demo() to populate presets (Athena, Harvest, Epic, Cerner, Generic) — or add one above."/>
+          ) : (
+            <table className="tbl">
+              <thead><tr><th>Partner</th><th>Vendor</th><th>Sender ↔ Receiver</th><th>Transport</th><th>Endpoint</th><th>Last seen</th><th>Status</th><th></th></tr></thead>
+              <tbody>
+                {pager.slice.map(p => (
+                  <tr key={p.id} style={{ opacity: p.active === false ? 0.55 : 1, background: editingId === p.id ? 'var(--sage-50)' : undefined }}>
+                    <td><span style={{ fontWeight: 500 }}>{p.name || '—'}</span></td>
+                    <td><PartnerVendorPill vendor={p.vendor}/></td>
+                    <td>
+                      <span className="mono" style={{ color: 'var(--ink-500)', fontSize: 11.5 }}>
+                        {(p.sendingApp || '?') + '|' + (p.sendingFacility || '?')}
+                        {' → '}
+                        {(p.partnerApp || '?') + '|' + (p.partnerFacility || '?')}
+                      </span>
+                    </td>
+                    <td><span className="pill" data-tone="ghost">{p.transport || '—'}</span></td>
+                    <td><span className="mono" style={{ color: 'var(--ink-500)', fontSize: 11.5 }}>{p.endpoint || '—'}</span></td>
+                    <td><span className="mono" style={{ color: 'var(--ink-400)', fontSize: 11.5 }}>{formatDateTime(p.lastSeenAt)}</span></td>
+                    <td>
+                      <span className="pill" data-tone={p.active === false ? 'ghost' : 'sage'}>
+                        {p.active === false ? 'inactive' : 'active'}
+                      </span>
+                      {savedFlash === (p.id + ':ok') && <span className="pill" data-tone="sage" style={{ marginLeft: 6 }}>sent ✓</span>}
+                      {savedFlash === (p.id + ':fail') && <span className="pill" data-tone="rust" style={{ marginLeft: 6 }}>send failed</span>}
+                    </td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button className="btn" data-size="xs" data-variant="ghost" onClick={() => sendTest(p)}
+                        disabled={!canEdit || p.active === false}
+                        title={p.active === false ? 'Activate partner first' : 'Send a synthetic ORU^R01 to this partner'}>
+                        Send test
+                      </button>
+                      <button className="btn" data-size="xs" data-variant="ghost" onClick={() => toggleActive(p)}
+                        disabled={!canEdit}>{p.active === false ? 'Activate' : 'Deactivate'}</button>
+                      <button className="btn" data-size="xs" data-variant="ghost" onClick={() => startEdit(p)} disabled={!canEdit}>Edit</button>
+                      <button className="btn" data-size="xs" data-variant="ghost" onClick={() => remove(p)} disabled={!canEdit}>Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        {filtered.length > 0 && <TablePagination {...pager}/>}
+      </div>
+
+      {draft && (
+        <div className="panel" style={{ padding: 14, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 500 }}>{editingId ? 'Edit partner' : 'New partner'}</span>
+            <div style={{ flex: 1 }}/>
+            <button className="btn" data-size="sm" data-variant="ghost" onClick={cancel}>Cancel</button>
+            <button className="btn" data-size="sm" data-variant="primary" onClick={save} disabled={!draft.name}>Save</button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+            <div>
+              <div className="field-label">Name</div>
+              <input className="input" value={draft.name || ''} onChange={e => setDraftField('name', e.target.value)} style={{ width: '100%' }}/>
+            </div>
+            <div>
+              <div className="field-label">Vendor</div>
+              <select className="input" value={draft.vendor || 'generic'} onChange={e => setDraftField('vendor', e.target.value)} style={{ width: '100%' }}>
+                {['athena', 'harvest', 'epic', 'cerner', 'generic'].map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+            <div>
+              <div className="field-label">Our sending app (MSH-3)</div>
+              <input className="input" value={draft.sendingApp || ''} onChange={e => setDraftField('sendingApp', e.target.value)} style={{ width: '100%' }}/>
+            </div>
+            <div>
+              <div className="field-label">Our sending facility (MSH-4)</div>
+              <input className="input" value={draft.sendingFacility || ''} onChange={e => setDraftField('sendingFacility', e.target.value)} style={{ width: '100%' }}/>
+            </div>
+            <div>
+              <div className="field-label">Partner app (their MSH-3 inbound; MSH-5 outbound)</div>
+              <input className="input" value={draft.partnerApp || ''} onChange={e => setDraftField('partnerApp', e.target.value)} style={{ width: '100%' }}/>
+            </div>
+            <div>
+              <div className="field-label">Partner facility (their MSH-4 inbound; MSH-6 outbound)</div>
+              <input className="input" value={draft.partnerFacility || ''} onChange={e => setDraftField('partnerFacility', e.target.value)} style={{ width: '100%' }}/>
+            </div>
+            <div>
+              <div className="field-label">Transport</div>
+              <select className="input" value={draft.transport || 'loopback'} onChange={e => setDraftField('transport', e.target.value)} style={{ width: '100%' }}>
+                {PARTNER_TRANSPORTS.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <div className="field-label">Endpoint (host:port, URL, path — opaque to facade)</div>
+              <input className="input" value={draft.endpoint || ''} onChange={e => setDraftField('endpoint', e.target.value)} style={{ width: '100%' }}/>
+            </div>
+            <div>
+              <div className="field-label">ACK mode</div>
+              <select className="input" value={draft.ackMode || 'sync'} onChange={e => setDraftField('ackMode', e.target.value)} style={{ width: '100%' }}>
+                {PARTNER_ACK_MODES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <div className="field-label">Active</div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--ink-700)' }}>
+                <input type="checkbox" checked={draft.active !== false} onChange={e => setDraftField('active', e.target.checked)}/>
+                Partner can send/receive messages
+              </label>
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div className="field-label">Inbound message types we accept</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {PARTNER_TYPES.map(t => {
+                  const on = (draft.inboundTypes || []).includes(t);
+                  return (
+                    <button key={t} type="button"
+                      onClick={() => toggleType('inboundTypes', t)}
+                      className="pill" data-tone={on ? 'sage' : 'ghost'}
+                      style={{ height: 22, padding: '0 8px', cursor: 'pointer', border: '1px solid var(--line)' }}>
+                      <span className="mono">{t}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div className="field-label">Outbound message types we send</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {PARTNER_TYPES.map(t => {
+                  const on = (draft.outboundTypes || []).includes(t);
+                  return (
+                    <button key={t} type="button"
+                      onClick={() => toggleType('outboundTypes', t)}
+                      className="pill" data-tone={on ? 'sage' : 'ghost'}
+                      style={{ height: 22, padding: '0 8px', cursor: 'pointer', border: '1px solid var(--line)' }}>
+                      <span className="mono">{t}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div className="field-label">Notes (operator-facing)</div>
+              <textarea
+                value={draft.notes || ''} onChange={e => setDraftField('notes', e.target.value)}
+                rows={2}
+                style={{ width: '100%', padding: 8, fontSize: 12.5, fontFamily: 'inherit', border: '1px solid var(--line)', borderRadius: 4, background: 'var(--ivory-50)', resize: 'vertical', outline: 'none' }}/>
+            </div>
+          </div>
+        </div>
+      )}
+    </Page>
+  );
+};
+
+// ===== HL7 Message Log =====
+// Wire-level audit log: one row per message in or out. Lists newest first;
+// click a row to expand the raw payload + ACK details. Re-send is available
+// on failed outbound rows (re-queues through the same transport handler).
+const MSG_DIRECTIONS = ['all', 'inbound', 'outbound'];
+const MSG_STATUSES_OUT = ['queued', 'sending', 'acked', 'nakked', 'timed-out', 'failed'];
+const MSG_STATUSES_IN  = ['received', 'accepted', 'rejected', 'errored'];
+
+const MessageStatusPill = ({ status }) => {
+  const tone =
+    status === 'acked' || status === 'accepted' ? 'sage' :
+    status === 'queued' || status === 'sending' || status === 'received' ? 'info' :
+    status === 'nakked' || status === 'rejected' ? 'amber' :
+    status === 'failed' || status === 'errored' || status === 'timed-out' ? 'rust' : 'ghost';
+  return <span className="pill" data-tone={tone}>{status || '—'}</span>;
+};
+
+const MessageLogPage = ({ onBack }) => {
+  const messages = window.useEntities('hl7_messages');
+  const partners = window.useEntities('hl7_partners');
+  const canEdit = hasPermission('EDIT_INTERFACES');
+  const [direction, setDirection] = useStateOS('all');
+  const [statusFilter, setStatusFilter] = useStateOS('');
+  const [partnerFilter, setPartnerFilter] = useStateOS('');
+  const [q, setQ] = useStateOS('');
+  const [expandedId, setExpandedId] = useStateOS(null);
+  const [resendFlash, setResendFlash] = useStateOS(null);
+
+  const partnerById = useMemoOS(() => Object.fromEntries(partners.map(p => [p.id, p])), [partners]);
+
+  const filtered = useMemoOS(() => {
+    const needle = q.trim().toLowerCase();
+    return [...messages]
+      .filter(m => direction === 'all' ? true : m.direction === direction)
+      .filter(m => !statusFilter || m.status === statusFilter)
+      .filter(m => !partnerFilter || m.partnerId === partnerFilter)
+      .filter(m => !needle || [m.controlId, m.messageType, m.sendingApp, m.sendingFacility, m.errorReason, m.raw].filter(Boolean).join(' ').toLowerCase().includes(needle))
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }, [messages, direction, statusFilter, partnerFilter, q]);
+  const pager = usePagination(filtered);
+
+  const counts = useMemoOS(() => ({
+    inbound:  messages.filter(m => m.direction === 'inbound').length,
+    outbound: messages.filter(m => m.direction === 'outbound').length,
+    acked:    messages.filter(m => m.status === 'acked' || m.status === 'accepted').length,
+    failed:   messages.filter(m => ['failed', 'errored', 'nakked', 'rejected', 'timed-out'].includes(m.status)).length,
+  }), [messages]);
+
+  const statusOptions = direction === 'inbound' ? MSG_STATUSES_IN
+                      : direction === 'outbound' ? MSG_STATUSES_OUT
+                      : [...MSG_STATUSES_OUT, ...MSG_STATUSES_IN];
+
+  const resend = async (m) => {
+    if (!canEdit) return;
+    if (m.direction !== 'outbound') return;
+    if (!window.hl7Transport) return;
+    const out = await window.hl7Transport.send(m.partnerId, m.raw, {
+      messageType: m.messageType,
+      orderId: m.orderId, resultId: m.resultId, patientId: m.patientId,
+    });
+    setResendFlash(m.id + ':' + (out.ok ? 'ok' : 'fail'));
+    setTimeout(() => setResendFlash(null), 1500);
+  };
+
+  return (
+    <Page label="HL7 Message Log">
+      <PageHeader title="HL7 Message Log" sub="Every HL7 message we sent or received — wire-level audit & replay."
+        actions={onBack ? [<button key="b" className="btn" data-size="sm" data-variant="ghost" onClick={onBack}><IconChevRight size={13} style={{ transform: 'rotate(180deg)' }}/> Admin</button>] : []}/>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
+        <KpiPanel label="Inbound" value={counts.inbound}/>
+        <KpiPanel label="Outbound" value={counts.outbound}/>
+        <KpiPanel label="ACKed / Accepted" value={counts.acked}/>
+        <KpiPanel label="Failed / NAKked" value={counts.failed} tone={counts.failed > 0 ? 'rust' : null}/>
+      </div>
+
+      <div className="panel" style={{ display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {MSG_DIRECTIONS.map(d => (
+              <button key={d} className="btn" data-size="xs"
+                data-variant={direction === d ? 'primary' : 'ghost'}
+                onClick={() => { setDirection(d); setStatusFilter(''); }}>{d}</button>
+            ))}
+          </div>
+          <select className="input" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ height: 28 }}>
+            <option value="">All statuses</option>
+            {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <select className="input" value={partnerFilter} onChange={e => setPartnerFilter(e.target.value)} style={{ height: 28 }}>
+            <option value="">All partners</option>
+            {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <input className="input" value={q} onChange={e => setQ(e.target.value)} placeholder="Search control id / type / raw…"
+            style={{ height: 28, flex: 1, minWidth: 220 }}/>
+          <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{filtered.length} of {messages.length}</span>
+        </div>
+        {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
+        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+          {filtered.length === 0 ? (
+            <EmptyTable
+              columns={['When', 'Direction', 'Partner', 'Type', 'Control ID', 'Status']}
+              message="No HL7 messages logged yet"
+              sub="Once a result releases (outbound ORU^R01) or you paste a message in the HL7 Intake panel (inbound ORM^O01), it shows here."/>
+          ) : (
+            <table className="tbl">
+              <thead><tr><th>When</th><th>Dir</th><th>Partner</th><th>Type</th><th>Control ID</th><th>Status</th><th>ACK</th><th></th></tr></thead>
+              <tbody>
+                {pager.slice.map(m => {
+                  const partner = partnerById[m.partnerId];
+                  const isExpanded = expandedId === m.id;
+                  return (
+                    <React.Fragment key={m.id}>
+                      <tr onClick={() => setExpandedId(isExpanded ? null : m.id)} style={{ cursor: 'pointer', background: isExpanded ? 'var(--ivory-100)' : undefined }}>
+                        <td><span className="mono" style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>{formatDateTime(m.createdAt)}</span></td>
+                        <td><span className="pill" data-tone={m.direction === 'inbound' ? 'info' : 'ghost'}>{m.direction === 'inbound' ? '↓ in' : '↑ out'}</span></td>
+                        <td>{partner ? partner.name : <span style={{ color: 'var(--ink-400)' }}>—</span>}</td>
+                        <td><span className="mono" style={{ fontSize: 11.5 }}>{m.messageType || '—'}</span></td>
+                        <td><span className="mono" style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>{m.controlId || '—'}</span></td>
+                        <td><MessageStatusPill status={m.status}/></td>
+                        <td>{m.ackCode ? <span className="pill" data-tone={m.ackCode === 'AA' ? 'sage' : 'rust'}>{m.ackCode}</span> : <span style={{ color: 'var(--ink-300)' }}>—</span>}</td>
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          {m.direction === 'outbound' && ['failed', 'nakked', 'timed-out', 'errored'].includes(m.status) && (
+                            <button className="btn" data-size="xs" data-variant="ghost"
+                              onClick={e => { e.stopPropagation(); resend(m); }}
+                              disabled={!canEdit || !m.partnerId}
+                              title={!m.partnerId ? 'No partner — cannot re-send' : 'Re-queue through the same transport'}>
+                              {resendFlash === (m.id + ':ok') ? 'Sent ✓' : resendFlash === (m.id + ':fail') ? 'Failed' : 'Re-send'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={8} style={{ background: 'var(--ivory-50)', padding: 12 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                              <div>
+                                <div className="section-title" style={{ fontSize: 10, marginBottom: 4 }}>Routing</div>
+                                <div style={{ fontSize: 12, color: 'var(--ink-700)', display: 'grid', gridTemplateColumns: '90px 1fr', rowGap: 3 }}>
+                                  <span style={{ color: 'var(--ink-400)' }}>Sender</span><span className="mono">{(m.sendingApp || '—') + ' | ' + (m.sendingFacility || '—')}</span>
+                                  <span style={{ color: 'var(--ink-400)' }}>Receiver</span><span className="mono">{(m.receivingApp || '—') + ' | ' + (m.receivingFacility || '—')}</span>
+                                  <span style={{ color: 'var(--ink-400)' }}>Partner</span><span>{partner ? partner.name : '(unassigned)'}</span>
+                                  <span style={{ color: 'var(--ink-400)' }}>Attempts</span><span>{m.attemptCount || 0}</span>
+                                  <span style={{ color: 'var(--ink-400)' }}>Last attempt</span><span className="mono">{formatDateTime(m.lastAttemptAt)}</span>
+                                  {m.errorReason ? <><span style={{ color: 'var(--ink-400)' }}>Error</span><span style={{ color: 'var(--err-700)' }}>{m.errorReason}</span></> : null}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="section-title" style={{ fontSize: 10, marginBottom: 4 }}>Linked records</div>
+                                <div style={{ fontSize: 12, color: 'var(--ink-700)', display: 'grid', gridTemplateColumns: '90px 1fr', rowGap: 3 }}>
+                                  <span style={{ color: 'var(--ink-400)' }}>Order</span><span className="mono">{m.orderId || '—'}</span>
+                                  <span style={{ color: 'var(--ink-400)' }}>Result</span><span className="mono">{m.resultId || '—'}</span>
+                                  <span style={{ color: 'var(--ink-400)' }}>Patient</span><span className="mono">{m.patientId || '—'}</span>
+                                  <span style={{ color: 'var(--ink-400)' }}>ACK ctrl</span><span className="mono">{m.ackControlId || '—'}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ marginTop: 12 }}>
+                              <div className="section-title" style={{ fontSize: 10, marginBottom: 4 }}>Raw HL7</div>
+                              <pre style={{
+                                margin: 0, padding: 10, background: '#fff',
+                                border: '1px solid var(--line)', borderRadius: 4,
+                                fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--ink-900)',
+                                whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 220, overflowY: 'auto',
+                              }}>{m.raw || '(empty)'}</pre>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+        {filtered.length > 0 && <TablePagination {...pager}/>}
+      </div>
+    </Page>
+  );
+};
+
+// Expose for app.jsx routing.
+Object.assign(window, { PartnersPage, MessageLogPage });
+

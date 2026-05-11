@@ -145,6 +145,8 @@ const App = () => {
       case 'worklists':   return <WorklistsPage/>;
       case 'instruments': return <InstrumentsPage onBack={() => setActive('admin')}/>;
       case 'interfaces':  return <InterfacesPage onBack={() => setActive('admin')}/>;
+      case 'partners':    return <PartnersPage onBack={() => setActive('admin')}/>;
+      case 'hl7-messages': return <MessageLogPage onBack={() => setActive('admin')}/>;
       case 'rules':       return <RulesEnginePage rules={rules} setRules={setRules} onBack={() => setActive('admin')}/>;
       case 'reports':     return <ReportsPage/>;
       case 'admin':       return <AdminPage onNav={setActive}/>;

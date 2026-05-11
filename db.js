@@ -15,8 +15,9 @@
 // can be lifted later via BroadcastChannel without changing the adapter contract.
 
 const DB_NAME = 'lattice-lis';
-// Bumped to 6 to add the 'notifications' collection (history of toasts).
-const DB_VERSION = 8;
+// 8 added the 'notifications' collection. 9 adds hl7_partners + hl7_messages
+// for partner integrations (logical EMR counterparties) and the message log.
+const DB_VERSION = 9;
 const STORAGE_SCOPE = Object.freeze({
   mode: 'local-only',
   driver: 'indexeddb',
@@ -40,6 +41,16 @@ const COLLECTIONS = [
   // Label templates: per-specimen-type ZPL templates with field maps.
   // Drives label generation in `labels.build`.
   'label_templates',
+  // hl7_partners: logical EMR/LIS counterparties (Athena, Harvest, Epic, …)
+  // with profile config (sending/receiving app, ACK mode, transport hint,
+  // retry policy, per-partner quirks). Distinct from `interfaces` which are
+  // wire endpoints; a partner may use multiple interfaces (in + out).
+  'hl7_partners',
+  // hl7_messages: every HL7 message in or out — wire-level audit log.
+  // Inbound rows are written by the dispatcher (hl7-transport.receive);
+  // outbound rows are written by the sender (hl7-transport.send). The
+  // Message Log page reads this collection.
+  'hl7_messages',
 ];
 
 let __dbPromise = null;

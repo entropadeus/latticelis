@@ -75,6 +75,10 @@ const newOrder = (init = {}) => ({
   // order can override for stat-faxes, urgent-portal, etc.).
   deliveryChannel: init.deliveryChannel || '',     // ''|'fax'|'hl7'|'portal'|'email'|'print'|'manual'
   deliveryEndpoint: init.deliveryEndpoint || '',
+  // Per-order partner override (hl7Partners.id). Same precedence model as
+  // delivery channel: empty = inherit from client.partnerId, which in turn
+  // falls back to "any active partner that accepts ORU^R01".
+  partnerId: init.partnerId || null,
   orderedAt: __time(init.orderedAt, Date.now()),
   collectedAt: __time(init.collectedAt, null),
   receivedAt: __time(init.receivedAt, null),
@@ -115,6 +119,10 @@ const newClient = (init = {}) => ({
   // Result delivery preference — drives the outbound channel after release.
   deliveryChannel: init.deliveryChannel || 'fax',  // 'fax' | 'hl7' | 'portal' | 'email' | 'print'
   deliveryEndpoint: init.deliveryEndpoint || '',    // fax #, HL7 endpoint id, portal url, etc.
+  // hl7Partners.id — the EMR/LIS counterparty this client lives under (e.g.
+  // many clinics share one Athena tenant). Drives partner resolution for
+  // outbound HL7 in delivery-watcher and for inbound message routing.
+  partnerId: init.partnerId || null,
   // Billing
   billType: init.billType || 'CLIENT',     // 'CLIENT' | 'PATIENT' | 'INSURANCE' (override per order)
   active: init.active === undefined ? true : init.active,
@@ -310,6 +318,90 @@ const newInterface = (init = {}) => ({
   endpoint: init.endpoint || '',
   status: init.status || 'idle',
   lastSeenAt: init.lastSeenAt || null,
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+// hl7Partners — logical EMR/LIS counterparties (Athena, Harvest, Epic, …).
+// Distinct from `interfaces`: a partner is the *who* (sending app/facility,
+// message profile, ACK expectations); an interface is the *how* (the wire
+// listener — MLLP host:port, file drop, HTTP webhook). One partner may use
+// several interfaces (in + out). Real network transport is a Tier 6 concern;
+// `hl7-transport.js` keeps a pluggable handler per partner so a loopback
+// simulator works today and a real MLLP socket can register later without
+// changing call sites.
+const newHl7Partner = (init = {}) => ({
+  id: init.id || __id('partner'),
+  name: init.name || '',
+  vendor: init.vendor || '',                         // 'athena'|'harvest'|'epic'|'cerner'|'generic'
+  // MSH-3 (sending app) and MSH-4 (sending facility) for *outbound* messages
+  // we author. For *inbound* we match against partnerApp / partnerFacility.
+  sendingApp:       init.sendingApp       || 'LATTICE',
+  sendingFacility:  init.sendingFacility  || 'MAIN',
+  partnerApp:       init.partnerApp       || '',     // MSH-5 receiving app for outbound; MSH-3 sending app for inbound
+  partnerFacility:  init.partnerFacility  || '',     // MSH-6 receiving facility for outbound; MSH-4 sending facility for inbound
+  // Transport layer & wire address. `transport` is consumed by hl7-transport.js
+  // to choose a registered handler; `endpoint` is opaque to the facade
+  // (host:port, URL, path — whatever the handler interprets).
+  transport: init.transport || 'loopback',  // 'loopback'|'mllp'|'http'|'sftp'
+  endpoint:  init.endpoint  || '',
+  // Which message types we expect to exchange with this partner. Used by the
+  // dispatcher to NAK unknown types and by the UI to surface coverage gaps.
+  inboundTypes:  init.inboundTypes  || ['ORM^O01'],
+  outboundTypes: init.outboundTypes || ['ORU^R01'],
+  // ACK behavior. 'sync' = we wait for ACK on the same channel; 'async' = ACK
+  // arrives in a separate inbound; 'none' = fire-and-forget (still log).
+  ackMode: init.ackMode || 'sync',
+  // Retry policy for outbound deliveries that fail or time out.
+  retry: init.retry || { maxAttempts: 3, backoffSec: 60 },
+  // Per-partner field quirks (segment/field overrides). Free-form so a partner
+  // can declare e.g. `{ "OBR-2": "fillerOrderNumber" }` without a schema change.
+  quirks: init.quirks || {},
+  active:    init.active    !== false,
+  notes:     init.notes     || '',
+  lastSeenAt: init.lastSeenAt || null,
+  createdAt: init.createdAt || Date.now(),
+  updatedAt: Date.now(),
+});
+
+// hl7Messages — every HL7 message we send or receive, with status + ACK trail.
+// Universal audit & observability surface: one row per wire-level message
+// (not per logical event). Inbound: the parser + dispatcher writes a row on
+// receive, links it to the order/result it created. Outbound: the transport
+// writes a row when it queues, updates it on each send attempt, links the
+// ACK control id once one arrives. The Message Log UI reads this collection.
+const newHl7Message = (init = {}) => ({
+  id: init.id || __id('hl7msg'),
+  // Routing
+  direction: init.direction || 'outbound',          // 'inbound'|'outbound'
+  partnerId: init.partnerId || null,                // hl7Partners.id; null for ad-hoc Intake paste
+  interfaceId: init.interfaceId || null,            // interfaces.id if a wire interface handled it
+  // Identity from MSH
+  controlId: init.controlId || '',                  // MSH-10 (ours for outbound, theirs for inbound)
+  messageType: init.messageType || '',              // e.g. 'ORU^R01', 'ORM^O01', 'ACK^R01'
+  sendingApp:      init.sendingApp      || '',
+  sendingFacility: init.sendingFacility || '',
+  receivingApp:    init.receivingApp    || '',
+  receivingFacility: init.receivingFacility || '',
+  // Wire content. `raw` is the unframed HL7 (segments joined). `framed` is the
+  // MLLP-wrapped wire bytes if produced (outbound) or received (inbound).
+  raw: init.raw || '',
+  framed: init.framed || '',
+  // Lifecycle
+  status: init.status || 'queued',
+  // outbound: 'queued'|'sending'|'acked'|'nakked'|'timed-out'|'failed'
+  // inbound:  'received'|'parsed'|'accepted'|'rejected'|'errored'
+  attemptCount: init.attemptCount || 0,
+  lastAttemptAt: init.lastAttemptAt || null,
+  errorReason: init.errorReason || '',
+  // Linkage to ACK + domain records this message created or pertains to.
+  ackControlId: init.ackControlId || '',            // MSA-2 from the ACK
+  ackCode: init.ackCode || '',                      // 'AA'|'AE'|'AR'
+  ackMessageId: init.ackMessageId || null,          // hl7Messages.id of the corresponding ACK row
+  // Domain refs — populated by the dispatcher or the outbound builder.
+  orderId: init.orderId || null,
+  resultId: init.resultId || null,
+  patientId: init.patientId || null,
   createdAt: init.createdAt || Date.now(),
   updatedAt: Date.now(),
 });
@@ -639,6 +731,7 @@ window.schema = {
   newClient, newUser,
   newLocation, newLabelTemplate,
   newQcLevel, newQcResult, newQcRuleViolation,
+  newHl7Partner, newHl7Message,
   newLabConfig, LAB_CONFIG_ID,
   TAT_THRESHOLD_DEFAULTS, TAT_RECIPIENTS_DEFAULT, TAT_PRIORITY_KEYS,
   ROLES, ROLE_IDS, ROLE_BY_ID, PERMISSIONS,
