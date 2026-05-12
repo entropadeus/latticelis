@@ -751,7 +751,14 @@ const PatientOverview = ({ patient }) => {
         )}
       </div>
       <button className="btn" data-variant="primary" data-size="sm" style={{ marginTop: 12 }}
-        onClick={() => { window.closeEntity(); window.__navTo && window.__navTo('patients'); }}>
+        onClick={() => {
+          window.closeEntity();
+          // Prefer the preselect-aware hook so we land on this patient's
+          // detail pane directly. Fall back to a bare nav if app.jsx hasn't
+          // registered the hook yet (older bundle / mid-reload race).
+          if (window.openPatientInSearch) window.openPatientInSearch(patient.id);
+          else if (window.__navTo) window.__navTo('patients');
+        }}>
         Open in Patient Search
       </button>
     </div>

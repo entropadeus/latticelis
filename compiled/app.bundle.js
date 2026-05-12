@@ -1940,12 +1940,7 @@ var __flattenNav = tree => {
   return out;
 };
 var NAV_FLAT = __flattenNav(NAV);
-var ADMIN_DESTINATIONS = [{
-  id: 'admin',
-  label: 'Admin (legacy tile grid)',
-  icon: 'IconAdmin',
-  anyPermission: ['EDIT_USERS', 'EDIT_RULES', 'EDIT_LAB_CONFIG', 'EDIT_TEST_CATALOG', 'EDIT_INTERFACES', 'EDIT_LABEL_TEMPLATES', 'RESTORE_SNAPSHOT', 'RESOLVE_QC']
-}];
+var ADMIN_DESTINATIONS = [];
 var __navItemAllowed = item => {
   if (!item) return false;
   if (!window.userRoles || !window.currentUser) return true;
@@ -7396,7 +7391,7 @@ var NotificationToasts = () => {
     var isCriticalEsc = t.ctx && t.ctx.resultId && (t.msg || '').toUpperCase().includes('ESCALATION');
     return React.createElement("div", {
       key: t.id,
-      className: "panel slide-up",
+      className: "panel fade-in slide-up",
       style: {
         padding: '10px 12px',
         boxShadow: 'var(--shadow-pop)',
@@ -9114,7 +9109,7 @@ var PatientOverview = ({
     },
     onClick: () => {
       window.closeEntity();
-      window.__navTo && window.__navTo('patients');
+      if (window.openPatientInSearch) window.openPatientInSearch(patient.id);else if (window.__navTo) window.__navTo('patients');
     }
   }, "Open in Patient Search"));
 };
@@ -10013,13 +10008,13 @@ var SafetyConfirmHost = () => {
     ref: dialogRef,
     onMouseDown: e => e.stopPropagation(),
     onKeyDown: onKeyDown,
-    className: "scale-in",
+    className: "fade-in slide-up",
     style: {
       width: 480,
       maxWidth: 'min(480px, calc(100vw - 32px))',
       background: '#fff',
       border: '1px solid var(--line-strong)',
-      borderRadius: 8,
+      borderRadius: 24,
       boxShadow: 'var(--shadow-pop)',
       overflow: 'hidden'
     }
@@ -13862,7 +13857,10 @@ var DeliveryPill = ({
     title: r.deliveredTo ? `${status} → ${r.deliveredTo}` : status
   }, label);
 };
-var PatientsPage = () => {
+var PatientsPage = ({
+  initialPatientId,
+  onClearInitial
+}) => {
   var patients = window.useEntities('patients');
   var orders = window.useEntities('orders');
   var specimens = window.useEntities('specimens');
@@ -13871,7 +13869,13 @@ var PatientsPage = () => {
   var testById = useMemoOS(() => Object.fromEntries(tests.map(t => [t.id, t])), [tests]);
   var specimenById = useMemoOS(() => Object.fromEntries(specimens.map(s => [s.id, s])), [specimens]);
   var [q, setQ] = useStateOS('');
-  var [selectedId, setSelectedId] = useStateOS(null);
+  var [selectedId, setSelectedId] = useStateOS(initialPatientId || null);
+  useEffectOS(() => {
+    if (initialPatientId) {
+      setSelectedId(initialPatientId);
+      if (onClearInitial) onClearInitial();
+    }
+  }, [initialPatientId]);
   var matches = useMemoOS(() => {
     var needle = q.trim().toLowerCase();
     if (!needle) return patients.slice(0, 40);
@@ -21299,6 +21303,243 @@ window.UsersPage = UsersPage;
 
 
 // ---- admin-pages.jsx ----
+var useSnapshotActions = () => {
+  var canRestoreSnapshot = hasPermission('RESTORE_SNAPSHOT');
+  var [importPreview, setImportPreview] = useStateOS(null);
+  var [seeding, setSeeding] = useStateOS(false);
+  useEffectOS(() => {
+    window.__previewImport = async snap => {
+      if (!hasPermission('RESTORE_SNAPSHOT')) return;
+      try {
+        var diff = await window.db.diffSnapshot(snap);
+        setImportPreview({
+          snap,
+          diff,
+          fileName: '(programmatic)'
+        });
+      } catch (e) {
+        await safetyNotice({
+          tone: 'danger',
+          title: 'Restore blocked',
+          message: e.message
+        });
+      }
+    };
+    return () => {
+      delete window.__previewImport;
+    };
+  }, []);
+  var exportSnapshot = async () => {
+    var snap = await window.db.exportAll();
+    var json = JSON.stringify(snap, null, 2);
+    var ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    var blob = new Blob([json], {
+      type: 'application/json'
+    });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = `lattice-lis-${ts}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+  var importSnapshot = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = async () => {
+      if (!hasPermission('RESTORE_SNAPSHOT')) return;
+      var file = input.files && input.files[0];
+      if (!file) return;
+      var text = await file.text();
+      var snap;
+      try {
+        snap = JSON.parse(text);
+      } catch (e) {
+        await safetyNotice({
+          tone: 'danger',
+          title: 'Invalid JSON',
+          message: e.message
+        });
+        return;
+      }
+      try {
+        var diff = await window.db.diffSnapshot(snap);
+        setImportPreview({
+          snap,
+          diff,
+          fileName: file.name
+        });
+      } catch (e) {
+        await safetyNotice({
+          tone: 'danger',
+          title: 'Restore blocked',
+          message: e.message
+        });
+      }
+    };
+    input.click();
+  };
+  var confirmImport = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
+    if (!importPreview) return;
+    var totalAdded = Object.values(importPreview.diff.collections || {}).reduce((n, c) => n + (c.added || 0), 0);
+    var totalRemoved = Object.values(importPreview.diff.collections || {}).reduce((n, c) => n + (c.removed || 0), 0);
+    var totalModified = Object.values(importPreview.diff.collections || {}).reduce((n, c) => n + (c.modified || 0), 0);
+    var ask = await safetyConfirm({
+      id: 'admin.database.restore',
+      tone: 'danger',
+      title: 'Restore database',
+      message: 'This wipes the current browser database, re-checks the snapshot diff, then restores the selected file.',
+      facts: [safetyFact('file', importPreview.fileName), safetyFact('added', totalAdded), safetyFact('removed', totalRemoved), safetyFact('modified', totalModified), safetyFact('records', importPreview.diff.validation ? importPreview.diff.validation.totalRecords : '-'), safetyFact('bytes', importPreview.diff.validation ? importPreview.diff.validation.totalBytes : '-'), safetyFact('warnings', importPreview.diff.validation && importPreview.diff.validation.warnings.length ? importPreview.diff.validation.warnings.join('; ') : 'none'), safetyFact('snapshot version', importPreview.snap.version)],
+      requireTypedText: 'RESTORE',
+      entityType: 'database',
+      entityId: 'all',
+      confirmLabel: 'Restore database'
+    });
+    if (!ask.confirmed) return;
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
+    try {
+      var freshDiff = await window.db.diffSnapshot(importPreview.snap);
+      setImportPreview({
+        ...importPreview,
+        diff: freshDiff
+      });
+      var r = await window.db.importAll(importPreview.snap, {
+        allowVersionSkew: true
+      });
+      setImportPreview(null);
+      await safetyNotice({
+        tone: 'info',
+        title: 'Restore complete',
+        message: `Restored ${r.restored} records (${r.skipped} unknown collections skipped).`
+      });
+    } catch (e) {
+      await safetyNotice({
+        tone: 'danger',
+        title: 'Import failed',
+        message: e.message
+      });
+    }
+  };
+  var seedDemo = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
+    if (!window.seed) {
+      await safetyNotice({
+        tone: 'danger',
+        title: 'Seed unavailable',
+        message: 'Seed module not loaded.'
+      });
+      return;
+    }
+    var ask = await safetyConfirm({
+      id: 'admin.demo.seed',
+      tone: 'warning',
+      title: 'Seed demo data',
+      message: 'This clears prior __demo_ records, then generates realistic demo patients, orders, specimens, results, QC chains, and audit history. Non-demo data is left alone.',
+      facts: [safetyFact('scope', '__demo_ records only'), safetyFact('non-demo data', 'preserved')],
+      entityType: 'database',
+      entityId: 'demo',
+      confirmLabel: 'Seed demo'
+    });
+    if (!ask.confirmed) return;
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
+    setSeeding(true);
+    try {
+      var summary = await window.seed.demo();
+      await safetyNotice({
+        tone: 'info',
+        title: 'Demo data seeded',
+        message: Object.entries(summary).map(([k, v]) => k + ': ' + v).join(' | ')
+      });
+    } catch (e) {
+      console.error('[admin] seed failed', e);
+      await safetyNotice({
+        tone: 'danger',
+        title: 'Seed failed',
+        message: e.message
+      });
+    } finally {
+      setSeeding(false);
+    }
+  };
+  var clearDemo = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
+    if (!window.seed) {
+      await safetyNotice({
+        tone: 'danger',
+        title: 'Seed unavailable',
+        message: 'Seed module not loaded.'
+      });
+      return;
+    }
+    var ask = await safetyConfirm({
+      id: 'admin.demo.clear',
+      tone: 'danger',
+      title: 'Clear demo data',
+      message: 'This removes all records marked with the __demo_ prefix.',
+      facts: [safetyFact('scope', '__demo_ records')],
+      entityType: 'database',
+      entityId: 'demo',
+      confirmLabel: 'Clear demo'
+    });
+    if (!ask.confirmed) return;
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
+    var removed = await window.seed.clear();
+    await safetyNotice({
+      tone: 'info',
+      title: 'Demo data cleared',
+      message: 'Removed ' + removed + ' demo records.'
+    });
+  };
+  var actions = React.createElement("div", {
+    key: "snapshot-actions",
+    style: {
+      display: 'flex',
+      gap: 8
+    }
+  }, React.createElement("button", {
+    key: "seed",
+    className: "btn",
+    "data-size": "sm",
+    "data-variant": "primary",
+    onClick: seedDemo,
+    disabled: seeding || !canRestoreSnapshot,
+    title: permissionTitle(canRestoreSnapshot, 'Seed demo data', 'restore or reset data')
+  }, seeding ? 'Seeding…' : 'Seed demo'), React.createElement("button", {
+    key: "seedClr",
+    className: "btn",
+    "data-size": "sm",
+    onClick: clearDemo,
+    disabled: seeding || !canRestoreSnapshot,
+    title: permissionTitle(canRestoreSnapshot, 'Clear demo data', 'restore or reset data')
+  }, "Clear demo"), React.createElement("button", {
+    key: "exp",
+    className: "btn",
+    "data-size": "sm",
+    onClick: exportSnapshot
+  }, "Export local"), React.createElement("button", {
+    key: "imp",
+    className: "btn",
+    "data-size": "sm",
+    onClick: importSnapshot,
+    disabled: !canRestoreSnapshot,
+    title: permissionTitle(canRestoreSnapshot, 'Import local snapshot', 'restore or reset data')
+  }, "Import local"));
+  var modal = importPreview ? React.createElement(ImportPreviewModal, {
+    preview: importPreview,
+    canRestoreSnapshot: canRestoreSnapshot,
+    onConfirm: confirmImport,
+    onCancel: () => setImportPreview(null)
+  }) : null;
+  return {
+    actions,
+    modal
+  };
+};
 var AdminPage = ({
   onNav
 }) => {
@@ -21397,230 +21638,16 @@ var AdminPage = ({
     if (!window.userRoles || !window.currentUser) return true;
     return window.userRoles.userHasPermission(window.currentUser.id, t.permission);
   });
-  var canRestoreSnapshot = hasPermission('RESTORE_SNAPSHOT');
-  var exportSnapshot = async () => {
-    var snap = await window.db.exportAll();
-    var json = JSON.stringify(snap, null, 2);
-    var ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    var blob = new Blob([json], {
-      type: 'application/json'
-    });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = `lattice-lis-${ts}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
-  var [importPreview, setImportPreview] = useStateOS(null);
-  useEffectOS(() => {
-    window.__previewImport = async snap => {
-      if (!hasPermission('RESTORE_SNAPSHOT')) return;
-      try {
-        var diff = await window.db.diffSnapshot(snap);
-        setImportPreview({
-          snap,
-          diff,
-          fileName: '(programmatic)'
-        });
-      } catch (e) {
-        await safetyNotice({
-          tone: 'danger',
-          title: 'Restore blocked',
-          message: e.message
-        });
-      }
-    };
-    return () => {
-      delete window.__previewImport;
-    };
-  }, []);
-  var importSnapshot = async () => {
-    if (!hasPermission('RESTORE_SNAPSHOT')) return;
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json,application/json';
-    input.onchange = async () => {
-      if (!hasPermission('RESTORE_SNAPSHOT')) return;
-      var file = input.files && input.files[0];
-      if (!file) return;
-      var text = await file.text();
-      var snap;
-      try {
-        snap = JSON.parse(text);
-      } catch (e) {
-        await safetyNotice({
-          tone: 'danger',
-          title: 'Invalid JSON',
-          message: e.message
-        });
-        return;
-      }
-      try {
-        var diff = await window.db.diffSnapshot(snap);
-        setImportPreview({
-          snap,
-          diff,
-          fileName: file.name
-        });
-      } catch (e) {
-        await safetyNotice({
-          tone: 'danger',
-          title: 'Restore blocked',
-          message: e.message
-        });
-      }
-    };
-    input.click();
-  };
-  var confirmImport = async () => {
-    if (!hasPermission('RESTORE_SNAPSHOT')) return;
-    if (!importPreview) return;
-    var totalAdded = Object.values(importPreview.diff.collections || {}).reduce((n, c) => n + (c.added || 0), 0);
-    var totalRemoved = Object.values(importPreview.diff.collections || {}).reduce((n, c) => n + (c.removed || 0), 0);
-    var totalModified = Object.values(importPreview.diff.collections || {}).reduce((n, c) => n + (c.modified || 0), 0);
-    var ask = await safetyConfirm({
-      id: 'admin.database.restore',
-      tone: 'danger',
-      title: 'Restore database',
-      message: 'This wipes the current browser database, re-checks the snapshot diff, then restores the selected file.',
-      facts: [safetyFact('file', importPreview.fileName), safetyFact('added', totalAdded), safetyFact('removed', totalRemoved), safetyFact('modified', totalModified), safetyFact('records', importPreview.diff.validation ? importPreview.diff.validation.totalRecords : '-'), safetyFact('bytes', importPreview.diff.validation ? importPreview.diff.validation.totalBytes : '-'), safetyFact('warnings', importPreview.diff.validation && importPreview.diff.validation.warnings.length ? importPreview.diff.validation.warnings.join('; ') : 'none'), safetyFact('snapshot version', importPreview.snap.version)],
-      requireTypedText: 'RESTORE',
-      entityType: 'database',
-      entityId: 'all',
-      confirmLabel: 'Restore database'
-    });
-    if (!ask.confirmed) return;
-    if (!hasPermission('RESTORE_SNAPSHOT')) return;
-    try {
-      var freshDiff = await window.db.diffSnapshot(importPreview.snap);
-      setImportPreview({
-        ...importPreview,
-        diff: freshDiff
-      });
-      var r = await window.db.importAll(importPreview.snap, {
-        allowVersionSkew: true
-      });
-      setImportPreview(null);
-      await safetyNotice({
-        tone: 'info',
-        title: 'Restore complete',
-        message: `Restored ${r.restored} records (${r.skipped} unknown collections skipped).`
-      });
-    } catch (e) {
-      await safetyNotice({
-        tone: 'danger',
-        title: 'Import failed',
-        message: e.message
-      });
-    }
-  };
-  var [seeding, setSeeding] = useStateOS(false);
-  var seedDemo = async () => {
-    if (!hasPermission('RESTORE_SNAPSHOT')) return;
-    if (!window.seed) {
-      await safetyNotice({
-        tone: 'danger',
-        title: 'Seed unavailable',
-        message: 'Seed module not loaded.'
-      });
-      return;
-    }
-    var ask = await safetyConfirm({
-      id: 'admin.demo.seed',
-      tone: 'warning',
-      title: 'Seed demo data',
-      message: 'This clears prior __demo_ records, then generates realistic demo patients, orders, specimens, results, QC chains, and audit history. Non-demo data is left alone.',
-      facts: [safetyFact('scope', '__demo_ records only'), safetyFact('non-demo data', 'preserved')],
-      entityType: 'database',
-      entityId: 'demo',
-      confirmLabel: 'Seed demo'
-    });
-    if (!ask.confirmed) return;
-    if (!hasPermission('RESTORE_SNAPSHOT')) return;
-    setSeeding(true);
-    try {
-      var summary = await window.seed.demo();
-      await safetyNotice({
-        tone: 'info',
-        title: 'Demo data seeded',
-        message: Object.entries(summary).map(([k, v]) => k + ': ' + v).join(' | ')
-      });
-    } catch (e) {
-      console.error('[admin] seed failed', e);
-      await safetyNotice({
-        tone: 'danger',
-        title: 'Seed failed',
-        message: e.message
-      });
-    } finally {
-      setSeeding(false);
-    }
-  };
-  var clearDemo = async () => {
-    if (!hasPermission('RESTORE_SNAPSHOT')) return;
-    if (!window.seed) {
-      await safetyNotice({
-        tone: 'danger',
-        title: 'Seed unavailable',
-        message: 'Seed module not loaded.'
-      });
-      return;
-    }
-    var ask = await safetyConfirm({
-      id: 'admin.demo.clear',
-      tone: 'danger',
-      title: 'Clear demo data',
-      message: 'This removes all records marked with the __demo_ prefix.',
-      facts: [safetyFact('scope', '__demo_ records')],
-      entityType: 'database',
-      entityId: 'demo',
-      confirmLabel: 'Clear demo'
-    });
-    if (!ask.confirmed) return;
-    if (!hasPermission('RESTORE_SNAPSHOT')) return;
-    var removed = await window.seed.clear();
-    await safetyNotice({
-      tone: 'info',
-      title: 'Demo data cleared',
-      message: 'Removed ' + removed + ' demo records.'
-    });
-  };
+  var {
+    actions: snapshotActions,
+    modal: snapshotModal
+  } = useSnapshotActions();
   return React.createElement(Page, {
     label: "Admin"
   }, React.createElement(PageHeader, {
     title: "Admin",
     sub: "System configuration and governance.",
-    actions: [React.createElement("button", {
-      key: "seed",
-      className: "btn",
-      "data-size": "sm",
-      "data-variant": "primary",
-      onClick: seedDemo,
-      disabled: seeding || !canRestoreSnapshot,
-      title: permissionTitle(canRestoreSnapshot, 'Seed demo data', 'restore or reset data')
-    }, seeding ? 'Seeding…' : 'Seed demo'), React.createElement("button", {
-      key: "seedClr",
-      className: "btn",
-      "data-size": "sm",
-      onClick: clearDemo,
-      disabled: seeding || !canRestoreSnapshot,
-      title: permissionTitle(canRestoreSnapshot, 'Clear demo data', 'restore or reset data')
-    }, "Clear demo"), React.createElement("button", {
-      key: "exp",
-      className: "btn",
-      "data-size": "sm",
-      onClick: exportSnapshot
-    }, "Export local"), React.createElement("button", {
-      key: "imp",
-      className: "btn",
-      "data-size": "sm",
-      onClick: importSnapshot,
-      disabled: !canRestoreSnapshot,
-      title: permissionTitle(canRestoreSnapshot, 'Import local snapshot', 'restore or reset data')
-    }, "Import local")]
+    actions: [snapshotActions]
   }), React.createElement("div", {
     className: "panel",
     style: {
@@ -21744,12 +21771,7 @@ var AdminPage = ({
         color: 'var(--ink-300)'
       }
     }));
-  })), importPreview && React.createElement(ImportPreviewModal, {
-    preview: importPreview,
-    canRestoreSnapshot: canRestoreSnapshot,
-    onConfirm: confirmImport,
-    onCancel: () => setImportPreview(null)
-  }));
+  })), snapshotModal);
 };
 var ImportPreviewModal = ({
   preview,
@@ -22022,7 +22044,9 @@ Object.assign(window, {
   PageHeader,
   Page,
   EmptyTable,
-  TatPill
+  TatPill,
+  ImportPreviewModal,
+  useSnapshotActions
 });
 //# sourceURL=admin-pages.jsx
 
@@ -22037,7 +22061,9 @@ var OutreachBucketPage = ({
   sub,
   tiles,
   onNav,
-  label
+  label,
+  actions,
+  extra
 }) => {
   var visible = (tiles || []).filter(t => {
     if (!t.permission) return true;
@@ -22048,8 +22074,9 @@ var OutreachBucketPage = ({
     label: label || title
   }, React.createElement(PageHeader, {
     title: title,
-    sub: sub
-  }), visible.length === 0 ? React.createElement("div", {
+    sub: sub,
+    actions: actions
+  }), extra, visible.length === 0 ? React.createElement("div", {
     className: "panel",
     style: {
       padding: '56px 24px',
@@ -22293,16 +22320,9 @@ var SystemSetupPage = ({
 }) => React.createElement(OutreachBucketPage, {
   title: "System Setup",
   label: "System Setup",
-  sub: "Lab identity, snapshot management, audit retention.",
+  sub: "Lab identity, audit retention. (Snapshot tools moved to Manage.)",
   onNav: onNav,
-  tiles: [{
-    id: 'admin',
-    label: 'Snapshot & Migration',
-    desc: 'Export, import, reset the local database',
-    icon: 'IconShield',
-    go: 'admin',
-    permission: 'RESTORE_SNAPSHOT'
-  }]
+  tiles: []
 });
 var BillingPage = ({
   onNav
@@ -22402,27 +22422,35 @@ var ToxicologyPage = ({
 });
 var ManagePage = ({
   onNav
-}) => React.createElement(OutreachBucketPage, {
-  title: "Manage",
-  label: "Manage",
-  sub: "Operational oversight \u2014 quality control, re-routes, recollects.",
-  onNav: onNav,
-  tiles: [{
-    id: 'qc',
-    label: 'QC (Westgard)',
-    desc: 'Control levels, runs, rule violations',
-    icon: 'IconBeaker',
-    go: 'qc',
-    permission: 'RESOLVE_QC'
-  }, {
-    id: 'instruments',
-    label: 'Instruments',
-    desc: 'Connected devices, simulator controls',
-    icon: 'IconInstrument',
-    go: 'instruments',
-    permission: 'EDIT_INTERFACES'
-  }]
-});
+}) => {
+  var snap = window.useSnapshotActions ? window.useSnapshotActions() : {
+    actions: null,
+    modal: null
+  };
+  return React.createElement(OutreachBucketPage, {
+    title: "Manage",
+    label: "Manage",
+    sub: "Operational oversight \u2014 quality control, re-routes, recollects, snapshot management.",
+    onNav: onNav,
+    actions: snap.actions ? [snap.actions] : null,
+    extra: snap.modal,
+    tiles: [{
+      id: 'qc',
+      label: 'QC (Westgard)',
+      desc: 'Control levels, runs, rule violations',
+      icon: 'IconBeaker',
+      go: 'qc',
+      permission: 'RESOLVE_QC'
+    }, {
+      id: 'instruments',
+      label: 'Instruments',
+      desc: 'Connected devices, simulator controls',
+      icon: 'IconInstrument',
+      go: 'instruments',
+      permission: 'EDIT_INTERFACES'
+    }]
+  });
+};
 var MonitorPage = ({
   onNav
 }) => React.createElement(OutreachBucketPage, {
@@ -23766,6 +23794,7 @@ var App = () => {
   var [cmdOpen, setCmdOpen] = useStateApp(false);
   var [newOrderOpen, setNewOrderOpen] = useStateApp(false);
   var [ordersFilterClientId, setOrdersFilterClientId] = useStateApp(null);
+  var [patientsInitialId, setPatientsInitialId] = useStateApp(null);
   var [tweaks, setTweak] = window.useTweaks(TWEAK_DEFAULTS);
   useEffectApp(() => {
     window.openNewOrder = () => {
@@ -23793,6 +23822,18 @@ var App = () => {
   }, []);
   useEffectApp(() => {
     if (active !== 'orders' && ordersFilterClientId) setOrdersFilterClientId(null);
+  }, [active]);
+  useEffectApp(() => {
+    window.openPatientInSearch = patientId => {
+      setPatientsInitialId(patientId || null);
+      setActive('patients');
+    };
+    return () => {
+      delete window.openPatientInSearch;
+    };
+  }, []);
+  useEffectApp(() => {
+    if (active !== 'patients' && patientsInitialId) setPatientsInitialId(null);
   }, [active]);
   var rules = window.useEntities('rules');
   useEffectApp(() => {
@@ -23849,62 +23890,65 @@ var App = () => {
       case 'results':
         return React.createElement(ResultsPage, null);
       case 'patients':
-        return React.createElement(PatientsPage, null);
+        return React.createElement(PatientsPage, {
+          initialPatientId: patientsInitialId,
+          onClearInitial: () => setPatientsInitialId(null)
+        });
       case 'accession':
         return React.createElement(AccessioningPage, null);
       case 'worklists':
         return React.createElement(WorklistsPage, null);
       case 'instruments':
         return React.createElement(InstrumentsPage, {
-          onBack: () => setActive('admin')
+          onBack: () => setActive('manage')
         });
       case 'interfaces':
         return React.createElement(InterfacesPage, {
-          onBack: () => setActive('admin')
+          onBack: () => setActive('manage')
         });
       case 'rules':
         return React.createElement(RulesEnginePage, {
           rules: rules,
           setRules: setRules,
-          onBack: () => setActive('admin')
+          onBack: () => setActive('manage')
         });
       case 'reports':
         return React.createElement(ReportsPage, null);
       case 'admin':
-        return React.createElement(AdminPage, {
+        return React.createElement(window.ManagePage, {
           onNav: setActive
         });
       case 'tests':
         return React.createElement(TestCatalogPage, {
-          onBack: () => setActive('admin')
+          onBack: () => setActive('manage')
         });
       case 'clients':
         return React.createElement(ClientsPage, {
-          onBack: () => setActive('admin')
+          onBack: () => setActive('manage')
         });
       case 'locations':
         return React.createElement(LocationsPage, {
-          onBack: () => setActive('admin')
+          onBack: () => setActive('manage')
         });
       case 'labels':
         return React.createElement(LabelsPage, {
-          onBack: () => setActive('admin')
+          onBack: () => setActive('manage')
         });
       case 'mappers':
         return React.createElement(MappersPage, {
-          onBack: () => setActive('admin')
+          onBack: () => setActive('manage')
         });
       case 'qc':
         return React.createElement(QcPage, {
-          onBack: () => setActive('admin')
+          onBack: () => setActive('manage')
         });
       case 'notifications':
         return React.createElement(NotificationsPage, {
-          onBack: () => setActive('admin')
+          onBack: () => setActive('manage')
         });
       case 'users':
         return React.createElement(UsersPage, {
-          onBack: () => setActive('admin')
+          onBack: () => setActive('manage')
         });
       case 'this-location':
         return React.createElement(window.ThisLocationPage, {
@@ -23955,7 +23999,7 @@ var App = () => {
       default:
         return React.createElement(DashboardPage, null);
     }
-  }, [active, rules, ordersFilterClientId, authedUser && authedUser.id]);
+  }, [active, rules, ordersFilterClientId, patientsInitialId, authedUser && authedUser.id]);
   if (!authedUser && window.LoginPage) {
     return React.createElement(window.LoginPage, {
       onSuccess: () => bumpAuth(t => t + 1)
