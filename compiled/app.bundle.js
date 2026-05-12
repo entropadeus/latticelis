@@ -6044,7 +6044,7 @@ var NewOrderDrawer = ({
         diagnosisCodes: diagnosisCodes.split(',').map(s => s.trim()).filter(Boolean),
         notes: notes.trim(),
         deliveryChannel: deliveryChannel || '',
-        deliveryEndpoint: deliveryEndpoint.trim() || ''
+        deliveryEndpoint: (deliveryChannel && window.schema && window.schema.validateDeliveryEndpoint ? window.schema.validateDeliveryEndpoint(deliveryChannel, deliveryEndpoint).normalized : deliveryEndpoint.trim()) || ''
       });
       await window.db.put('orders', order);
       window.events.publish(window.EVENTS.ORDER_CREATED, {
@@ -6322,42 +6322,13 @@ var NewOrderDrawer = ({
     placeholder: "Optional"
   })), React.createElement(FieldRow, {
     label: "Delivery override"
-  }, React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 6
-    }
-  }, React.createElement("select", {
-    className: "input",
-    value: deliveryChannel,
-    onChange: e => setDeliveryChannel(e.target.value),
-    style: {
-      maxWidth: 140
-    }
-  }, React.createElement("option", {
-    value: ""
-  }, "\u2014 inherit from client \u2014"), React.createElement("option", {
-    value: "fax"
-  }, "Fax"), React.createElement("option", {
-    value: "hl7"
-  }, "HL7"), React.createElement("option", {
-    value: "portal"
-  }, "Portal"), React.createElement("option", {
-    value: "email"
-  }, "Email"), React.createElement("option", {
-    value: "print"
-  }, "Print"), React.createElement("option", {
-    value: "manual"
-  }, "Manual")), React.createElement("input", {
-    className: "input mono",
-    value: deliveryEndpoint,
-    onChange: e => setDeliveryEndpoint(e.target.value),
-    placeholder: deliveryChannel ? 'Endpoint (fax #, URL, …)' : 'Inherits client endpoint',
-    disabled: !deliveryChannel,
-    style: {
-      flex: 1
-    }
-  })))), error && React.createElement("div", {
+  }, React.createElement(window.DeliveryChannelPicker, {
+    channel: deliveryChannel,
+    endpoint: deliveryEndpoint,
+    onChannelChange: setDeliveryChannel,
+    onEndpointChange: setDeliveryEndpoint,
+    allowInherit: true
+  }))), error && React.createElement("div", {
     style: {
       padding: '8px 12px',
       borderRadius: 5,
@@ -6615,39 +6586,25 @@ var NewClientFields = ({
   value: "PHYSICIAN_OFFICE"
 }, "Physician office"), React.createElement("option", {
   value: "OTHER"
-}, "Other"))), React.createElement(Labeled, {
-  label: "Delivery channel"
-}, React.createElement("select", {
-  className: "input",
-  value: draft.deliveryChannel,
-  onChange: e => setDraft(d => ({
-    ...d,
-    deliveryChannel: e.target.value
-  }))
-}, React.createElement("option", {
-  value: "fax"
-}, "Fax"), React.createElement("option", {
-  value: "hl7"
-}, "HL7"), React.createElement("option", {
-  value: "portal"
-}, "Portal"), React.createElement("option", {
-  value: "email"
-}, "Email"), React.createElement("option", {
-  value: "print"
-}, "Print/Courier")))), React.createElement("div", {
+}, "Other")))), React.createElement("div", {
   style: {
     marginTop: 8
   }
 }, React.createElement(Labeled, {
-  label: "Delivery endpoint"
-}, React.createElement("input", {
-  className: "input mono",
-  value: draft.deliveryEndpoint,
-  placeholder: "fax #, HL7 endpoint id, portal URL\u2026",
-  onChange: e => setDraft(d => ({
+  label: "Delivery"
+}, React.createElement(window.DeliveryChannelPicker, {
+  channel: draft.deliveryChannel,
+  endpoint: draft.deliveryEndpoint,
+  onChannelChange: v => setDraft(d => ({
     ...d,
-    deliveryEndpoint: e.target.value
-  }))
+    deliveryChannel: v
+  })),
+  onEndpointChange: v => setDraft(d => ({
+    ...d,
+    deliveryEndpoint: v
+  })),
+  layout: "stacked",
+  showHint: false
 }))));
 var PatientChip = ({
   patient,
@@ -8022,17 +7979,21 @@ var ClientOverview = ({
       }, client.fax || '—')
     }, {
       l: 'Delivery',
-      v: client.deliveryChannel ? React.createElement(React.Fragment, null, React.createElement("span", {
-        className: "pill",
-        "data-tone": "info"
-      }, client.deliveryChannel), client.deliveryEndpoint ? React.createElement("span", {
-        className: "mono",
-        style: {
-          marginLeft: 6,
-          fontSize: 11,
-          color: 'var(--ink-500)'
-        }
-      }, client.deliveryEndpoint) : null) : '—'
+      v: client.deliveryChannel ? (() => {
+        var def = window.schema && window.schema.getDeliveryChannel ? window.schema.getDeliveryChannel(client.deliveryChannel) : null;
+        var label = def ? def.label : client.deliveryChannel;
+        return React.createElement(React.Fragment, null, React.createElement("span", {
+          className: "pill",
+          "data-tone": "info"
+        }, label), client.deliveryEndpoint ? React.createElement("span", {
+          className: "mono",
+          style: {
+            marginLeft: 6,
+            fontSize: 11,
+            color: 'var(--ink-500)'
+          }
+        }, client.deliveryEndpoint) : null);
+      })() : '—'
     }]
   }), React.createElement("div", {
     style: {
@@ -10632,6 +10593,92 @@ var TablePagination = ({
     }
   }, total === 0 ? 'No entries' : `Showing ${from} to ${to} of ${total} ${total === 1 ? 'entry' : 'entries'}`));
 };
+var DeliveryChannelPicker = ({
+  channel,
+  endpoint,
+  onChannelChange,
+  onEndpointChange,
+  allowInherit = false,
+  layout = 'inline',
+  showHint = true,
+  disabled = false
+}) => {
+  var schema = window.schema || {};
+  var channels = schema.listDeliveryChannels ? schema.listDeliveryChannels() : [];
+  var channelDef = schema.getDeliveryChannel ? schema.getDeliveryChannel(channel) : null;
+  var validate = schema.validateDeliveryEndpoint || (() => ({
+    ok: true,
+    hint: ''
+  }));
+  var [touched, setTouched] = useStateOS(false);
+  useEffectOS(() => {
+    setTouched(false);
+  }, [channel]);
+  var validation = touched ? validate(channel, endpoint) : {
+    ok: true,
+    hint: ''
+  };
+  var endpointDisabled = disabled || allowInherit && !channel;
+  var placeholder = channelDef ? channelDef.placeholder : allowInherit ? 'Inherits client endpoint' : 'Endpoint';
+  var selectEl = React.createElement("select", {
+    className: "input",
+    value: channel || '',
+    onChange: e => onChannelChange(e.target.value),
+    disabled: disabled,
+    style: layout === 'inline' ? {
+      maxWidth: 160
+    } : undefined
+  }, allowInherit && React.createElement("option", {
+    value: ""
+  }, "\u2014 inherit from client \u2014"), channels.map(c => React.createElement("option", {
+    key: c.id,
+    value: c.id
+  }, c.label)), channel && !channels.find(c => c.id === channel) && React.createElement("option", {
+    value: channel
+  }, channel, " (legacy)"));
+  var inputEl = React.createElement("input", {
+    className: "input mono",
+    value: endpoint || '',
+    onChange: e => onEndpointChange(e.target.value),
+    onBlur: () => setTouched(true),
+    placeholder: placeholder,
+    disabled: endpointDisabled,
+    style: layout === 'inline' ? {
+      flex: 1
+    } : {
+      width: '100%'
+    }
+  });
+  var container = layout === 'stacked' ? React.createElement("div", {
+    style: {
+      display: 'grid',
+      gap: 6
+    }
+  }, selectEl, inputEl) : React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 6
+    }
+  }, selectEl, inputEl);
+  var hintLine = showHint && channelDef && channelDef.hint && validation.ok ? React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--ink-400)',
+      marginTop: 4
+    }
+  }, channelDef.hint) : null;
+  var warningLine = !validation.ok ? React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--warn-700)',
+      marginTop: 4
+    }
+  }, validation.hint) : null;
+  return React.createElement("div", null, container, warningLine || hintLine);
+};
+Object.assign(window, {
+  DeliveryChannelPicker
+});
 var median = nums => {
   if (!nums || nums.length === 0) return null;
   var sorted = [...nums].sort((a, b) => a - b);
@@ -16527,14 +16574,19 @@ var ClientsPage = ({
   var save = async () => {
     if (!hasPermission('EDIT_LAB_CONFIG')) return;
     if (!draft || !draft.code || !draft.name) return;
+    var normalize = window.schema && window.schema.validateDeliveryEndpoint;
+    var cleaned = normalize && draft.deliveryChannel ? {
+      ...draft,
+      deliveryEndpoint: normalize(draft.deliveryChannel, draft.deliveryEndpoint || '').normalized
+    } : draft;
     if (editingId) {
       var existing = clients.find(c => c.id === editingId);
       if (existing) await window.db.put('clients', {
         ...existing,
-        ...draft
+        ...cleaned
       });
     } else {
-      var c = window.schema.newClient(draft);
+      var c = window.schema.newClient(cleaned);
       await window.db.put('clients', c);
     }
     cancel();
@@ -16874,42 +16926,20 @@ var ClientsPage = ({
       ...draft,
       email: e.target.value
     })
-  })), React.createElement("div", {
-    style: {
-      display: 'grid',
-      gridTemplateColumns: '1fr 1fr',
-      gap: 8
-    }
-  }, React.createElement(CatalogField, {
-    label: "Delivery channel"
-  }, React.createElement("select", {
-    className: "input",
-    value: draft.deliveryChannel,
-    onChange: e => setDraft({
+  })), React.createElement(CatalogField, {
+    label: "Delivery"
+  }, React.createElement(window.DeliveryChannelPicker, {
+    channel: draft.deliveryChannel,
+    endpoint: draft.deliveryEndpoint,
+    onChannelChange: v => setDraft({
       ...draft,
-      deliveryChannel: e.target.value
-    })
-  }, React.createElement("option", {
-    value: "fax"
-  }, "Fax"), React.createElement("option", {
-    value: "hl7"
-  }, "HL7"), React.createElement("option", {
-    value: "portal"
-  }, "Portal"), React.createElement("option", {
-    value: "email"
-  }, "Email"), React.createElement("option", {
-    value: "print"
-  }, "Print/Courier"))), React.createElement(CatalogField, {
-    label: "Delivery endpoint"
-  }, React.createElement("input", {
-    className: "input mono",
-    value: draft.deliveryEndpoint,
-    placeholder: "fax #, HL7 id, URL\u2026",
-    onChange: e => setDraft({
+      deliveryChannel: v
+    }),
+    onEndpointChange: v => setDraft({
       ...draft,
-      deliveryEndpoint: e.target.value
+      deliveryEndpoint: v
     })
-  }))), React.createElement(CatalogField, {
+  })), React.createElement(CatalogField, {
     label: "Active"
   }, React.createElement("label", {
     style: {
