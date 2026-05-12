@@ -234,6 +234,7 @@ const App = () => {
       <window.EntityDrawer/>
       <CriticalAlerts/>
       <window.NotificationToasts/>
+      <window.ResultReportModal/>
       <window.SafetyConfirmHost/>
 
       <window.TweaksPanel title="Tweaks">
