@@ -21562,9 +21562,15 @@ var blankRow = () => ({
 var AccessioningPage = () => {
   var [draft, setDraft] = useStateAC(blankRow());
   var [activeField, setActiveField] = useStateAC('barcode');
-  var [sessionStart] = useStateAC(Date.now());
+  var [sessionStart, setSessionStart] = useStateAC(() => {
+    if (typeof window.__accessioningSessionStart !== 'number') {
+      window.__accessioningSessionStart = Date.now();
+    }
+    return window.__accessioningSessionStart;
+  });
   var [labelSpecId, setLabelSpecId] = useStateAC(null);
   var fieldRefs = useRefAC({});
+  var sessionSpecimensRef = useRefAC([]);
   var canAccession = hasPermission('ACCESSION');
   var allSpecimens = window.useEntities('specimens');
   var allPatients = window.useEntities('patients');
@@ -21574,6 +21580,19 @@ var AccessioningPage = () => {
   var sessionSpecimens = useMemoAC(() => {
     return allSpecimens.filter(s => (s.createdAt || 0) >= sessionStart).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 50);
   }, [allSpecimens, sessionStart]);
+  useEffectAC(() => {
+    sessionSpecimensRef.current = sessionSpecimens;
+  }, [sessionSpecimens]);
+  var openLatestLabel = () => {
+    var target = sessionSpecimensRef.current.find(s => s.state !== 'rejected');
+    if (target) setLabelSpecId(target.id);
+  };
+  var resetSession = () => {
+    var now = Date.now();
+    window.__accessioningSessionStart = now;
+    setSessionStart(now);
+  };
+  var hasLabelable = sessionSpecimens.some(s => s.state !== 'rejected');
   useEffectAC(() => {
     fieldRefs.current[activeField]?.focus();
     fieldRefs.current[activeField]?.select?.();
@@ -21598,6 +21617,7 @@ var AccessioningPage = () => {
       }
       if (meta && (e.key === 'l' || e.key === 'L')) {
         e.preventDefault();
+        openLatestLabel();
         return;
       }
       if (e.key === 'Escape') {
@@ -21800,16 +21820,14 @@ var AccessioningPage = () => {
     onKeyDown: handleFieldKey('barcode'),
     inputRef: el => fieldRefs.current.barcode = el,
     placeholder: "Scan or type"
-  }), React.createElement(Field, {
-    label: "Patient / MRN",
-    field: "patient",
+  }), React.createElement(PatientField, {
     activeField: activeField,
     setActiveField: setActiveField,
     value: draft.patient,
     onChange: v => updateField('patient', v),
     onKeyDown: handleFieldKey('patient'),
     inputRef: el => fieldRefs.current.patient = el,
-    placeholder: "MRN or last name"
+    allPatients: allPatients
   }), React.createElement(Field, {
     label: "Order",
     field: "order",
@@ -21926,7 +21944,10 @@ var AccessioningPage = () => {
     }
   }, "\u2318R")), React.createElement("button", {
     className: "btn",
-    "data-size": "sm"
+    "data-size": "sm",
+    onClick: openLatestLabel,
+    disabled: !hasLabelable,
+    title: hasLabelable ? 'Print label for the most recent accessioned specimen' : 'Accession a specimen first'
   }, "Print label ", React.createElement("span", {
     className: "kbd",
     style: {
@@ -21988,7 +22009,13 @@ var AccessioningPage = () => {
       fontSize: 11.5,
       color: 'var(--ink-400)'
     }
-  }, sessionSpecimens.length === 0 ? 'No specimens this session' : sessionSpecimens.length + ' specimens'), React.createElement("div", {
+  }, sessionSpecimens.length === 0 ? 'No specimens this session' : sessionSpecimens.length + ' specimens'), sessionSpecimens.length > 0 && React.createElement("button", {
+    className: "btn",
+    "data-size": "xs",
+    "data-variant": "ghost",
+    onClick: resetSession,
+    title: "Clear the visible session log. Specimens remain in the pipeline."
+  }, "Clear session"), React.createElement("div", {
     style: {
       flex: 1
     }
@@ -22319,6 +22346,215 @@ var Field = ({
       background: 'var(--sage-700)'
     }
   }));
+};
+var PatientField = ({
+  value,
+  onChange,
+  onKeyDown,
+  activeField,
+  setActiveField,
+  inputRef,
+  allPatients
+}) => {
+  var field = 'patient';
+  var isActive = activeField === field;
+  var [sel, setSel] = useStateAC(0);
+  var [coords, setCoords] = useStateAC(null);
+  var containerRef = useRefAC(null);
+  var matches = useMemoAC(() => {
+    var q = (value || '').trim().toLowerCase();
+    if (!q) return [];
+    var scored = [];
+    for (var p of allPatients) {
+      var mrn = (p.mrn || '').toLowerCase();
+      var last = (p.lastName || '').toLowerCase();
+      var first = (p.firstName || '').toLowerCase();
+      var full = (last + (first ? ', ' + first : '')).trim();
+      var score = -1;
+      if (mrn.startsWith(q)) score = 0;else if (last.startsWith(q)) score = 1;else if (full.startsWith(q)) score = 2;else if (first.startsWith(q)) score = 3;else if (mrn.includes(q)) score = 4;else if (full.includes(q)) score = 5;
+      if (score >= 0) scored.push({
+        p,
+        score
+      });
+    }
+    scored.sort((a, b) => a.score - b.score);
+    return scored.slice(0, 8).map(s => s.p);
+  }, [value, allPatients]);
+  var showDropdown = isActive && matches.length > 0;
+  useEffectAC(() => {
+    setSel(0);
+  }, [matches]);
+  useEffectAC(() => {
+    if (!showDropdown) {
+      setCoords(null);
+      return;
+    }
+    var update = () => {
+      if (!containerRef.current) return;
+      var r = containerRef.current.getBoundingClientRect();
+      setCoords({
+        top: r.bottom,
+        left: r.left,
+        width: r.width
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [showDropdown]);
+  var pickMatch = p => {
+    var next = p.mrn || (p.lastName || '') + (p.firstName ? ', ' + p.firstName : '') || '';
+    onChange(next);
+    var idx = FIELD_ORDER.indexOf(field);
+    if (FIELD_ORDER[idx + 1]) setActiveField(FIELD_ORDER[idx + 1]);
+  };
+  var handleKey = e => {
+    if (showDropdown) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSel(s => Math.min(s + 1, matches.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSel(s => Math.max(s - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (matches[sel]) pickMatch(matches[sel]);
+        return;
+      }
+      if (e.key === 'Tab' && !e.shiftKey && matches[sel]) {
+        e.preventDefault();
+        pickMatch(matches[sel]);
+        return;
+      }
+    }
+    onKeyDown(e);
+  };
+  return React.createElement("div", {
+    ref: containerRef,
+    onClick: () => setActiveField(field),
+    style: {
+      padding: '8px 12px',
+      background: isActive ? 'var(--sage-50)' : '#fff',
+      cursor: 'text',
+      position: 'relative',
+      transition: 'background 80ms linear'
+    }
+  }, React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 4
+    }
+  }, React.createElement("span", {
+    className: "section-title",
+    style: {
+      fontSize: 9.5,
+      color: isActive ? 'var(--sage-700)' : 'var(--ink-400)'
+    }
+  }, "Patient / MRN"), showDropdown && React.createElement("span", {
+    style: {
+      fontSize: 9.5,
+      color: 'var(--ink-400)'
+    }
+  }, matches.length, " match", matches.length === 1 ? '' : 'es')), React.createElement("input", {
+    ref: inputRef,
+    value: value,
+    onChange: e => onChange(e.target.value),
+    onKeyDown: handleKey,
+    placeholder: "MRN or last name",
+    style: {
+      width: '100%',
+      border: 'none',
+      outline: 'none',
+      background: 'transparent',
+      fontSize: 13,
+      color: 'var(--ink-900)',
+      padding: 0,
+      fontFamily: 'inherit'
+    }
+  }), isActive && React.createElement("div", {
+    style: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: 2,
+      background: 'var(--sage-700)'
+    }
+  }), showDropdown && coords && ReactDOM.createPortal(React.createElement("div", {
+    className: "scale-in",
+    style: {
+      position: 'fixed',
+      top: coords.top + 2,
+      left: coords.left,
+      width: coords.width,
+      background: '#fff',
+      border: '1px solid var(--line)',
+      borderRadius: 6,
+      boxShadow: 'var(--shadow-pop)',
+      zIndex: 1100,
+      maxHeight: 280,
+      overflowY: 'auto',
+      transformOrigin: 'top left'
+    }
+  }, matches.map((p, i) => {
+    var fullName = (p.lastName || '').toUpperCase() + (p.firstName ? ', ' + p.firstName : '');
+    var dobShort = p.dob ? String(p.dob).slice(0, 10) : '';
+    var meta = [dobShort, p.sex].filter(Boolean).join(' · ');
+    return React.createElement("div", {
+      key: p.id,
+      onMouseDown: e => {
+        e.preventDefault();
+        pickMatch(p);
+      },
+      onMouseEnter: () => setSel(i),
+      style: {
+        padding: '7px 10px',
+        cursor: 'pointer',
+        background: sel === i ? 'var(--sage-50)' : 'transparent',
+        borderBottom: i < matches.length - 1 ? '1px solid var(--ivory-200)' : 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1
+      }
+    }, React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'baseline',
+        justifyContent: 'space-between',
+        gap: 8
+      }
+    }, React.createElement("span", {
+      className: "mono",
+      style: {
+        color: 'var(--ink-700)',
+        fontSize: 12
+      }
+    }, p.mrn || '—'), meta && React.createElement("span", {
+      style: {
+        fontSize: 10.5,
+        color: 'var(--ink-400)',
+        whiteSpace: 'nowrap'
+      }
+    }, meta)), React.createElement("div", {
+      style: {
+        color: 'var(--ink-900)',
+        fontSize: 12.5,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis'
+      }
+    }, fullName || '—'));
+  })), document.body));
 };
 var ConditionField = ({
   field,

@@ -93,7 +93,7 @@ const Sidebar = ({ active, onNav, collapsed }) => {
   }, [window.currentUser && window.currentUser.id]);
 
   return (
-    <aside data-screen-label="Sidebar" style={{
+    <aside data-screen-label="Sidebar" className="transition-width" style={{
       gridRow: '1 / 3',
       borderRight: '1px solid var(--line)',
       background: 'var(--ivory-100)',

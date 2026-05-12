@@ -41,9 +41,20 @@ const AccessioningPage = () => {
   // app preserves accessioned specimens.
   const [draft, setDraft] = useStateAC(blankRow());
   const [activeField, setActiveField] = useStateAC('barcode');
-  const [sessionStart] = useStateAC(Date.now());
+  // sessionStart is bound to the BROWSER session, not the component lifecycle.
+  // Previously this was a fresh Date.now() on every mount, so navigating away
+  // and back blanked the session log even though specimens were still in the
+  // pipeline. Store on window so it survives unmount/remount; reset only via
+  // the explicit "Clear session" control or a full app reload.
+  const [sessionStart, setSessionStart] = useStateAC(() => {
+    if (typeof window.__accessioningSessionStart !== 'number') {
+      window.__accessioningSessionStart = Date.now();
+    }
+    return window.__accessioningSessionStart;
+  });
   const [labelSpecId, setLabelSpecId] = useStateAC(null);
   const fieldRefs = useRefAC({});
+  const sessionSpecimensRef = useRefAC([]);
   const canAccession = hasPermission('ACCESSION');
 
   // Live specimens (most recent first). Filter to ones touched in this session for the
@@ -65,6 +76,31 @@ const AccessioningPage = () => {
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
       .slice(0, 50);
   }, [allSpecimens, sessionStart]);
+
+  // Keep a ref in sync so the keyboard handler (which is wrapped in a
+  // useEffect with a different dep set) always sees the latest list when
+  // resolving "what specimen does ⌘L label?".
+  useEffectAC(() => { sessionSpecimensRef.current = sessionSpecimens; }, [sessionSpecimens]);
+
+  // Open the label modal for the most recent NON-rejected specimen in the
+  // session. Used by both the action-row "Print label" button and the ⌘L
+  // shortcut. Quiet no-op when there's nothing to print.
+  const openLatestLabel = () => {
+    const target = sessionSpecimensRef.current.find(s => s.state !== 'rejected');
+    if (target) setLabelSpecId(target.id);
+  };
+
+  // Advance the session window so the log goes empty. Doesn't touch the
+  // underlying specimens — those persist to the pipeline; we're just hiding
+  // them from the local log. Operators ask for this between batches so the
+  // visible row count reflects "what I just did" rather than the running tally.
+  const resetSession = () => {
+    const now = Date.now();
+    window.__accessioningSessionStart = now;
+    setSessionStart(now);
+  };
+
+  const hasLabelable = sessionSpecimens.some(s => s.state !== 'rejected');
 
   // ---- Focus management ----
   useEffectAC(() => {
@@ -88,9 +124,11 @@ const AccessioningPage = () => {
       if (meta && (e.key === 'r' || e.key === 'R')) {
         e.preventDefault(); commitRow('rejected'); return;
       }
-      // ⌘L → print label (no-op, real wiring would print)
+      // ⌘L → open label for the most recent accessioned row in this session.
       if (meta && (e.key === 'l' || e.key === 'L')) {
-        e.preventDefault(); return;
+        e.preventDefault();
+        openLatestLabel();
+        return;
       }
       // Esc → clear current row
       if (e.key === 'Escape') {
@@ -262,10 +300,10 @@ const AccessioningPage = () => {
             value={draft.barcode} onChange={v => updateField('barcode', v)} onKeyDown={handleFieldKey('barcode')}
             inputRef={el => fieldRefs.current.barcode = el}
             placeholder="Scan or type"/>
-          <Field label="Patient / MRN" field="patient" activeField={activeField} setActiveField={setActiveField}
+          <PatientField activeField={activeField} setActiveField={setActiveField}
             value={draft.patient} onChange={v => updateField('patient', v)} onKeyDown={handleFieldKey('patient')}
             inputRef={el => fieldRefs.current.patient = el}
-            placeholder="MRN or last name"/>
+            allPatients={allPatients}/>
           <Field label="Order" field="order" mono activeField={activeField} setActiveField={setActiveField}
             value={draft.order} onChange={v => updateField('order', v)} onKeyDown={handleFieldKey('order')}
             inputRef={el => fieldRefs.current.order = el}
@@ -317,7 +355,8 @@ const AccessioningPage = () => {
             title={permissionTitle(canAccession, 'Reject specimen', 'accession specimens')}>
             Reject <span className="kbd" style={{ marginLeft: 4 }}>⌘R</span>
           </button>
-          <button className="btn" data-size="sm">
+          <button className="btn" data-size="sm" onClick={openLatestLabel} disabled={!hasLabelable}
+            title={hasLabelable ? 'Print label for the most recent accessioned specimen' : 'Accession a specimen first'}>
             Print label <span className="kbd" style={{ marginLeft: 4 }}>⌘L</span>
           </button>
           <button className="btn" data-size="sm" data-variant="ghost" onClick={() => { setDraft(blankRow()); setActiveField('barcode'); }}>
@@ -341,6 +380,12 @@ const AccessioningPage = () => {
           <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>
             {sessionSpecimens.length === 0 ? 'No specimens this session' : sessionSpecimens.length + ' specimens'}
           </span>
+          {sessionSpecimens.length > 0 && (
+            <button className="btn" data-size="xs" data-variant="ghost" onClick={resetSession}
+              title="Clear the visible session log. Specimens remain in the pipeline.">
+              Clear session
+            </button>
+          )}
           <div style={{ flex: 1 }}/>
           <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>
             Specimens persist to the pipeline — see <span style={{ color: 'var(--ink-700)' }}>Specimens</span> for the full list.
@@ -545,6 +590,192 @@ const Field = ({ label, hint, field, value, onChange, onKeyDown, activeField, se
           fontFamily: mono ? 'var(--font-mono)' : 'inherit',
         }}/>
       {isActive && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, background: 'var(--sage-700)' }}/>}
+    </div>
+  );
+};
+
+// ===== Patient / MRN field with smart typeahead =====
+// Suggests existing patients as the operator types. Match priority:
+//   1) MRN starts-with     2) lastName starts-with     3) "LAST, FIRST" starts-with
+//   4) firstName starts-with     5) MRN contains       6) name contains
+// Picking sets the field to the patient's MRN so resolvePatient finds the
+// existing record instead of stubbing a new one. Keyboard: ↑/↓ navigate,
+// Enter/Tab pick the highlighted row, Esc closes the menu (then proceeds
+// like a normal Esc on the field — clears the row).
+//
+// Positioning: the active-row grid uses overflow:hidden to clip its rounded
+// corners, which would also clip a position:absolute dropdown. Using
+// position:fixed with getBoundingClientRect sidesteps that and works
+// regardless of where the field lives in the layout.
+const PatientField = ({ value, onChange, onKeyDown, activeField, setActiveField, inputRef, allPatients }) => {
+  const field = 'patient';
+  const isActive = activeField === field;
+  const [sel, setSel] = useStateAC(0);
+  const [coords, setCoords] = useStateAC(null);
+  const containerRef = useRefAC(null);
+
+  const matches = useMemoAC(() => {
+    const q = (value || '').trim().toLowerCase();
+    if (!q) return [];
+    const scored = [];
+    for (const p of allPatients) {
+      const mrn   = (p.mrn || '').toLowerCase();
+      const last  = (p.lastName || '').toLowerCase();
+      const first = (p.firstName || '').toLowerCase();
+      const full  = (last + (first ? ', ' + first : '')).trim();
+      let score = -1;
+      if      (mrn.startsWith(q))   score = 0;
+      else if (last.startsWith(q))  score = 1;
+      else if (full.startsWith(q))  score = 2;
+      else if (first.startsWith(q)) score = 3;
+      else if (mrn.includes(q))     score = 4;
+      else if (full.includes(q))    score = 5;
+      if (score >= 0) scored.push({ p, score });
+    }
+    scored.sort((a, b) => a.score - b.score);
+    return scored.slice(0, 8).map(s => s.p);
+  }, [value, allPatients]);
+
+  const showDropdown = isActive && matches.length > 0;
+
+  // Reset highlight to top match when the result set changes.
+  useEffectAC(() => { setSel(0); }, [matches]);
+
+  // Re-position on show + on resize/scroll so the menu tracks the input.
+  // Width is locked to the Patient / MRN column so the dropdown sits directly
+  // under it rather than overflowing into the Order column.
+  useEffectAC(() => {
+    if (!showDropdown) { setCoords(null); return; }
+    const update = () => {
+      if (!containerRef.current) return;
+      const r = containerRef.current.getBoundingClientRect();
+      setCoords({ top: r.bottom, left: r.left, width: r.width });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [showDropdown]);
+
+  const pickMatch = (p) => {
+    // Prefer MRN so resolvePatient can find the existing record. Fall back to
+    // the formatted name only when the patient has no MRN (rare — usually
+    // demo or pre-registration data).
+    const next = p.mrn || ((p.lastName || '') + (p.firstName ? ', ' + p.firstName : '')) || '';
+    onChange(next);
+    const idx = FIELD_ORDER.indexOf(field);
+    if (FIELD_ORDER[idx + 1]) setActiveField(FIELD_ORDER[idx + 1]);
+  };
+
+  const handleKey = (e) => {
+    if (showDropdown) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSel(s => Math.min(s + 1, matches.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSel(s => Math.max(s - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (matches[sel]) pickMatch(matches[sel]);
+        return;
+      }
+      if (e.key === 'Tab' && !e.shiftKey && matches[sel]) {
+        e.preventDefault();
+        pickMatch(matches[sel]);
+        return;
+      }
+    }
+    onKeyDown(e);
+  };
+
+  return (
+    <div ref={containerRef} onClick={() => setActiveField(field)} style={{
+      padding: '8px 12px',
+      background: isActive ? 'var(--sage-50)' : '#fff',
+      cursor: 'text', position: 'relative',
+      transition: 'background 80ms linear',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+        <span className="section-title" style={{ fontSize: 9.5, color: isActive ? 'var(--sage-700)' : 'var(--ink-400)' }}>Patient / MRN</span>
+        {showDropdown && (
+          <span style={{ fontSize: 9.5, color: 'var(--ink-400)' }}>
+            {matches.length} match{matches.length === 1 ? '' : 'es'}
+          </span>
+        )}
+      </div>
+      <input ref={inputRef}
+        value={value} onChange={e => onChange(e.target.value)} onKeyDown={handleKey}
+        placeholder="MRN or last name"
+        style={{
+          width: '100%', border: 'none', outline: 'none',
+          background: 'transparent', fontSize: 13, color: 'var(--ink-900)',
+          padding: 0, fontFamily: 'inherit',
+        }}/>
+      {isActive && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, background: 'var(--sage-700)' }}/>}
+
+      {showDropdown && coords && ReactDOM.createPortal(
+        <div className="scale-in" style={{
+          position: 'fixed',
+          top: coords.top + 2,
+          left: coords.left,
+          width: coords.width,
+          background: '#fff',
+          border: '1px solid var(--line)',
+          borderRadius: 6,
+          boxShadow: 'var(--shadow-pop)',
+          zIndex: 1100,
+          maxHeight: 280,
+          overflowY: 'auto',
+          transformOrigin: 'top left',
+        }}>
+          {matches.map((p, i) => {
+            const fullName = (p.lastName || '').toUpperCase() + (p.firstName ? ', ' + p.firstName : '');
+            const dobShort = p.dob ? String(p.dob).slice(0, 10) : '';
+            const meta = [dobShort, p.sex].filter(Boolean).join(' · ');
+            // Stacked row layout — single line wouldn't fit comfortably in the
+            // 1.3fr patient column (~200-220px). MRN + meta on the top row,
+            // name on the bottom row with ellipsis if it overruns.
+            return (
+              <div key={p.id}
+                onMouseDown={e => { e.preventDefault(); pickMatch(p); }}
+                onMouseEnter={() => setSel(i)}
+                style={{
+                  padding: '7px 10px',
+                  cursor: 'pointer',
+                  background: sel === i ? 'var(--sage-50)' : 'transparent',
+                  borderBottom: i < matches.length - 1 ? '1px solid var(--ivory-200)' : 'none',
+                  display: 'flex', flexDirection: 'column', gap: 1,
+                }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                  <span className="mono" style={{ color: 'var(--ink-700)', fontSize: 12 }}>
+                    {p.mrn || '—'}
+                  </span>
+                  {meta && (
+                    <span style={{ fontSize: 10.5, color: 'var(--ink-400)', whiteSpace: 'nowrap' }}>
+                      {meta}
+                    </span>
+                  )}
+                </div>
+                <div style={{
+                  color: 'var(--ink-900)', fontSize: 12.5,
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>
+                  {fullName || '—'}
+                </div>
+              </div>
+            );
+          })}
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

@@ -298,13 +298,18 @@
     const lint = lintZpl(zpl);
     if (!lint.ok) throw new Error('[labels] unsafe ZPL output: ' + lint.errors.slice(0, 3).join('; '));
 
+    // meta carries dimensions in INCHES for the preview/print paths
+    // (renderHtml multiplies by px-per-inch). The inline-default ZPL above
+    // uses dots (W=203, H=406) for ^PW/^LL — those are wire units. Reporting
+    // dots here caused the HTML preview to render at 29,000+ px, blanking the
+    // modal because content overflowed the clipped 320px column.
     return {
       zpl,
       render,
       meta: {
-        width: usedTemplate ? (template.width || W) : W,
-        height: usedTemplate ? (template.height || H) : H,
-        dpi: usedTemplate ? (template.dpi || 203) : 203,
+        width:  usedTemplate ? (Number(template.width)  || 1.0) : 1.0,
+        height: usedTemplate ? (Number(template.height) || 2.0) : 2.0,
+        dpi:    usedTemplate ? (Number(template.dpi)    || 203) : 203,
         copies, includeBarcode,
         template: usedTemplate,
         source: usedTemplate ? 'template' : 'default',
