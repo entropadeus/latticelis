@@ -76,11 +76,11 @@ const __flattenNav = (tree) => {
 const NAV_FLAT = __flattenNav(NAV);
 
 // Hidden destinations not on the sidebar but still command-palette indexable.
-// The legacy Admin tile-grid page is kept here so power users can jump to it
-// without going through System Setup.
-const ADMIN_DESTINATIONS = [
-  { id: 'admin', label: 'Admin (legacy tile grid)', icon: 'IconAdmin', anyPermission: ['EDIT_USERS', 'EDIT_RULES', 'EDIT_LAB_CONFIG', 'EDIT_TEST_CATALOG', 'EDIT_INTERFACES', 'EDIT_LABEL_TEMPLATES', 'RESTORE_SNAPSHOT', 'RESOLVE_QC'] },
-];
+// The legacy Admin tile-grid page was retired in favor of the AdminCenter
+// sidebar — those routes are reachable directly. The 'admin' id still resolves
+// (it aliases to ManagePage in app.jsx) for any deep links or leaf back-buttons
+// that haven't been rewritten yet, but it's no longer surfaced in the palette.
+const ADMIN_DESTINATIONS = [];
 
 // Helper: does the current user pass a NAV entry's permission gate?
 // Items with no gate always pass. Without a resolver/user yet, fall open
@@ -245,7 +245,7 @@ const Sidebar = ({ active, onNav, collapsed }) => {
   };
 
   return (
-    <aside data-screen-label="Sidebar" style={{
+    <aside data-screen-label="Sidebar" className="transition-width" style={{
       gridRow: '1 / 3',
       borderRight: '1px solid var(--line)',
       background: 'var(--ivory-100)',

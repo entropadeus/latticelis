@@ -52,6 +52,7 @@ const LabelsPage = ({ onBack }) => {
       .filter(t => !needle || [t.code, t.name, t.specimenType, t.testCode].filter(Boolean).join(' ').toLowerCase().includes(needle))
       .sort((a, b) => (a.code || '').localeCompare(b.code || ''));
   }, [all, q]);
+  const pager = usePagination(filtered);
 
   const startNew = () => {
     if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
@@ -200,6 +201,7 @@ const LabelsPage = ({ onBack }) => {
             <div style={{ flex: 1 }}/>
             <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{filtered.length} of {all.length}</span>
           </div>
+          {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {filtered.length === 0 ? (
               <div className="empty" style={{ padding: '40px 24px' }}>
@@ -219,7 +221,7 @@ const LabelsPage = ({ onBack }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(t => (
+                  {pager.slice.map(t => (
                     <tr key={t.id} style={{ opacity: t.active === false ? 0.5 : 1, background: editingId === t.id ? 'var(--sage-50)' : undefined }}>
                       <td onClick={() => toggleActive(t)}
                         style={{ cursor: canEditLabelTemplates ? 'pointer' : 'not-allowed' }}
@@ -249,6 +251,7 @@ const LabelsPage = ({ onBack }) => {
               </table>
             )}
           </div>
+          {filtered.length > 0 && <TablePagination {...pager}/>}
         </div>
 
         {draft && (

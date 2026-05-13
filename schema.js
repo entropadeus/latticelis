@@ -725,6 +725,161 @@ const nextAccessionNumber = (existingCountToday) => {
   return ymd + '-' + seq;
 };
 
+// ───────────────────────────────────────────────────────────────────────────
+// Delivery channel registry
+//
+// One source of truth for "how does a result leave the lab?" — the order form
+// (per-order override), the client editor (client-level default), the
+// entity drawer (display), and the delivery watcher (consumer) all read from
+// here. Adding a new channel (FHIR, SFTP, S3 dropbox, custom REST) means
+// adding one entry below — every UI surface picks it up automatically.
+//
+// Shape of each entry:
+//   id             — kebab-case identifier persisted on order.deliveryChannel
+//                    and client.deliveryChannel. Treat as opaque.
+//   label          — operator-facing label shown in the select.
+//   endpointLabel  — operator-facing label for the endpoint input
+//                    (changes per channel: "Fax number", "MLLP target", etc.).
+//   placeholder    — example value shown in the empty endpoint input.
+//   hint           — one-line explanation rendered under the input (optional).
+//   validate(s)    — pure function. returns true when the endpoint string
+//                    looks plausible. Non-blocking — operators sometimes
+//                    enter custom strings the regex doesn't anticipate;
+//                    UI surfaces a warning, not an error.
+//   normalize(s)   — pure function. returns the canonical form to persist
+//                    (lowercased domain, trimmed whitespace, etc.).
+//   available      — false hides the channel from new pickers but keeps it
+//                    readable on existing records, so a feature can be
+//                    rolled back without losing data.
+//   sample         — example output of normalize() — used in seed data and
+//                    docs so we don't drift.
+//
+// Validation is intentionally permissive. The LIS should warn the operator
+// about a malformed endpoint, but should never refuse to save — a clinic
+// might have a non-standard target the lab needs to handle.
+const DELIVERY_CHANNELS = [
+  {
+    id: 'fax',
+    label: 'Fax',
+    endpointLabel: 'Fax number',
+    placeholder: '555-555-5555',
+    hint: '10-digit North-American or international with leading +. Hyphens and spaces are ignored.',
+    validate: (s) => /^\+?[\d().\-\s]{7,20}$/.test(String(s).trim()),
+    normalize: (s) => String(s).trim().replace(/[^\d+]/g, ''),
+    available: true,
+    sample: '5550101',
+  },
+  {
+    id: 'hl7',
+    label: 'HL7 over MLLP',
+    endpointLabel: 'MLLP target',
+    placeholder: 'tcp://emr-west:6661',
+    hint: 'tcp://host:port — the framer wraps ORU-R01 in VT/FS+CR per HL7 LLP. Real socket transport ships with the Electron port (Tier 6).',
+    validate: (s) => /^(tcp|hl7):\/\/[a-z0-9._-]+:\d{2,5}$/i.test(String(s).trim()),
+    normalize: (s) => String(s).trim().toLowerCase(),
+    available: true,
+    sample: 'tcp://emr-west:6661',
+  },
+  {
+    id: 'portal',
+    label: 'Patient portal',
+    endpointLabel: 'Portal handle',
+    placeholder: 'metro-portal',
+    hint: 'Slug the destination portal uses to scope deliveries. Lowercase, alphanumeric + dot/dash/underscore.',
+    validate: (s) => /^[a-z0-9][a-z0-9._-]{1,63}$/i.test(String(s).trim()),
+    normalize: (s) => String(s).trim().toLowerCase(),
+    available: true,
+    sample: 'metro-portal',
+  },
+  {
+    id: 'email',
+    label: 'Email',
+    endpointLabel: 'Email address',
+    placeholder: 'results@clinic.example',
+    hint: 'Single deliverable inbox. Multiple recipients should live on the client record, not here.',
+    validate: (s) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(s).trim()),
+    normalize: (s) => String(s).trim().toLowerCase(),
+    available: true,
+    sample: 'results@clinic.example',
+  },
+  {
+    id: 'print',
+    label: 'Print / Courier',
+    endpointLabel: 'Printer or route',
+    placeholder: 'lab-printer-3',
+    hint: 'Named printer or courier route. Empty falls back to the lab default printer.',
+    validate: () => true, // free-form
+    normalize: (s) => String(s).trim(),
+    available: true,
+    sample: 'lab-printer-3',
+  },
+  {
+    id: 'manual',
+    label: 'Manual / hold',
+    endpointLabel: 'Note',
+    placeholder: 'Hand-deliver, walk-in pickup, …',
+    hint: 'No automated delivery. Operator must hand-deliver or release through the Results page.',
+    validate: () => true,
+    normalize: (s) => String(s).trim(),
+    available: true,
+    sample: 'walk-in pickup',
+  },
+  // ── future channels — flip `available: true` to surface in pickers ────
+  // Persisted values on existing records still render even while hidden, so
+  // pilots can roll a channel back without data loss.
+  {
+    id: 'fhir',
+    label: 'FHIR R4 endpoint',
+    endpointLabel: 'FHIR base URL',
+    placeholder: 'https://emr.example/fhir',
+    hint: 'DiagnosticReport bundles posted to the base URL. Ships with Tier 6 (FHIR builder + auth).',
+    validate: (s) => /^https?:\/\/[a-z0-9.-]+(:\d+)?(\/[^\s]*)?$/i.test(String(s).trim()),
+    normalize: (s) => String(s).trim(),
+    available: false,
+    sample: 'https://emr.example/fhir',
+  },
+  {
+    id: 'sftp',
+    label: 'SFTP drop',
+    endpointLabel: 'SFTP destination',
+    placeholder: 'sftp://user@host:22/inbound',
+    hint: 'sftp://user@host[:port]/path — files dropped per release. Ships with the production transport layer.',
+    validate: (s) => /^sftp:\/\/[^\s@]+@[a-z0-9.-]+(:\d+)?(\/[^\s]*)?$/i.test(String(s).trim()),
+    normalize: (s) => String(s).trim(),
+    available: false,
+    sample: 'sftp://lab@drops.example:22/inbound',
+  },
+];
+
+const DELIVERY_CHANNEL_BY_ID = Object.fromEntries(DELIVERY_CHANNELS.map(c => [c.id, c]));
+
+// Resolve a channel definition. Returns null for unknown ids so callers can
+// detect legacy data (e.g. a channel removed from the registry) and degrade
+// gracefully instead of crashing.
+const getDeliveryChannel = (id) => DELIVERY_CHANNEL_BY_ID[id] || null;
+
+// Channels the operator can pick from new-record pickers. Hidden channels
+// (available:false) still resolve via getDeliveryChannel so display surfaces
+// continue to render them on existing records.
+const listDeliveryChannels = (opts = {}) => {
+  const all = opts.includeHidden ? DELIVERY_CHANNELS : DELIVERY_CHANNELS.filter(c => c.available !== false);
+  return all;
+};
+
+// Validate + normalize an endpoint string against its channel. Returns
+// `{ ok, normalized, hint }`. `ok: false` means the endpoint didn't match the
+// channel's regex — surface as a warning, not an error (validation is
+// intentionally permissive; see DELIVERY_CHANNELS comment).
+const validateDeliveryEndpoint = (channelId, endpoint) => {
+  const ch = getDeliveryChannel(channelId);
+  if (!ch) return { ok: true, normalized: String(endpoint || '').trim(), hint: '' };
+  const trimmed = String(endpoint || '').trim();
+  if (!trimmed) return { ok: true, normalized: '', hint: '' };
+  const ok = ch.validate(trimmed);
+  const normalized = ch.normalize(trimmed);
+  return { ok, normalized, hint: ok ? '' : `Doesn't look like a ${ch.label} ${ch.endpointLabel.toLowerCase()} — saved anyway, but double-check.` };
+};
+
 window.schema = {
   newPatient, newOrder, newSpecimen, newResult, newTest, newReferenceRange,
   newInstrument, newInterface, newWorklist, newAuditEvent, newNotification,
@@ -737,4 +892,6 @@ window.schema = {
   ROLES, ROLE_IDS, ROLE_BY_ID, PERMISSIONS,
   nextAccessionNumber,
   SPECIMEN_CONDITIONS,
+  // Delivery channel registry (single source of truth for fax/hl7/portal/etc.)
+  DELIVERY_CHANNELS, getDeliveryChannel, listDeliveryChannels, validateDeliveryEndpoint,
 };
