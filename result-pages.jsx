@@ -771,7 +771,12 @@ const DeliveryPill = ({ r }) => {
 };
 
 // ===== Patient search =====
-const PatientsPage = () => {
+// `initialPatientId` lets other surfaces (e.g. the entity drawer's
+// "Open in Patient Search" action) hand off a specific record so the tech
+// lands directly on demographics + history without re-searching. `onClearInitial`
+// is the parent's cleanup hook — we call it once we've consumed the value so a
+// later nav-away-then-back doesn't auto-reopen the same patient.
+const PatientsPage = ({ initialPatientId, onClearInitial }) => {
   const patients = window.useEntities('patients');
   const orders = window.useEntities('orders');
   const specimens = window.useEntities('specimens');
@@ -782,7 +787,19 @@ const PatientsPage = () => {
   const specimenById = useMemoOS(() => Object.fromEntries(specimens.map(s => [s.id, s])), [specimens]);
 
   const [q, setQ] = useStateOS('');
-  const [selectedId, setSelectedId] = useStateOS(null);
+  const [selectedId, setSelectedId] = useStateOS(initialPatientId || null);
+
+  // When a preselect arrives — either on mount or later if the user is already
+  // on this page and triggers another drawer hand-off — apply it then ask the
+  // parent to drop the pending value. Without the clear, navigating away and
+  // back would re-auto-open the same patient even after the operator picked a
+  // different one.
+  useEffectOS(() => {
+    if (initialPatientId) {
+      setSelectedId(initialPatientId);
+      if (onClearInitial) onClearInitial();
+    }
+  }, [initialPatientId]);
 
   const matches = useMemoOS(() => {
     const needle = q.trim().toLowerCase();

@@ -47,6 +47,11 @@ const App = () => {
   // a related view (e.g., Dashboard "Top clients" → Orders pinned to that
   // client). Clear via the X chip in the Orders toolbar.
   const [ordersFilterClientId, setOrdersFilterClientId] = useStateApp(null);
+  // Optional preselected patient for the Patient Search page. Set when a
+  // drawer hands off (e.g. "Open in Patient Search" on a patient drawer).
+  // Cleared by PatientsPage once consumed, or by the auto-clear effect
+  // below when the user navigates away.
+  const [patientsInitialId, setPatientsInitialId] = useStateApp(null);
   const [tweaks, setTweak] = window.useTweaks(TWEAK_DEFAULTS);
 
   // Expose a global hook so the command palette, OrdersPage button, and any future
@@ -79,6 +84,24 @@ const App = () => {
   // so a fresh visit doesn't see stale state.
   useEffectApp(() => {
     if (active !== 'orders' && ordersFilterClientId) setOrdersFilterClientId(null);
+  }, [active]);
+
+  // Cross-component "open Patient Search with this patient preselected" hook.
+  // Used by the patient entity drawer's "Open in Patient Search" action so the
+  // tech lands directly on the record they were viewing, with demographics +
+  // order history + recent results already populated.
+  useEffectApp(() => {
+    window.openPatientInSearch = (patientId) => {
+      setPatientsInitialId(patientId || null);
+      setActive('patients');
+    };
+    return () => { delete window.openPatientInSearch; };
+  }, []);
+
+  // Drop the preselected patient when the user navigates away from the
+  // Patient Search page, so a fresh visit doesn't auto-open a stale record.
+  useEffectApp(() => {
+    if (active !== 'patients' && patientsInitialId) setPatientsInitialId(null);
   }, [active]);
 
   // Rules now live in the persistence pipeline (IndexedDB) — same store everything else uses,
@@ -140,22 +163,26 @@ const App = () => {
                                               onClearFilter={() => setOrdersFilterClientId(null)}/>;
       case 'specimens':   return <SpecimensPage/>;
       case 'results':     return <ResultsPage/>;
-      case 'patients':    return <PatientsPage/>;
+      case 'patients':    return <PatientsPage initialPatientId={patientsInitialId} onClearInitial={() => setPatientsInitialId(null)}/>;
       case 'accession':   return <AccessioningPage/>;
       case 'worklists':   return <WorklistsPage/>;
-      case 'instruments': return <InstrumentsPage onBack={() => setActive('admin')}/>;
-      case 'interfaces':  return <InterfacesPage onBack={() => setActive('admin')}/>;
-      case 'rules':       return <RulesEnginePage rules={rules} setRules={setRules} onBack={() => setActive('admin')}/>;
+      case 'instruments': return <InstrumentsPage onBack={() => setActive('manage')}/>;
+      case 'interfaces':  return <InterfacesPage onBack={() => setActive('manage')}/>;
+      case 'rules':       return <RulesEnginePage rules={rules} setRules={setRules} onBack={() => setActive('manage')}/>;
       case 'reports':     return <ReportsPage/>;
-      case 'admin':       return <AdminPage onNav={setActive}/>;
-      case 'tests':       return <TestCatalogPage onBack={() => setActive('admin')}/>;
-      case 'clients':     return <ClientsPage onBack={() => setActive('admin')}/>;
-      case 'locations':   return <LocationsPage onBack={() => setActive('admin')}/>;
-      case 'labels':      return <LabelsPage onBack={() => setActive('admin')}/>;
-      case 'mappers':     return <MappersPage onBack={() => setActive('admin')}/>;
-      case 'qc':          return <QcPage onBack={() => setActive('admin')}/>;
-      case 'notifications': return <NotificationsPage onBack={() => setActive('admin')}/>;
-      case 'users':       return <UsersPage onBack={() => setActive('admin')}/>;
+      // Legacy 'admin' route — the original tile-grid AdminPage is no longer
+      // reachable from the sidebar or any AdminCenter tile. Alias to ManagePage
+      // so any stray hardcoded nav lands on the new admin hub instead of
+      // 404-ing back to Dashboard via the default branch.
+      case 'admin':       return <window.ManagePage onNav={setActive}/>;
+      case 'tests':       return <TestCatalogPage onBack={() => setActive('manage')}/>;
+      case 'clients':     return <ClientsPage onBack={() => setActive('manage')}/>;
+      case 'locations':   return <LocationsPage onBack={() => setActive('manage')}/>;
+      case 'labels':      return <LabelsPage onBack={() => setActive('manage')}/>;
+      case 'mappers':     return <MappersPage onBack={() => setActive('manage')}/>;
+      case 'qc':          return <QcPage onBack={() => setActive('manage')}/>;
+      case 'notifications': return <NotificationsPage onBack={() => setActive('manage')}/>;
+      case 'users':       return <UsersPage onBack={() => setActive('manage')}/>;
       // ── Outreach-shaped buckets (TaskCenter + AdminCenter) ─────────────
       case 'this-location': return <window.ThisLocationPage onNav={setActive}/>;
       case 'preferences':   return <window.PreferencesPage/>;
@@ -171,7 +198,7 @@ const App = () => {
       case 'monitor':       return <window.MonitorPage onNav={setActive}/>;
       default:            return <DashboardPage/>;
     }
-  }, [active, rules, ordersFilterClientId, authedUser && authedUser.id]);
+  }, [active, rules, ordersFilterClientId, patientsInitialId, authedUser && authedUser.id]);
 
   // Render the LoginPage until both (a) the auth flag is set AND (b) the
   // user record hydrated. After verify() succeeds, both hold within one

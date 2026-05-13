@@ -340,6 +340,110 @@ const TablePagination = ({
   );
 };
 
+// ===== Delivery channel picker =====
+//
+// Channel + endpoint picker driven by `schema.DELIVERY_CHANNELS`. Every
+// surface that touches "how does a result leave the lab" should mount this
+// instead of hardcoding `<option value="fax">` etc. — adding a new channel
+// is a registry edit, not a UI sweep.
+//
+// Props:
+//   channel          — current channel id ('' = unset / inherit)
+//   endpoint         — current endpoint string
+//   onChannelChange  — (newId) => void
+//   onEndpointChange — (newEndpoint) => void
+//   allowInherit     — true on per-order pickers (renders the "inherit from
+//                      client" sentinel). false on client editors (a client
+//                      must always have a default channel).
+//   layout           — 'inline' renders select + input side-by-side (default),
+//                      'stacked' puts them on separate rows for narrow forms.
+//   showHint         — surfaces the channel's hint line below the input.
+//                      Defaults true; set false on dense list editors.
+//   disabled         — disables both controls (e.g., insufficient perms).
+//
+// Validation is intentionally non-blocking: the endpoint regex is a heuristic,
+// not a contract, and labs occasionally have non-conforming destinations.
+// `validateDeliveryEndpoint` returns `{ ok, hint }` and we surface the hint
+// in amber on blur — operator can ignore and save anyway. Channel changes
+// reset the touched flag so the warning doesn't haunt the next selection.
+const DeliveryChannelPicker = ({
+  channel, endpoint,
+  onChannelChange, onEndpointChange,
+  allowInherit = false,
+  layout = 'inline',
+  showHint = true,
+  disabled = false,
+}) => {
+  const schema = window.schema || {};
+  const channels = schema.listDeliveryChannels ? schema.listDeliveryChannels() : [];
+  const channelDef = schema.getDeliveryChannel ? schema.getDeliveryChannel(channel) : null;
+  const validate = schema.validateDeliveryEndpoint || (() => ({ ok: true, hint: '' }));
+
+  const [touched, setTouched] = useStateOS(false);
+  // Reset the touched flag when the channel changes so a fresh selection
+  // gets its own clean validation pass — switching from email to fax
+  // shouldn't carry the email-format complaint forward.
+  useEffectOS(() => { setTouched(false); }, [channel]);
+
+  const validation = touched ? validate(channel, endpoint) : { ok: true, hint: '' };
+
+  const endpointDisabled = disabled || (allowInherit && !channel);
+  const placeholder = channelDef
+    ? channelDef.placeholder
+    : (allowInherit ? 'Inherits client endpoint' : 'Endpoint');
+
+  const selectEl = (
+    <select
+      className="input"
+      value={channel || ''}
+      onChange={e => onChannelChange(e.target.value)}
+      disabled={disabled}
+      style={layout === 'inline' ? { maxWidth: 160 } : undefined}>
+      {allowInherit && <option value="">— inherit from client —</option>}
+      {channels.map(c => (
+        <option key={c.id} value={c.id}>{c.label}</option>
+      ))}
+      {/* If the current value isn't in the visible registry (legacy data or
+          a hidden/retired channel), keep it selectable as a tagged option
+          so save doesn't silently rewrite it. */}
+      {channel && !channels.find(c => c.id === channel) && (
+        <option value={channel}>{channel} (legacy)</option>
+      )}
+    </select>
+  );
+
+  const inputEl = (
+    <input
+      className="input mono"
+      value={endpoint || ''}
+      onChange={e => onEndpointChange(e.target.value)}
+      onBlur={() => setTouched(true)}
+      placeholder={placeholder}
+      disabled={endpointDisabled}
+      style={layout === 'inline' ? { flex: 1 } : { width: '100%' }}/>
+  );
+
+  const container = layout === 'stacked'
+    ? <div style={{ display: 'grid', gap: 6 }}>{selectEl}{inputEl}</div>
+    : <div style={{ display: 'flex', gap: 6 }}>{selectEl}{inputEl}</div>;
+
+  const hintLine = showHint && channelDef && channelDef.hint && validation.ok
+    ? <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 4 }}>{channelDef.hint}</div>
+    : null;
+  const warningLine = !validation.ok
+    ? <div style={{ fontSize: 11, color: 'var(--warn-700)', marginTop: 4 }}>{validation.hint}</div>
+    : null;
+
+  return (
+    <div>
+      {container}
+      {warningLine || hintLine}
+    </div>
+  );
+};
+
+Object.assign(window, { DeliveryChannelPicker });
+
 // ===== Dashboard live panels =====
 // Three derived panels (TAT, specimen status, pending review) all read off
 // existing entity collections — no new state, no new events. Adding more

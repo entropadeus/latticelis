@@ -255,7 +255,14 @@ const NewOrderDrawer = ({ open, onClose }) => {
         diagnosisCodes: diagnosisCodes.split(',').map(s => s.trim()).filter(Boolean),
         notes: notes.trim(),
         deliveryChannel: deliveryChannel || '',
-        deliveryEndpoint: deliveryEndpoint.trim() || '',
+        // Normalize the endpoint to its canonical form per the channel's
+        // registry entry (e.g. fax strips punctuation, email lowercases).
+        // Falls back to a simple trim when no channel is set or the channel
+        // isn't in the registry — preserves whatever the operator typed
+        // rather than dropping it on the floor.
+        deliveryEndpoint: (deliveryChannel && window.schema && window.schema.validateDeliveryEndpoint
+          ? window.schema.validateDeliveryEndpoint(deliveryChannel, deliveryEndpoint).normalized
+          : deliveryEndpoint.trim()) || '',
       });
       await window.db.put('orders', order);
       window.events.publish(window.EVENTS.ORDER_CREATED, {
@@ -441,24 +448,12 @@ const NewOrderDrawer = ({ open, onClose }) => {
                 style={{ height: 64, padding: 8, resize: 'vertical' }} placeholder="Optional"/>
             </FieldRow>
             <FieldRow label="Delivery override">
-              <div style={{ display: 'flex', gap: 6 }}>
-                <select className="input" value={deliveryChannel}
-                  onChange={e => setDeliveryChannel(e.target.value)}
-                  style={{ maxWidth: 140 }}>
-                  <option value="">— inherit from client —</option>
-                  <option value="fax">Fax</option>
-                  <option value="hl7">HL7</option>
-                  <option value="portal">Portal</option>
-                  <option value="email">Email</option>
-                  <option value="print">Print</option>
-                  <option value="manual">Manual</option>
-                </select>
-                <input className="input mono" value={deliveryEndpoint}
-                  onChange={e => setDeliveryEndpoint(e.target.value)}
-                  placeholder={deliveryChannel ? 'Endpoint (fax #, URL, …)' : 'Inherits client endpoint'}
-                  disabled={!deliveryChannel}
-                  style={{ flex: 1 }}/>
-              </div>
+              <window.DeliveryChannelPicker
+                channel={deliveryChannel}
+                endpoint={deliveryEndpoint}
+                onChannelChange={setDeliveryChannel}
+                onEndpointChange={setDeliveryEndpoint}
+                allowInherit/>
             </FieldRow>
           </OrderSection>
 
@@ -595,22 +590,16 @@ const NewClientFields = ({ draft, setDraft, onCancel }) => (
           <option value="OTHER">Other</option>
         </select>
       </Labeled>
-      <Labeled label="Delivery channel">
-        <select className="input" value={draft.deliveryChannel}
-          onChange={e => setDraft(d => ({ ...d, deliveryChannel: e.target.value }))}>
-          <option value="fax">Fax</option>
-          <option value="hl7">HL7</option>
-          <option value="portal">Portal</option>
-          <option value="email">Email</option>
-          <option value="print">Print/Courier</option>
-        </select>
-      </Labeled>
     </div>
     <div style={{ marginTop: 8 }}>
-      <Labeled label="Delivery endpoint">
-        <input className="input mono" value={draft.deliveryEndpoint}
-          placeholder="fax #, HL7 endpoint id, portal URL…"
-          onChange={e => setDraft(d => ({ ...d, deliveryEndpoint: e.target.value }))}/>
+      <Labeled label="Delivery">
+        <window.DeliveryChannelPicker
+          channel={draft.deliveryChannel}
+          endpoint={draft.deliveryEndpoint}
+          onChannelChange={v => setDraft(d => ({ ...d, deliveryChannel: v }))}
+          onEndpointChange={v => setDraft(d => ({ ...d, deliveryEndpoint: v }))}
+          layout="stacked"
+          showHint={false}/>
       </Labeled>
     </div>
   </div>

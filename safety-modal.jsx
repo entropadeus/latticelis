@@ -172,12 +172,12 @@ const SafetyConfirmHost = () => {
         ref={dialogRef}
         onMouseDown={e => e.stopPropagation()}
         onKeyDown={onKeyDown}
-        className="scale-in"
+        className="fade-in slide-up"
         style={{
           width: 480, maxWidth: 'min(480px, calc(100vw - 32px))',
           background: '#fff',
           border: '1px solid var(--line-strong)',
-          borderRadius: 8,
+          borderRadius: 24,
           boxShadow: 'var(--shadow-pop)',
           overflow: 'hidden',
         }}>
