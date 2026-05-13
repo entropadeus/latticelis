@@ -64,6 +64,7 @@ const CONDITION_PRIMITIVES = [
   { id: 'result.value.between',       label: 'Result value between',        cat: 'Result',      args: [{ k: 'min', t: 'number' }, { k: 'max', t: 'number' }] },
   { id: 'result.flag.is',             label: 'Result flag is',              cat: 'Result',      args: [{ k: 'flag', t: 'enum', opts: ['H','L','HH','LL','A','AA','Critical'] }] },
   { id: 'result.delta.gt',            label: 'Delta from prior >',          cat: 'Result',      args: [{ k: 'pct', t: 'number', unit: '%' }] },
+  { id: 'result.delta.test',          label: 'Delta exceeds test threshold', cat: 'Result',      args: [] },
   { id: 'result.outside.ref',         label: 'Outside reference range',     cat: 'Result',      args: [] },
 
   // Time
