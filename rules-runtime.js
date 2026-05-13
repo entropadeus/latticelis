@@ -191,7 +191,7 @@
     'order.payer.is':            () => false,
     'order.source.is':           () => false,
     'test.panel.contains':       () => false,
-    'test.department.is':        () => false,
+    'test.department.is':        (a, c) => !!c.test && c.test.department === a.dept,
     'specimen.temp.outside':     () => false,
     'patient.pregnant':          () => false,
     'patient.fasting':           () => false,

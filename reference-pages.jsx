@@ -17,14 +17,14 @@ const TestCatalogPage = ({ onBack }) => {
   const startNew = () => {
     if (!hasPermission('EDIT_TEST_CATALOG')) return;
     setEditingId(null);
-    setDraft({ code: '', name: '', shortName: '', loinc: '', units: '', refRangeLow: '', refRangeHigh: '', turnaroundMinutes: '', referenceRanges: [], criticalEscalationT1Sec: '', criticalEscalationT2Sec: '', lotExpirationAmberDays: '', deltaCheckPercent: '', deltaCheckAbsolute: '', active: true });
+    setDraft({ code: '', name: '', shortName: '', loinc: '', units: '', department: '', refRangeLow: '', refRangeHigh: '', turnaroundMinutes: '', referenceRanges: [], criticalEscalationT1Sec: '', criticalEscalationT2Sec: '', lotExpirationAmberDays: '', deltaCheckPercent: '', deltaCheckAbsolute: '', active: true });
   };
   const startEdit = (t) => {
     if (!hasPermission('EDIT_TEST_CATALOG')) return;
     setEditingId(t.id);
     setDraft({
       code: t.code || '', name: t.name || '', shortName: t.shortName || '',
-      loinc: t.loinc || '', units: t.units || '',
+      loinc: t.loinc || '', units: t.units || '', department: t.department || '',
       refRangeLow: t.refRangeLow == null ? '' : t.refRangeLow,
       refRangeHigh: t.refRangeHigh == null ? '' : t.refRangeHigh,
       turnaroundMinutes: t.turnaroundMinutes == null ? '' : t.turnaroundMinutes,
@@ -172,7 +172,7 @@ const TestCatalogPage = ({ onBack }) => {
                 <thead>
                   <tr>
                     <th style={{ width: 40 }}></th>
-                    <th>Code</th><th>Name</th><th>LOINC</th><th>Units</th><th>Ref range</th><th>TAT</th>
+                    <th>Code</th><th>Name</th><th>LOINC</th><th>Units</th><th>Dept</th><th>Ref range</th><th>TAT</th>
                     <th style={{ width: 100 }}></th>
                   </tr>
                 </thead>
@@ -188,6 +188,9 @@ const TestCatalogPage = ({ onBack }) => {
                       <td>{t.name}{t.shortName && <span style={{ marginLeft: 6, color: 'var(--ink-400)', fontSize: 11.5 }}>({t.shortName})</span>}</td>
                       <td><span className="mono" style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>{t.loinc || '—'}</span></td>
                       <td>{t.units || '—'}</td>
+                      <td style={{ color: t.department ? 'var(--ink-600)' : 'var(--ink-300)', fontSize: 11.5 }}>
+                        {t.department ? t.department.replace('Anatomic Pathology', 'AP').replace('Microbiology', 'Micro').replace('Hematology', 'Heme').replace('Chemistry', 'Chem').replace('Molecular', 'Mol').replace('Toxicology', 'Tox').replace('Cytology', 'Cyto') : '—'}
+                      </td>
                       <td className="mono tnum" style={{ color: 'var(--ink-500)' }}>
                         {t.refRangeLow != null && t.refRangeHigh != null ? `${t.refRangeLow}–${t.refRangeHigh}` : '—'}
                       </td>
@@ -235,6 +238,14 @@ const TestCatalogPage = ({ onBack }) => {
               </CatalogField>
               <CatalogField label="Units">
                 <input className="input mono" value={draft.units} onChange={e => setDraft({ ...draft, units: e.target.value })} placeholder="UCUM (mg/dL, mmol/L, …)"/>
+              </CatalogField>
+              <CatalogField label="Department">
+                <select className="input" value={draft.department} onChange={e => setDraft({ ...draft, department: e.target.value })}>
+                  <option value="">— unassigned —</option>
+                  {['Chemistry','Hematology','Microbiology','Molecular','Toxicology','Cytology','Anatomic Pathology'].map(d =>
+                    <option key={d} value={d}>{d}</option>
+                  )}
+                </select>
               </CatalogField>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <CatalogField label="Default low">

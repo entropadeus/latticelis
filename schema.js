@@ -257,6 +257,11 @@ const newTest = (init = {}) => ({
   // QC reagent has a tighter shelf life than 14 days (e.g. some coag and
   // urine chemistries) and the lab wants earlier warning.
   lotExpirationAmberDays: init.lotExpirationAmberDays == null ? null : Number(init.lotExpirationAmberDays),
+  // Lab department that runs this test — used by the `test.department.is` rules
+  // condition so routing/reflex rules can target an entire discipline rather than
+  // enumerating individual test codes. One of: Chemistry, Hematology, Microbiology,
+  // Molecular, Toxicology, Cytology, Anatomic Pathology. `null` = unassigned.
+  department: init.department || null,
   // Per-test delta-check thresholds for the `result.delta.test` rules condition.
   // `null` (or any non-finite / non-positive value) means "no per-test gate" —
   // the condition returns false unless the threshold is explicitly set, so rules

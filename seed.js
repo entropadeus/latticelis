@@ -35,18 +35,18 @@
   // adult range; HGB additionally has an F-only range to exercise the
   // demographic resolver. TROP carries per-test escalation thresholds.
   const TESTS = [
-    { code: 'GLU',  name: 'Glucose',              units: 'mg/dL',   loinc: '2345-7',  low: 70,  high: 99,  cat: 'chem' },
-    { code: 'BUN',  name: 'Blood Urea Nitrogen',  units: 'mg/dL',   loinc: '3094-0',  low: 7,   high: 25,  cat: 'chem' },
-    { code: 'CR',   name: 'Creatinine',           units: 'mg/dL',   loinc: '2160-0',  low: 0.6, high: 1.2, cat: 'chem' },
-    { code: 'NA',   name: 'Sodium',               units: 'mmol/L',  loinc: '2951-2',  low: 135, high: 145, cat: 'chem' },
-    { code: 'K',    name: 'Potassium',            units: 'mmol/L',  loinc: '2823-3',  low: 3.5, high: 5.0, cat: 'chem' },
-    { code: 'CL',   name: 'Chloride',             units: 'mmol/L',  loinc: '2075-0',  low: 96,  high: 106, cat: 'chem' },
-    { code: 'WBC',  name: 'White Blood Cell',     units: '10^3/uL', loinc: '6690-2',  low: 4.5, high: 11,  cat: 'heme' },
-    { code: 'RBC',  name: 'Red Blood Cell',       units: '10^6/uL', loinc: '789-8',   low: 4.5, high: 5.9, cat: 'heme' },
-    { code: 'HGB',  name: 'Hemoglobin',           units: 'g/dL',    loinc: '718-7',   low: 13,  high: 17,  cat: 'heme', femaleRange: { low: 12, high: 16 } },
-    { code: 'HCT',  name: 'Hematocrit',           units: '%',       loinc: '4544-3',  low: 41,  high: 53,  cat: 'heme' },
-    { code: 'PLT',  name: 'Platelet',             units: '10^3/uL', loinc: '777-3',   low: 150, high: 400, cat: 'heme' },
-    { code: 'TROP', name: 'Troponin I',           units: 'ng/mL',   loinc: '10839-9', low: 0,   high: 0.04, cat: 'cardiac', t1Sec: 30, t2Sec: 60 },
+    { code: 'GLU',  name: 'Glucose',              units: 'mg/dL',   loinc: '2345-7',  low: 70,  high: 99,  cat: 'chem',    department: 'Chemistry' },
+    { code: 'BUN',  name: 'Blood Urea Nitrogen',  units: 'mg/dL',   loinc: '3094-0',  low: 7,   high: 25,  cat: 'chem',    department: 'Chemistry' },
+    { code: 'CR',   name: 'Creatinine',           units: 'mg/dL',   loinc: '2160-0',  low: 0.6, high: 1.2, cat: 'chem',    department: 'Chemistry' },
+    { code: 'NA',   name: 'Sodium',               units: 'mmol/L',  loinc: '2951-2',  low: 135, high: 145, cat: 'chem',    department: 'Chemistry' },
+    { code: 'K',    name: 'Potassium',            units: 'mmol/L',  loinc: '2823-3',  low: 3.5, high: 5.0, cat: 'chem',    department: 'Chemistry' },
+    { code: 'CL',   name: 'Chloride',             units: 'mmol/L',  loinc: '2075-0',  low: 96,  high: 106, cat: 'chem',    department: 'Chemistry' },
+    { code: 'WBC',  name: 'White Blood Cell',     units: '10^3/uL', loinc: '6690-2',  low: 4.5, high: 11,  cat: 'heme',    department: 'Hematology' },
+    { code: 'RBC',  name: 'Red Blood Cell',       units: '10^6/uL', loinc: '789-8',   low: 4.5, high: 5.9, cat: 'heme',    department: 'Hematology' },
+    { code: 'HGB',  name: 'Hemoglobin',           units: 'g/dL',    loinc: '718-7',   low: 13,  high: 17,  cat: 'heme',    department: 'Hematology', femaleRange: { low: 12, high: 16 } },
+    { code: 'HCT',  name: 'Hematocrit',           units: '%',       loinc: '4544-3',  low: 41,  high: 53,  cat: 'heme',    department: 'Hematology' },
+    { code: 'PLT',  name: 'Platelet',             units: '10^3/uL', loinc: '777-3',   low: 150, high: 400, cat: 'heme',    department: 'Hematology' },
+    { code: 'TROP', name: 'Troponin I',           units: 'ng/mL',   loinc: '10839-9', low: 0,   high: 0.04, cat: 'cardiac', department: 'Chemistry', t1Sec: 30, t2Sec: 60 },
   ];
 
   const INSTRUMENTS = [
@@ -180,6 +180,7 @@
       const test = window.schema.newTest({
         id: id('test', t.code),
         code: t.code, name: t.name, units: t.units, loinc: t.loinc,
+        department: t.department || null,
         refRangeLow: t.low, refRangeHigh: t.high,
         referenceRanges: refRanges,
         criticalEscalationT1Sec: t.t1Sec || null,
