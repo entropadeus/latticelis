@@ -161,7 +161,15 @@ const ClientOverview = ({ client }) => {
         { l: 'Contact',  v: client.contactName || '—' },
         { l: 'Phone',    v: <span className="mono">{client.phone || '—'}</span> },
         { l: 'Fax',      v: <span className="mono">{client.fax || '—'}</span> },
-        { l: 'Delivery', v: client.deliveryChannel ? <><span className="pill" data-tone="info">{client.deliveryChannel}</span>{client.deliveryEndpoint ? <span className="mono" style={{ marginLeft: 6, fontSize: 11, color: 'var(--ink-500)' }}>{client.deliveryEndpoint}</span> : null}</> : '—' },
+        // Resolve through the registry so the label tracks whatever the
+        // channel calls itself (e.g. "HL7 over MLLP" instead of the raw
+        // 'hl7' id). Legacy or hidden channels fall back to the stored id
+        // so dropped channels still render readably.
+        { l: 'Delivery', v: client.deliveryChannel ? (() => {
+          const def = window.schema && window.schema.getDeliveryChannel ? window.schema.getDeliveryChannel(client.deliveryChannel) : null;
+          const label = def ? def.label : client.deliveryChannel;
+          return <><span className="pill" data-tone="info">{label}</span>{client.deliveryEndpoint ? <span className="mono" style={{ marginLeft: 6, fontSize: 11, color: 'var(--ink-500)' }}>{client.deliveryEndpoint}</span> : null}</>;
+        })() : '—' },
       ]}/>
       <div style={{ marginTop: 16 }}>
         <div className="section-title" style={{ marginBottom: 8 }}>Orders ({orders.length})</div>
