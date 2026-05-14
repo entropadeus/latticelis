@@ -188,11 +188,16 @@
 
     // Stubs — explicit so console doesn't warn about every primitive in catalog
     'order.location.is':         (a, c) => !!c.location && (c.location.id === a.location || c.location.name === a.location),
-    'order.payer.is':            () => false,
+    // Payer: compare against order.billType (CLIENT/PATIENT/INSURANCE/HOSPITAL).
+    // Rule authors write the billType value; comparison is case-insensitive.
+    'order.payer.is': (a, c) => !!c.order && !!(a.payer) &&
+      (c.order.billType || '').toLowerCase() === String(a.payer).toLowerCase(),
     // Matches the order source system (Athena, Manual, Internal, etc.) stored on order.source.
     'order.source.is':    (a, c) => !!c.order && c.order.source === (a.source || ''),
     'test.panel.contains':       () => false,
     // True when the triggering test's category OR any test in the order has the given department.
+    // schema.TEST_CATEGORIES stores title-case labels ('Chemistry', 'Hematology', …), so the
+    // rule arg is compared as-is — no enum normalization required.
     'test.department.is': (a, c) => {
       const dept = a.dept || '';
       if (!dept) return false;
@@ -202,7 +207,7 @@
     },
     'specimen.temp.outside':     () => false,
     'patient.pregnant':          () => false,
-    // True when the order was placed with fasting status recorded.
+    // True when the order was placed with fasting status recorded (schema field: order.fasting).
     'patient.fasting':    (_, c) => !!(c.order && c.order.fasting),
     // result.delta.gt is now a real evaluator above — see "Delta check" comment.
     'time.holiday':              () => false,
@@ -422,7 +427,25 @@
     // -- Stubs (still wire up the audit so the activity is visible) --------
     'route.to.refLab':      async (a, c) => auditAction('STUB route.to.refLab → ' + (a.refLab || '?'), c),
     'route.split':          async (a, c) => auditAction('STUB route.split count=' + (a.count || 0), c),
-    'order.requireDx':      async (_, c) => auditAction('STUB order.requireDx', c),
+    // requireDx: if the order has no ICD-10 diagnoses, flag it and publish a
+    // notification so the missing-Dx work item surfaces in the notification drawer.
+    // Returns { ok: true, satisfied: true } when diagnoses are present.
+    'order.requireDx': async (a, c) => {
+      if (!c.order) return { ok: false, reason: 'no order in context' };
+      const hasDx = Array.isArray(c.order.diagnoses) && c.order.diagnoses.length > 0;
+      if (hasDx) return { ok: true, satisfied: true };
+      const flags = Array.isArray(c.order.flags) ? [...c.order.flags] : [];
+      if (!flags.includes('missing-dx')) flags.push('missing-dx');
+      const note = 'Requires ICD-10 diagnosis — order flagged pending Dx entry';
+      const notes = c.order.notes ? c.order.notes + '\n' + note : note;
+      await window.db.put('orders', { ...c.order, flags, notes });
+      window.events.publish('notification', {
+        kind: 'system', msg: note, viaRule: true,
+        ctx: { orderId: c.order.id },
+      });
+      await auditAction('order.requireDx: missing diagnoses — flagged missing-dx', c);
+      return { ok: true, satisfied: false, flagged: true };
+    },
     'order.requireAuth':    async (_, c) => auditAction('STUB order.requireAuth', c),
     'order.duplicate.warn': async (a, c) => {
       if (!c.order) return { ok: false, reason: 'no order in context' };
