@@ -37,6 +37,7 @@ const jsxFiles = [
   'users-pages.jsx',
   'admin-pages.jsx',
   'outreach-pages.jsx',
+  'result-report.jsx',
   'accessioning.jsx',
   'app.jsx',
 ];

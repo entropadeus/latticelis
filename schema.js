@@ -606,6 +606,12 @@ const __coerceTatRecipientsByPriority = (raw) => {
 };
 const newLabConfig = (init = {}) => ({
   id: LAB_CONFIG_ID,                                      // fixed singleton id
+  // Lab identity — shown on printed result reports and in the System Setup page.
+  labName:          init.labName          || '',
+  labClia:          init.labClia          || '',
+  labDirectorName:  init.labDirectorName  || '',
+  labPhone:         init.labPhone         || '',
+  labAddress:       init.labAddress       || '',
   qcDisabledRules: Array.isArray(init.qcDisabledRules)
     ? init.qcDisabledRules.filter(r => typeof r === 'string')
     : [],

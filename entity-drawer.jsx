@@ -551,6 +551,7 @@ const OrderOverview = ({ order }) => {
   const location = window.useEntity('locations', order.locationId);
   const specs = window.useEntities('specimens', s => order && s.orderId === order.id);
   const tests = window.useEntities('tests', t => order && order.testIds && order.testIds.includes(t.id));
+  const [showReport, setShowReport] = useStateED(false);
   // Display: prefer locationId → location.name; fall back to free-text facility.
   const facilityDisplay = location
     ? <span><span className="mono" style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>{location.code}</span> <span style={{ marginLeft: 6 }}>{location.name}</span></span>
@@ -627,6 +628,13 @@ const OrderOverview = ({ order }) => {
           </table>
         )}
       </div>
+      <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
+        <button className="btn" data-tone="ghost" onClick={() => setShowReport(true)}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <IconReports size={13}/> Print report
+        </button>
+      </div>
+      {showReport && <window.ResultReportModal orderId={order.id} onClose={() => setShowReport(false)}/>}
     </div>
   );
 };
