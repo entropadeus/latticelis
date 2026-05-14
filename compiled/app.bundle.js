@@ -1428,6 +1428,11 @@ var CONDITION_PRIMITIVES = [{
     unit: '%'
   }]
 }, {
+  id: 'result.delta.test',
+  label: 'Delta exceeds test-catalog threshold',
+  cat: 'Result',
+  args: []
+}, {
   id: 'result.outside.ref',
   label: 'Outside reference range',
   cat: 'Result',
