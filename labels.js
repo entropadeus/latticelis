@@ -22,13 +22,21 @@
 
 (function () {
 
-  // 1x2 @ 203 dpi — portrait by default. Portrait reads naturally on a
-  // tube held upright (sticker on the front) and matches the `label_templates`
-  // admin form's new-template defaults. The Labels admin form is the source
-  // of truth for any per-template variation; this constant only governs the
-  // inline-fallback path used when no template matches.
-  const W = 203;
-  const H = 406;
+  // Default label stock: 2.0" wide × 1.0" tall (landscape) at 203 dpi.
+  // This matches the most common LIS specimen-label format (chemistry /
+  // hematology tube wraps, top-of-baggie stickers) and the factory defaults
+  // on Zebra ZD410 / Brady BBP and most other entry-level lab printers.
+  //
+  // To support different stocks (1×2 portrait tube wrap, 3×1 microbiology,
+  // 4×1 blood bank), create rows in `label_templates`. Per-template
+  // width/height/dpi are authoritative once a template matches — see
+  // pickTemplate() below and the Labels admin form. These constants only
+  // govern the inline-fallback path used when no template matches.
+  const DEFAULT_WIDTH_IN  = 2.0;
+  const DEFAULT_HEIGHT_IN = 1.0;
+  const DEFAULT_DPI       = 203;
+  const W = DEFAULT_WIDTH_IN  * DEFAULT_DPI;   // 406 dots — across the printhead
+  const H = DEFAULT_HEIGHT_IN * DEFAULT_DPI;   // 203 dots — along the feed direction
   const MAX_ZPL_BYTES = 12000;
   const MAX_COPIES = 10;
   const DENIED_TEMPLATE_COMMANDS = [
@@ -268,9 +276,10 @@
       if (!lint.ok) throw new Error('[labels] unsafe ZPL template: ' + lint.errors.slice(0, 3).join('; '));
       usedTemplate = { id: template.id, code: template.code, name: template.name };
     } else {
-      // Inline default — portrait 1×2 layout. Tubes are read upright; the
-      // patient block sits below the barcode header and the order/coll
-      // footer pins to the bottom edge. Coordinates target ^PW203 ^LL406.
+      // Inline default — landscape 2×1 layout (406 × 203 dots @ 203 dpi).
+      // Left column: Code 128 barcode + accession (~180 dots wide).
+      // Right column: patient identity, specimen, tests, order footer.
+      // Coordinates target ^PW406 ^LL203.
       const lines = [];
       lines.push('^XA');
       lines.push(`^PW${W}`);
@@ -278,19 +287,20 @@
       lines.push('^LH0,0');
       if (includeBarcode && render.accession) {
         lines.push('^FO8,8');
-        lines.push('^BY2,2.5,80');
-        lines.push('^BCN,80,Y,N,N');
+        lines.push('^BY2,2.5,90');
+        lines.push('^BCN,90,Y,N,N');
         lines.push(`^FD${__zplEsc(render.accession)}^FS`);
       }
-      lines.push(`^FO8,118^A0N,18,18^FD${__zplEsc(render.patientLine)}^FS`);
-      lines.push(`^FO8,148^A0N,14,14^FD${__zplEsc('MRN ' + render.mrn)}^FS`);
+      // Right column origin = 200 dots in (~1" across the 2" head).
+      lines.push(`^FO200,8^A0N,22,22^FD${__zplEsc(render.patientLine)}^FS`);
+      lines.push(`^FO200,38^A0N,14,14^FD${__zplEsc('MRN ' + render.mrn)}^FS`);
       const id2 = (render.dob || '') + (render.sex ? '  ' + render.sex : '') + (render.age != null ? '  ' + render.age + 'y' : '');
-      lines.push(`^FO8,168^A0N,14,14^FD${__zplEsc(id2)}^FS`);
-      lines.push(`^FO8,196^A0N,16,16^FD${__zplEsc(render.specimenType)}^FS`);
-      lines.push(`^FO8,218^A0N,14,14^FD${__zplEsc(render.container)}^FS`);
-      lines.push(`^FO8,250^A0N,12,12^FDTESTS^FS`);
-      lines.push(`^FO8,268^A0N,16,16^FD${__zplEsc(render.testsShort)}^FS`);
-      lines.push(`^FO8,378^A0N,12,12^FD${__zplEsc('ORD ' + render.orderNumber)}^FS`);
+      lines.push(`^FO200,58^A0N,14,14^FD${__zplEsc(id2)}^FS`);
+      lines.push(`^FO200,82^A0N,16,16^FD${__zplEsc(render.specimenType)}^FS`);
+      lines.push(`^FO200,104^A0N,14,14^FD${__zplEsc(render.container)}^FS`);
+      lines.push(`^FO200,132^A0N,11,11^FDTESTS^FS`);
+      lines.push(`^FO200,148^A0N,14,14^FD${__zplEsc(render.testsShort)}^FS`);
+      lines.push(`^FO200,180^A0N,11,11^FD${__zplEsc('ORD ' + render.orderNumber)}^FS`);
       if (copies > 1) lines.push(`^PQ${copies}`);
       lines.push('^XZ');
       zpl = lines.join('\n');
@@ -300,16 +310,16 @@
 
     // meta carries dimensions in INCHES for the preview/print paths
     // (renderHtml multiplies by px-per-inch). The inline-default ZPL above
-    // uses dots (W=203, H=406) for ^PW/^LL — those are wire units. Reporting
+    // uses dots (W=406, H=203) for ^PW/^LL — those are wire units. Reporting
     // dots here caused the HTML preview to render at 29,000+ px, blanking the
     // modal because content overflowed the clipped 320px column.
     return {
       zpl,
       render,
       meta: {
-        width:  usedTemplate ? (Number(template.width)  || 1.0) : 1.0,
-        height: usedTemplate ? (Number(template.height) || 2.0) : 2.0,
-        dpi:    usedTemplate ? (Number(template.dpi)    || 203) : 203,
+        width:  usedTemplate ? (Number(template.width)  || DEFAULT_WIDTH_IN)  : DEFAULT_WIDTH_IN,
+        height: usedTemplate ? (Number(template.height) || DEFAULT_HEIGHT_IN) : DEFAULT_HEIGHT_IN,
+        dpi:    usedTemplate ? (Number(template.dpi)    || DEFAULT_DPI)       : DEFAULT_DPI,
         copies, includeBarcode,
         template: usedTemplate,
         source: usedTemplate ? 'template' : 'default',
@@ -343,20 +353,35 @@
   // adjacent labels mirrored exactly what the printer would have done —
   // wrapped to a second label).
   //
+  // Units:
+  //   opts.units = 'px' (default)  → screen preview at SCREEN_PX_PER_INCH (=144)
+  //                                  for legibility in the modal.
+  //   opts.units = 'in'            → print path. CSS `in` units make the
+  //                                  printed dimensions match @page size on
+  //                                  every printer regardless of driver DPI.
+  //                                  Without this the screen px (144 dpi)
+  //                                  prints at CSS px (96 dpi), inflating
+  //                                  by 50% and overflowing the stock.
+  //   opts.border = false          → drop the 1px border (some drivers count
+  //                                  borders toward overflow and wrap to a
+  //                                  second label).
+  //
   // `meta` is optional for backward compat — falls back to 2×1 landscape
   // at the previous fixed scale if absent.
   const SCREEN_PX_PER_INCH = 144;
-  const renderHtml = (render, meta) => {
+  const renderHtml = (render, meta, opts) => {
     const e = __htmlEsc;
-    const widthIn  = (meta && Number(meta.width))  || 2.0;
-    const heightIn = (meta && Number(meta.height)) || 1.0;
-    const pxW = Math.round(widthIn  * SCREEN_PX_PER_INCH);
-    const pxH = Math.round(heightIn * SCREEN_PX_PER_INCH);
+    const widthIn  = (meta && Number(meta.width))  || DEFAULT_WIDTH_IN;
+    const heightIn = (meta && Number(meta.height)) || DEFAULT_HEIGHT_IN;
+    const useIn  = !!(opts && opts.units === 'in');
+    const dimW   = useIn ? `${widthIn}in`  : `${Math.round(widthIn  * SCREEN_PX_PER_INCH)}px`;
+    const dimH   = useIn ? `${heightIn}in` : `${Math.round(heightIn * SCREEN_PX_PER_INCH)}px`;
+    const border = (opts && opts.border === false) ? 'none' : '1px solid #000';
     const portrait = heightIn > widthIn;
 
     if (portrait) {
       // Vertical stack — each line has room to breathe at narrower widths.
-      return `<div style="font:11px Geist,system-ui;width:${pxW}px;height:${pxH}px;padding:8px;border:1px solid #000;box-sizing:border-box;display:flex;flex-direction:column;gap:2px;overflow:hidden;background:#fff;color:#000;">
+      return `<div style="font:11px Geist,system-ui;width:${dimW};height:${dimH};padding:8px;border:${border};box-sizing:border-box;display:flex;flex-direction:column;gap:2px;overflow:hidden;background:#fff;color:#000;">
         <div style="font:13px Geist Mono,monospace;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:4px;letter-spacing:0.5px;">${e(render.accession)}</div>
         <div style="font-weight:600;font-size:13px;">${e(render.patientLine)}</div>
         <div style="font-size:10px;color:#444;">MRN ${e(render.mrn)}</div>
@@ -370,7 +395,7 @@
     }
 
     // Landscape — same compact-row layout as before, scaled to actual dims.
-    return `<div style="font:12px Geist,system-ui;width:${pxW}px;height:${pxH}px;padding:8px;border:1px solid #000;box-sizing:border-box;overflow:hidden;background:#fff;color:#000;">
+    return `<div style="font:12px Geist,system-ui;width:${dimW};height:${dimH};padding:8px;border:${border};box-sizing:border-box;overflow:hidden;background:#fff;color:#000;">
       <div style="font:14px Geist Mono,monospace;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:4px;letter-spacing:1px;">${e(render.accession)}</div>
       <div style="font-weight:600;">${e(render.patientLine)}</div>
       <div style="font-size:11px;color:#444;">MRN ${e(render.mrn)} · DOB ${e(render.dob)} · ${e(render.sex)}${render.age != null ? ' · ' + render.age + 'y' : ''}</div>

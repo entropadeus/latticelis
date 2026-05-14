@@ -24151,9 +24151,17 @@ var LabelPreviewModal = ({
       window.alert('Pop-up blocked — allow pop-ups to print.');
       return;
     }
+    var labelHtml = window.labels.renderHtml(built.render, built.meta, {
+      units: 'in',
+      border: false
+    });
     w.document.write(`<!doctype html><html><head><title>Label ${built.render.accession}</title>
-      <style>@page { size: ${widthIn}in ${heightIn}in; margin: 0; } body { margin: 0; padding: 0; }</style>
-      </head><body>${window.labels.renderHtml(built.render, built.meta)}<script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); };</script></body></html>`);
+      <style>
+        @page { size: ${widthIn}in ${heightIn}in; margin: 0; }
+        html, body { margin: 0; padding: 0; width: ${widthIn}in; height: ${heightIn}in; }
+        body > * { width: ${widthIn}in; height: ${heightIn}in; }
+      </style>
+      </head><body>${labelHtml}<script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); };</script></body></html>`);
     w.document.close();
   };
   return React.createElement("div", {
