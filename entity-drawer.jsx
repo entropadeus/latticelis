@@ -357,13 +357,18 @@ const ManualResultEntry = ({ specimen, tests, onClose }) => {
   const [saving, setSaving] = useStateED(false);
   const canVerify = hasPermission('VERIFY_RESULT');
 
-  // Auto-flag based on the resolved demographic range. Numeric values get
-  // L / H if outside; non-numeric strings stay flagless (handled by rules
-  // downstream if they need to mark "POSITIVE" or similar as A/AA).
+  // Auto-flag based on critical thresholds (LL/HH) then the resolved
+  // demographic range (L/H). Non-numeric strings stay flagless — downstream
+  // rules handle qualitative results like "POSITIVE" via A/AA if needed.
   const flagFor = (testId, raw) => {
     if (raw === '' || raw == null) return '';
     const v = Number(raw);
     if (isNaN(v)) return '';
+    const t = tests.find(x => x.id === testId);
+    if (t) {
+      if (Number.isFinite(t.criticalLow)  && v < t.criticalLow)  return 'LL';
+      if (Number.isFinite(t.criticalHigh) && v > t.criticalHigh) return 'HH';
+    }
     const r = ranges[testId];
     if (!r) return '';
     if (r.low  != null && v < Number(r.low))  return 'L';

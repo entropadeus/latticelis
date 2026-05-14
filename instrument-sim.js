@@ -35,7 +35,11 @@
 
   // ── Random value generation ────────────────────────────────────────────
 
-  const flagFromValue = (v, low, high) => {
+  // Critical thresholds (critLow/critHigh) are checked before the reference
+  // range so a value that breaches both gets the more severe LL/HH flag.
+  const flagFromValue = (v, low, high, critLow, critHigh) => {
+    if (Number.isFinite(critLow)  && v < critLow)  return 'LL';
+    if (Number.isFinite(critHigh) && v > critHigh) return 'HH';
     if (low == null || high == null) return '';
     if (v < low) return 'L';
     if (v > high) return 'H';
@@ -164,7 +168,7 @@
             ? window.referenceRanges.pick(test, { patient, asOf: Date.now() })
             : { low: test.refRangeLow, high: test.refRangeHigh, units: test.units || '', source: 'fallback' };
           const value = randomValueAround(picked.low, picked.high);
-          const flag = flagFromValue(value, picked.low, picked.high);
+          const flag = flagFromValue(value, picked.low, picked.high, test.criticalLow, test.criticalHigh);
           const result = window.schema.newResult({
             specimenId: cur.id, testId: test.id,
             value, units: picked.units || test.units || '',

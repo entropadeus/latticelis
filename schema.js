@@ -260,6 +260,14 @@ const newTest = (init = {}) => ({
   // Treat as the "any sex, any age, no effective dating" fallback.
   refRangeLow: init.refRangeLow == null ? null : init.refRangeLow,
   refRangeHigh: init.refRangeHigh == null ? null : init.refRangeHigh,
+  // Critical (panic) value thresholds. Values below criticalLow or above
+  // criticalHigh are flagged LL/HH — a notifiable critical that fires the
+  // critical-result escalation chain. `null` means "no critical threshold" —
+  // out-of-range values are flagged L/H only via the reference range bounds.
+  // Set per test in the Test Catalog; evaluated by instrument-sim and manual
+  // result entry at result creation time.
+  criticalLow:  init.criticalLow  == null ? null : Number(init.criticalLow),
+  criticalHigh: init.criticalHigh == null ? null : Number(init.criticalHigh),
   // Demographic-aware ranges. Resolution lives in `reference-ranges.js`:
   //   pickReferenceRange(test, { patient, asOf, method })
   // Each entry shape: see `newReferenceRange` below.
