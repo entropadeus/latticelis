@@ -496,17 +496,27 @@ const LabelPreviewModal = ({ specimenId, onClose }) => {
   // Open an isolated print window so the lab's browser-attached label printer
   // (or any page printer) can render the label without the surrounding LIS UI.
   // The actual ZPL path (Zebra over TCP) is Tier 6.
-  // @page size matches the configured template dimensions, not a fixed 2x1 —
-  // portrait templates print portrait, landscape stays landscape.
+  //
+  // For native multi-printer support, we hand the OS driver an HTML page sized
+  // exactly to the configured label stock — `@page size: WxH in` declares the
+  // page geometry, and renderHtml is asked to emit dimensions in CSS `in` units
+  // (not screen px) so the printed body fills the @page box on any driver DPI.
+  // The body itself is sized to the page so any "fit to printable area"
+  // scaling the driver does on its own remains a no-op. No border, no margins.
   const printNow = () => {
     if (!built) return;
     const widthIn  = (built.meta && Number(built.meta.width))  || 2;
     const heightIn = (built.meta && Number(built.meta.height)) || 1;
     const w = window.open('', '_blank', `width=${Math.round(widthIn * 200)},height=${Math.round(heightIn * 240)}`);
     if (!w) { window.alert('Pop-up blocked — allow pop-ups to print.'); return; }
+    const labelHtml = window.labels.renderHtml(built.render, built.meta, { units: 'in', border: false });
     w.document.write(`<!doctype html><html><head><title>Label ${built.render.accession}</title>
-      <style>@page { size: ${widthIn}in ${heightIn}in; margin: 0; } body { margin: 0; padding: 0; }</style>
-      </head><body>${window.labels.renderHtml(built.render, built.meta)}<script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); };</script></body></html>`);
+      <style>
+        @page { size: ${widthIn}in ${heightIn}in; margin: 0; }
+        html, body { margin: 0; padding: 0; width: ${widthIn}in; height: ${heightIn}in; }
+        body > * { width: ${widthIn}in; height: ${heightIn}in; }
+      </style>
+      </head><body>${labelHtml}<script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); };</script></body></html>`);
     w.document.close();
   };
 
