@@ -192,27 +192,23 @@
     // Rule authors write the billType value; comparison is case-insensitive.
     'order.payer.is': (a, c) => !!c.order && !!(a.payer) &&
       (c.order.billType || '').toLowerCase() === String(a.payer).toLowerCase(),
-    'order.source.is':           () => false,
+    // Matches the order source system (Athena, Manual, Internal, etc.) stored on order.source.
+    'order.source.is':    (a, c) => !!c.order && c.order.source === (a.source || ''),
     'test.panel.contains':       () => false,
-    // Department: map UI enum labels to schema category constants.
-    // UI opts: Chemistry, Hematology, Microbiology, Molecular, Toxicology, Cytology, Anatomic Pathology
-    // Schema: CHEMISTRY, HEMATOLOGY, MICROBIOLOGY, MOLECULAR, TOXICOLOGY, CYTOLOGY, PATHOLOGY
+    // True when the triggering test's category OR any test in the order has the given department.
+    // schema.TEST_CATEGORIES stores title-case labels ('Chemistry', 'Hematology', …), so the
+    // rule arg is compared as-is — no enum normalization required.
     'test.department.is': (a, c) => {
-      if (!c.test || !a.dept) return false;
-      const DEPT_MAP = {
-        'chemistry': 'CHEMISTRY', 'hematology': 'HEMATOLOGY',
-        'microbiology': 'MICROBIOLOGY', 'molecular': 'MOLECULAR',
-        'toxicology': 'TOXICOLOGY', 'cytology': 'CYTOLOGY',
-        'anatomic pathology': 'PATHOLOGY',
-      };
-      const mapped = DEPT_MAP[String(a.dept).toLowerCase()];
-      return mapped ? c.test.category === mapped : c.test.category === String(a.dept).toUpperCase();
+      const dept = a.dept || '';
+      if (!dept) return false;
+      if (c.test && c.test.category === dept) return true;
+      if (Array.isArray(c.tests) && c.tests.some(t => t.category === dept)) return true;
+      return false;
     },
     'specimen.temp.outside':     () => false,
     'patient.pregnant':          () => false,
-    // Fasting status lives on the order (fastingStatus: 'FASTING'|'NON_FASTING'|'UNKNOWN').
-    // The condition name "patient.fasting" reflects clinical framing; the data gate is the order.
-    'patient.fasting': (a, c) => !!c.order && c.order.fastingStatus === 'FASTING',
+    // True when the order was placed with fasting status recorded (schema field: order.fasting).
+    'patient.fasting':    (_, c) => !!(c.order && c.order.fasting),
     // result.delta.gt is now a real evaluator above — see "Delta check" comment.
     'time.holiday':              () => false,
     'message.type.is':           () => false,
@@ -544,6 +540,12 @@
     if (ctx.order && ctx.order.locationId && !ctx.location) {
       ctx.location = await window.db.get('locations', ctx.order.locationId);
     }
+    if (ctx.order && ctx.order.clientId && !ctx.client) {
+      ctx.client = await window.db.get('clients', ctx.order.clientId);
+    }
+    if (ctx.order && Array.isArray(ctx.order.testIds) && ctx.order.testIds.length && !ctx.tests) {
+      ctx.tests = await window.db.list('tests', t => ctx.order.testIds.includes(t.id));
+    }
 
     return ctx;
   };
@@ -561,6 +563,8 @@
     if (ctx.test)       next.test       = await window.db.get('tests', ctx.test.id);
     if (ctx.instrument) next.instrument = await window.db.get('instruments', ctx.instrument.id);
     if (ctx.location)   next.location   = await window.db.get('locations',   ctx.location.id);
+    if (ctx.client)     next.client     = await window.db.get('clients',     ctx.client.id);
+    if (ctx.tests)      next.tests      = ctx.tests;   // test catalog stable mid-rule
     return next;
   };
 

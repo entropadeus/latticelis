@@ -177,11 +177,13 @@
           low: t.femaleRange.low, high: t.femaleRange.high, units: t.units, sex: 'F',
         }));
       }
+      const catMap = { chem: 'Chemistry', heme: 'Hematology', cardiac: 'Chemistry' };
       const test = window.schema.newTest({
         id: id('test', t.code),
         code: t.code, name: t.name, units: t.units, loinc: t.loinc,
         refRangeLow: t.low, refRangeHigh: t.high,
         referenceRanges: refRanges,
+        category: catMap[t.cat] || '',
         criticalEscalationT1Sec: t.t1Sec || null,
         criticalEscalationT2Sec: t.t2Sec || null,
       });

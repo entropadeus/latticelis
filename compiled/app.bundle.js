@@ -5866,6 +5866,8 @@ var NewOrderDrawer = ({
   var [providerName, setProviderName] = useStateOF('');
   var [diagnosisCodes, setDiagnosisCodes] = useStateOF('');
   var [notes, setNotes] = useStateOF('');
+  var [orderSource, setOrderSource] = useStateOF('');
+  var [fasting, setFasting] = useStateOF(false);
   var [deliveryChannel, setDeliveryChannel] = useStateOF('');
   var [deliveryEndpoint, setDeliveryEndpoint] = useStateOF('');
   var [saving, setSaving] = useStateOF(false);
@@ -6048,6 +6050,8 @@ var NewOrderDrawer = ({
         providerId: providerName.trim() || null,
         diagnosisCodes: diagnosisCodes.split(',').map(s => s.trim()).filter(Boolean),
         notes: notes.trim(),
+        source: orderSource || '',
+        fasting: fasting === true,
         deliveryChannel: deliveryChannel || '',
         deliveryEndpoint: (deliveryChannel && window.schema && window.schema.validateDeliveryEndpoint ? window.schema.validateDeliveryEndpoint(deliveryChannel, deliveryEndpoint).normalized : deliveryEndpoint.trim()) || ''
       });
@@ -6307,6 +6311,34 @@ var NewOrderDrawer = ({
     onChange: e => setProviderName(e.target.value),
     placeholder: "Ordering provider name"
   })), React.createElement(FieldRow, {
+    label: "Order source"
+  }, React.createElement("select", {
+    className: "input",
+    value: orderSource,
+    onChange: e => setOrderSource(e.target.value)
+  }, React.createElement("option", {
+    value: ""
+  }, "\u2014 not specified \u2014"), (window.schema?.ORDER_SOURCES || []).map(s => React.createElement("option", {
+    key: s,
+    value: s
+  }, s)))), React.createElement(FieldRow, {
+    label: "Fasting"
+  }, React.createElement("label", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      cursor: 'pointer'
+    }
+  }, React.createElement("input", {
+    type: "checkbox",
+    checked: fasting,
+    onChange: e => setFasting(e.target.checked)
+  }), React.createElement("span", {
+    style: {
+      fontSize: 12.5
+    }
+  }, "Patient is fasting"))), React.createElement(FieldRow, {
     label: "Diagnosis (ICD-10)"
   }, React.createElement("input", {
     className: "input",
@@ -15787,6 +15819,7 @@ var TestCatalogPage = ({
       shortName: '',
       loinc: '',
       units: '',
+      category: '',
       refRangeLow: '',
       refRangeHigh: '',
       turnaroundMinutes: '',
@@ -15808,6 +15841,7 @@ var TestCatalogPage = ({
       shortName: t.shortName || '',
       loinc: t.loinc || '',
       units: t.units || '',
+      category: t.category || '',
       refRangeLow: t.refRangeLow == null ? '' : t.refRangeLow,
       refRangeHigh: t.refRangeHigh == null ? '' : t.refRangeHigh,
       turnaroundMinutes: t.turnaroundMinutes == null ? '' : t.turnaroundMinutes,
@@ -16172,7 +16206,21 @@ var TestCatalogPage = ({
       units: e.target.value
     }),
     placeholder: "UCUM (mg/dL, mmol/L, \u2026)"
-  })), React.createElement("div", {
+  })), React.createElement(CatalogField, {
+    label: "Department"
+  }, React.createElement("select", {
+    className: "input",
+    value: draft.category,
+    onChange: e => setDraft({
+      ...draft,
+      category: e.target.value
+    })
+  }, React.createElement("option", {
+    value: ""
+  }, "\u2014 unassigned \u2014"), (window.schema?.TEST_CATEGORIES || []).map(c => React.createElement("option", {
+    key: c,
+    value: c
+  }, c)))), React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: '1fr 1fr',

@@ -48,6 +48,9 @@ const newPatient = (init = {}) => ({
   updatedAt: Date.now(),
 });
 
+// Order source systems — what placed the order. Drives order.source.is rules condition.
+const ORDER_SOURCES = ['Athena', 'Outreach EMR', 'Internal', 'Manual', 'Reference Lab'];
+
 const newOrder = (init = {}) => ({
   id: init.id || __id('ord'),
   orderNumber: init.orderNumber || '',
@@ -58,6 +61,12 @@ const newOrder = (init = {}) => ({
   // Outreach: the "client" is the referring clinic that placed the order.
   // Distinct from `facility` (the receiving lab's site name).
   clientId: init.clientId || null,
+  // Which system/channel placed the order (Athena, Manual, Internal, etc.).
+  // Drives the order.source.is rules condition.
+  source: init.source || '',
+  // Fasting status: true when the patient was fasting at draw time.
+  // Drives the patient.fasting rules condition and affects GLU reference ranges.
+  fasting: init.fasting === true,
   // Where the order is physically processed. `locationId` is the FK into the
   // `locations` collection (preferred); `facility` is a free-text fallback
   // kept for back-compat with older records that pre-date the Locations admin.
@@ -144,6 +153,9 @@ const newSpecimen = (init = {}) => ({
   createdAt: init.createdAt || Date.now(),
   updatedAt: Date.now(),
 });
+
+// Lab department / section categories for tests. Matches the rule-editor enum in rules-library.jsx.
+const TEST_CATEGORIES = ['Chemistry', 'Hematology', 'Microbiology', 'Molecular', 'Toxicology', 'Cytology', 'Anatomic Pathology', 'Other'];
 
 const SPECIMEN_CONDITIONS = [
   // Acceptable
@@ -234,6 +246,8 @@ const newTest = (init = {}) => ({
   name: init.name || '',
   shortName: init.shortName || '',
   units: init.units || '',
+  // Lab section (Chemistry, Hematology, …). Drives the test.department.is rules condition.
+  category: init.category || '',
   // Default range — used when no reference range entry matches a patient's demographics.
   // Treat as the "any sex, any age, no effective dating" fallback.
   refRangeLow: init.refRangeLow == null ? null : init.refRangeLow,
@@ -798,7 +812,7 @@ window.schema = {
   TAT_THRESHOLD_DEFAULTS, TAT_RECIPIENTS_DEFAULT, TAT_PRIORITY_KEYS,
   ROLES, ROLE_IDS, ROLE_BY_ID, PERMISSIONS,
   nextAccessionNumber,
-  SPECIMEN_CONDITIONS,
+  SPECIMEN_CONDITIONS, TEST_CATEGORIES, ORDER_SOURCES,
   // Delivery channel registry (single source of truth for fax/hl7/portal/etc.)
   DELIVERY_CHANNELS, getDeliveryChannel, listDeliveryChannels, validateDeliveryEndpoint,
 };
