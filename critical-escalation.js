@@ -68,7 +68,7 @@
     };
     await window.db.put('results', updated);
 
-    const target = tier === 1 ? 'LAB_SUPERVISOR' : 'LAB_DIRECTOR / oncall';
+    const target = tier === 1 ? 'LAB_SUPERVISOR' : 'LAB_DIRECTOR';
     const test = ctx && ctx.test;
     const accession = result.specimenId
       ? (await window.db.get('specimens', result.specimenId).catch(() => null))

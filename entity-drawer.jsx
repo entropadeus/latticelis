@@ -58,9 +58,15 @@ const EntityDrawer = () => {
           ))}
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
-          {tab === 'overview' && <DrawerOverview target={target}/>}
-          {tab === 'timeline' && <DrawerTimeline target={target}/>}
-          {tab === 'related'  && <DrawerRelated target={target} onOpen={(k, id) => setTarget({ kind: k, id })}/>}
+          {/* Re-key on tab id so the wrapper unmounts/remounts and the
+              fade-in animation re-fires when switching tabs. Without the
+              key, only the inner content swaps and the entry animation
+              never runs. */}
+          <div key={tab} className="fade-in">
+            {tab === 'overview' && <DrawerOverview target={target}/>}
+            {tab === 'timeline' && <DrawerTimeline target={target}/>}
+            {tab === 'related'  && <DrawerRelated target={target} onOpen={(k, id) => setTarget({ kind: k, id })}/>}
+          </div>
         </div>
       </div>
     </>
@@ -155,7 +161,15 @@ const ClientOverview = ({ client }) => {
         { l: 'Contact',  v: client.contactName || '—' },
         { l: 'Phone',    v: <span className="mono">{client.phone || '—'}</span> },
         { l: 'Fax',      v: <span className="mono">{client.fax || '—'}</span> },
-        { l: 'Delivery', v: client.deliveryChannel ? <><span className="pill" data-tone="info">{client.deliveryChannel}</span>{client.deliveryEndpoint ? <span className="mono" style={{ marginLeft: 6, fontSize: 11, color: 'var(--ink-500)' }}>{client.deliveryEndpoint}</span> : null}</> : '—' },
+        // Resolve through the registry so the label tracks whatever the
+        // channel calls itself (e.g. "HL7 over MLLP" instead of the raw
+        // 'hl7' id). Legacy or hidden channels fall back to the stored id
+        // so dropped channels still render readably.
+        { l: 'Delivery', v: client.deliveryChannel ? (() => {
+          const def = window.schema && window.schema.getDeliveryChannel ? window.schema.getDeliveryChannel(client.deliveryChannel) : null;
+          const label = def ? def.label : client.deliveryChannel;
+          return <><span className="pill" data-tone="info">{label}</span>{client.deliveryEndpoint ? <span className="mono" style={{ marginLeft: 6, fontSize: 11, color: 'var(--ink-500)' }}>{client.deliveryEndpoint}</span> : null}</>;
+        })() : '—' },
       ]}/>
       <div style={{ marginTop: 16 }}>
         <div className="section-title" style={{ marginBottom: 8 }}>Orders ({orders.length})</div>
@@ -341,6 +355,7 @@ const ManualResultEntry = ({ specimen, tests, onClose }) => {
     }), {})
   );
   const [saving, setSaving] = useStateED(false);
+  const canVerify = hasPermission('VERIFY_RESULT');
 
   // Auto-flag based on the resolved demographic range. Numeric values get
   // L / H if outside; non-numeric strings stay flagless (handled by rules
@@ -374,7 +389,7 @@ const ManualResultEntry = ({ specimen, tests, onClose }) => {
 
         const value = isNaN(Number(entry.value)) ? entry.value : Number(entry.value);
         const range = ranges[test.id] || { low: test.refRangeLow, high: test.refRangeHigh, source: 'fallback', matchedRange: null };
-        const verifyNow = !!entry.verifyNow;
+        const verifyNow = !!entry.verifyNow && hasPermission('VERIFY_RESULT');
 
         // Build the record. If the operator opted to verify on save we bake
         // status='final' + verifiedBy/At into the record itself rather than
@@ -500,8 +515,9 @@ const ManualResultEntry = ({ specimen, tests, onClose }) => {
                 </td>
                 <td>
                   <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: 'var(--ink-700)' }}
-                    title="Mark this result as final and stamp verified-by on save">
+                    title={permissionTitle(canVerify, 'Mark this result as final and stamp verified-by on save', 'verify results')}>
                     <input type="checkbox" checked={!!entry.verifyNow}
+                      disabled={!canVerify}
                       onChange={e => setVal(t.id, 'verifyNow', e.target.checked)}/>
                     on save
                   </label>
@@ -743,7 +759,14 @@ const PatientOverview = ({ patient }) => {
         )}
       </div>
       <button className="btn" data-variant="primary" data-size="sm" style={{ marginTop: 12 }}
-        onClick={() => { window.closeEntity(); window.__navTo && window.__navTo('patients'); }}>
+        onClick={() => {
+          window.closeEntity();
+          // Prefer the preselect-aware hook so we land on this patient's
+          // detail pane directly. Fall back to a bare nav if app.jsx hasn't
+          // registered the hook yet (older bundle / mid-reload race).
+          if (window.openPatientInSearch) window.openPatientInSearch(patient.id);
+          else if (window.__navTo) window.__navTo('patients');
+        }}>
         Open in Patient Search
       </button>
     </div>
@@ -764,11 +787,13 @@ const ResultOverview = ({ result }) => {
   }, [chain]);
   const isCorrection = !!result.correctionOf;
   const wasSuperseded = !!result.supersededByResultId;
+  const canCorrect = hasPermission('CORRECT_RESULT');
 
   // The "Correct this result" button opens a global modal via window.openCorrection
   // — the modal lives at the page level so it works whether you got here from
   // the Results page or via Activity Log click-through.
   const openCorrect = () => {
+    if (!hasPermission('CORRECT_RESULT')) return;
     if (window.openCorrectionFor) window.openCorrectionFor(result.id);
     else window.alert('Correction UI not available on this page.');
   };
@@ -872,13 +897,20 @@ const ResultOverview = ({ result }) => {
         </div>
       )}
 
-      {correctable && (
-        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
-          <button className="btn" data-size="sm" data-variant="primary" onClick={openCorrect}>
+      <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <button className="btn" data-size="sm" data-variant="ghost"
+          onClick={() => window.openResultReport && window.openResultReport(result.id)}
+          title="Print or save a PDF of this result report">
+          <IconPrint/> Print report
+        </button>
+        {correctable && (
+          <button className="btn" data-size="sm" data-variant="primary" onClick={openCorrect}
+            disabled={!canCorrect}
+            title={permissionTitle(canCorrect, 'Correct this result', 'correct results')}>
             <IconCorrect/> Correct this result
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {(result.deliveryStatus || result.lastHl7Message) && (
         <DeliverySection result={result}/>
@@ -890,6 +922,15 @@ const ResultOverview = ({ result }) => {
 // Tone map shared with the result-history strip. Mirrors RESULT_FLAG_TONE
 // from the shared page helpers but kept local so this file doesn't need to import.
 const RESULT_FLAG_TONE_INLINE = { L: 'info', H: 'amber', LL: 'rust', HH: 'rust', A: 'amber', AA: 'rust' };
+
+const IconPrint = ({ size = 13 }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 6V2h8v4"/>
+    <rect x="2" y="6" width="12" height="6" rx="1"/>
+    <path d="M4 9h8M4 12h8v2H4v-2z"/>
+    <circle cx="4.5" cy="8.5" r="0.5" fill="currentColor" stroke="none"/>
+  </svg>
+);
 
 // Tiny inline icon — pencil-on-line. Custom 1.25px geometric per the design system.
 const IconCorrect = ({ size = 13 }) => (
@@ -934,6 +975,12 @@ const DeliverySection = ({ result }) => {
 
 const DrawerTimeline = ({ target }) => {
   const events = window.useEntities('audit_events', e => e.entityId === target.id);
+  const instruments = window.useEntities('instruments');
+  const instrumentsById = useMemoED(() => {
+    const m = {};
+    instruments.forEach(i => { m[i.id] = i; if (i.code) m[i.code] = i; });
+    return m;
+  }, [instruments]);
   const sorted = useMemoED(() => [...events].sort((a, b) => (b.ts || 0) - (a.ts || 0)), [events]);
   if (sorted.length === 0) {
     return <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>No events recorded for this entity yet.</div>;
@@ -975,6 +1022,17 @@ const DrawerTimeline = ({ target }) => {
             {ev.payload && ev.payload.ruleName && (
               <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 2 }}>
                 Rule "{ev.payload.ruleName}" → {(ev.payload.actionResults || []).length} action{(ev.payload.actionResults || []).length === 1 ? '' : 's'}
+              </div>
+            )}
+            {ev.type === 'lifecycle.transition' && ev.payload && ev.payload.from && ev.payload.to && (
+              <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 2 }}>
+                {ev.payload.from} → {ev.payload.to}
+                {ev.payload.reason ? <span style={{ color: 'var(--ink-400)' }}> · {ev.payload.reason}</span> : null}
+              </div>
+            )}
+            {ev.type === 'specimen.routed' && ev.payload && ev.payload.target && (
+              <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 2 }}>
+                → {(instrumentsById[ev.payload.target] || {}).name || ev.payload.target}
               </div>
             )}
           </div>

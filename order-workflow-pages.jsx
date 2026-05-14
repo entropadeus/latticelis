@@ -10,6 +10,10 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
   const [q, setQ] = useStateOS('');
   const [status, setStatus] = useStateOS('all');
   const [copiedOrderId, setCopiedOrderId] = useStateOS(null);
+  const canCreateOrder = hasPermission('CREATE_ORDER');
+  // false on first render → no animation on initial paint; true thereafter →
+  // newly-arrived rows mount with `slide-up` and animate on insert.
+  const animateNew = window.useDeferredEnter();
 
   const pinnedClient = filterClientId ? clientById[filterClientId] : null;
 
@@ -46,13 +50,17 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
       .sort((a, b) => (b.orderedAt || b.createdAt || 0) - (a.orderedAt || a.createdAt || 0));
   }, [orders, patientById, locationById, q, status, filterClientId]);
 
+  const pager = usePagination(filtered);
+
   return (
     <Page label="Orders">
       <PageHeader title="Orders" sub="All laboratory orders across the system."
         actions={[
           <button key="f" className="btn" data-size="sm"><IconFilter size={13}/> Filter</button>,
           <button key="n" className="btn" data-size="sm" data-variant="primary"
-            onClick={() => window.openNewOrder && window.openNewOrder()}><IconPlus size={13}/> New order</button>,
+            onClick={() => window.openNewOrder && window.openNewOrder()}
+            disabled={!canCreateOrder}
+            title={permissionTitle(canCreateOrder, 'Create new order', 'create orders')}><IconPlus size={13}/> New order</button>,
         ]}/>
       <div className="panel">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 10, borderBottom: '1px solid var(--line)' }}>
@@ -73,6 +81,7 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
           <div style={{ flex:1 }}/>
           <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{filtered.length} orders</span>
         </div>
+        {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
         {filtered.length === 0 ? (
           <EmptyTable
             columns={['Order #','Patient','MRN','Tests','Priority','Status','TAT','Ordered','Facility']}
@@ -86,14 +95,14 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
                 <th>Priority</th><th>Status</th><th>TAT</th><th>Ordered</th><th>Facility</th>
               </tr>
             </thead>
-            <tbody>
-              {filtered.map(o => {
+            <tbody className="stagger-children">
+              {pager.slice.map(o => {
                 const pat = o.patientId ? patientById[o.patientId] : null;
                 const cli = o.clientId ? clientById[o.clientId] : null;
                 const loc = o.locationId ? locationById[o.locationId] : null;
                 const name = pat ? ((pat.lastName || '') + (pat.firstName ? ', ' + pat.firstName : '')).trim() : '';
                 return (
-                  <tr key={o.id} style={{ cursor: 'pointer' }}
+                  <tr key={o.id} className={animateNew ? 'slide-up' : ''} style={{ cursor: 'pointer' }}
                       onClick={() => window.openEntity && window.openEntity('order', o.id)}>
                     <td>
                       {o.orderNumber ? (
@@ -148,6 +157,7 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
             </tbody>
           </table>
         )}
+        {filtered.length > 0 && <TablePagination {...pager}/>}
       </div>
     </Page>
   );
@@ -163,6 +173,7 @@ const SpecimensPage = () => {
 
   const [q, setQ] = useStateOS('');
   const [filter, setFilter] = useStateOS('all');
+  const animateNew = window.useDeferredEnter();
 
   const filtered = useMemoOS(() => {
     return specimens
@@ -183,6 +194,8 @@ const SpecimensPage = () => {
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [specimens, q, filter]);
 
+  const pager = usePagination(filtered);
+
   return (
     <Page label="Specimens">
       <PageHeader title="Specimens" sub="Trace every specimen through collection, routing, accessioning, analysis, and disposition."
@@ -197,6 +210,7 @@ const SpecimensPage = () => {
           <div style={{ flex: 1 }}/>
           <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{filtered.length} specimens</span>
         </div>
+        {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
         {filtered.length === 0 ? (
           <EmptyTable
             columns={['Accession','Barcode','Patient','Order','Type','Container','Collected','Received','Flags','State']}
@@ -211,13 +225,13 @@ const SpecimensPage = () => {
                 <th>Condition</th><th>Flags</th><th>State</th>
               </tr>
             </thead>
-            <tbody>
-              {filtered.map(s => {
+            <tbody className="stagger-children">
+              {pager.slice.map(s => {
                 const pat = s.patientId ? patientById[s.patientId] : null;
                 const ord = s.orderId ? orderById[s.orderId] : null;
                 const flags = Array.isArray(s.flags) ? s.flags : [];
                 return (
-                  <tr key={s.id} style={{ cursor: 'pointer' }}
+                  <tr key={s.id} className={animateNew ? 'slide-up' : ''} style={{ cursor: 'pointer' }}
                       onClick={() => window.openEntity && window.openEntity('specimen', s.id)}>
                     <td><span className="mono" style={{ color: 'var(--sage-700)' }}>{s.accessionNumber || '—'}</span></td>
                     <td><span className="mono">{s.barcode || '—'}</span></td>
@@ -249,6 +263,7 @@ const SpecimensPage = () => {
             </tbody>
           </table>
         )}
+        {filtered.length > 0 && <TablePagination {...pager}/>}
       </div>
     </Page>
   );
@@ -264,30 +279,68 @@ const WorklistsPage = () => {
   const orders = window.useEntities('orders');
   const patients = window.useEntities('patients');
   const tests = window.useEntities('tests');
+  const instruments = window.useEntities('instruments');
   const orderById = useMemoOS(() => Object.fromEntries(orders.map(o => [o.id, o])), [orders]);
   const patientById = useMemoOS(() => Object.fromEntries(patients.map(p => [p.id, p])), [patients]);
   const testById = useMemoOS(() => Object.fromEntries(tests.map(t => [t.id, t])), [tests]);
+  const canAccession = hasPermission('ACCESSION');
+  const animateNew = window.useDeferredEnter();
 
-  // Group specimens by routedTo (analyzers/labs). The "Unrouted" bucket
-  // holds anything received but not yet routed.
+  // Build a routedTo → instrument lookup that handles BOTH key formats:
+  // some specimens were routed by id (`inst_xxx` from the seeder), others
+  // by code (`cobas-c303` from the route modal's old freeform input). Both
+  // resolve to the same instrument record so the worklist UI shows one
+  // queue per analyzer regardless of how the routing was authored.
+  const instrumentByKey = useMemoOS(() => {
+    const out = {};
+    for (const inst of instruments) {
+      if (inst.id) out[inst.id] = inst;
+      if (inst.code) out[inst.code] = inst;
+    }
+    return out;
+  }, [instruments]);
+
+  const labelForRouteKey = (key) => {
+    if (!key || key === '__unrouted') return 'Unrouted';
+    const inst = instrumentByKey[key];
+    if (inst) return inst.name || inst.code || key;
+    return key;  // fallback — operator-typed string we can't resolve
+  };
+
+  // Group specimens by routedTo (analyzers/labs). Specimens that share an
+  // instrument via either id or code are merged into a single bucket keyed
+  // by the canonical instrument id, so seeded + operator-routed specimens
+  // for the same analyzer don't fork into two queues.
   const groups = useMemoOS(() => {
     const g = new Map();
     for (const s of specimens) {
       if (s.state === 'rejected' || s.state === 'completed') continue;
-      const key = s.routedTo || '__unrouted';
+      const raw = s.routedTo || '__unrouted';
+      const inst = instrumentByKey[raw];
+      const key = inst ? inst.id : raw;  // canonicalize to instrument id
       if (!g.has(key)) g.set(key, []);
       g.get(key).push(s);
     }
     return Array.from(g.entries()).map(([key, items]) => ({
       id: key,
-      label: key === '__unrouted' ? 'Unrouted' : key,
+      label: labelForRouteKey(key),
       items: items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)),
     })).sort((a, b) => {
       if (a.id === '__unrouted') return -1;
       if (b.id === '__unrouted') return 1;
       return a.label.localeCompare(b.label);
     });
-  }, [specimens]);
+  }, [specimens, instrumentByKey]);
+
+  // Build the dropdown options once for the route modals — instrument records
+  // sorted by name. Submit value is the instrument id (canonical) so all
+  // future route operations land in the same bucket as the seeder.
+  const routeOptions = useMemoOS(() =>
+    [...instruments]
+      .filter(i => i.active !== false)
+      .sort((a, b) => (a.name || a.code || '').localeCompare(b.name || b.code || ''))
+      .map(i => ({ value: i.id, label: (i.name || i.code) + (i.code ? ' (' + i.code + ')' : '') })),
+    [instruments]);
 
   const [selectedKey, setSelectedKey] = useStateOS(null);
   const [checked, setChecked] = useStateOS(() => new Set());
@@ -357,7 +410,16 @@ const WorklistsPage = () => {
   };
 
   const bulkRoute = async () => {
+    if (!hasPermission('ACCESSION')) return;
     if (checkedSpecimens.length === 0) return;
+    if (routeOptions.length === 0) {
+      await safetyNotice({
+        tone: 'danger',
+        title: 'No instruments configured',
+        message: 'Add at least one instrument in Admin > Instruments before routing specimens.',
+      });
+      return;
+    }
     const ask = await safetyConfirm({
       id: 'worklists.route.batch',
       tone: 'warning',
@@ -369,12 +431,13 @@ const WorklistsPage = () => {
       ],
       requireReason: true,
       reasonLabel: 'Route to',
-      reasonDefault: 'cobas-c303',
+      reasonOptions: routeOptions,
       entityType: 'specimen',
       entityId: 'batch',
       confirmLabel: 'Route batch',
     });
     if (!ask.confirmed || !ask.reason) return;
+    if (!hasPermission('ACCESSION')) return;
     const target = ask.reason;
     const actor = currentActorId();
     for (const s of checkedSpecimens) {
@@ -385,6 +448,7 @@ const WorklistsPage = () => {
   };
 
   const bulkReject = async () => {
+    if (!hasPermission('ACCESSION')) return;
     if (checkedSpecimens.length === 0) return;
     const ask = await safetyConfirm({
       id: 'worklists.reject.batch',
@@ -403,6 +467,7 @@ const WorklistsPage = () => {
       confirmLabel: 'Reject batch',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('ACCESSION')) return;
     const actor = currentActorId();
     for (const s of checkedSpecimens) {
       const fresh = await window.db.get('specimens', s.id);
@@ -412,6 +477,19 @@ const WorklistsPage = () => {
   };
 
   const releaseToInstrument = async (specimen) => {
+    if (!hasPermission('ACCESSION')) return;
+    if (routeOptions.length === 0) {
+      await safetyNotice({
+        tone: 'danger',
+        title: 'No instruments configured',
+        message: 'Add at least one instrument in Admin > Instruments before routing specimens.',
+      });
+      return;
+    }
+    // Pre-select the specimen's current routedTo if it resolves to a known
+    // instrument — handy for re-routes. Falls through to "— pick one —" if
+    // unresolvable so the operator can't accidentally re-confirm a stale id.
+    const currentInst = specimen.routedTo ? instrumentByKey[specimen.routedTo] : null;
     const ask = await safetyConfirm({
       id: 'worklists.route.single',
       tone: 'info',
@@ -420,13 +498,15 @@ const WorklistsPage = () => {
       facts: factsForSpecimen(specimen),
       requireReason: true,
       reasonLabel: 'Route to',
-      reasonDefault: specimen.routedTo || 'cobas-c303',
+      reasonOptions: routeOptions,
+      reasonDefault: currentInst ? currentInst.id : '',
       entityType: 'specimen',
       entityId: specimen.id,
       confirmLabel: 'Route',
       audit: false,
     });
     if (!ask.confirmed || !ask.reason) return;
+    if (!hasPermission('ACCESSION')) return;
     const fresh = await window.db.get('specimens', specimen.id);
     if (!fresh) return;
     const actor = currentActorId();
@@ -484,8 +564,12 @@ const WorklistsPage = () => {
                 {checkedSpecimens.length > 0 && (
                   <>
                     <span style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>{checkedSpecimens.length} selected</span>
-                    <button className="btn" data-variant="primary" data-size="xs" onClick={bulkRoute}>Route…</button>
-                    <button className="btn" data-variant="danger" data-size="xs" onClick={bulkReject}>Reject…</button>
+                    <button className="btn" data-variant="primary" data-size="xs" onClick={bulkRoute}
+                      disabled={!canAccession}
+                      title={permissionTitle(canAccession, 'Route selected specimens', 'accession or route specimens')}>Route…</button>
+                    <button className="btn" data-variant="danger" data-size="xs" onClick={bulkReject}
+                      disabled={!canAccession}
+                      title={permissionTitle(canAccession, 'Reject selected specimens', 'accession or route specimens')}>Reject…</button>
                     <button className="btn" data-variant="ghost" data-size="xs" onClick={() => setChecked(new Set())}>Clear</button>
                   </>
                 )}
@@ -508,14 +592,14 @@ const WorklistsPage = () => {
                         <th style={{ width: 110 }}></th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="stagger-children">
                       {selected.items.map(s => {
                         const o = s.orderId ? orderById[s.orderId] : null;
                         const p = s.patientId ? patientById[s.patientId] : null;
                         const testCodes = o ? o.testIds.map(id => (testById[id] || {}).code).filter(Boolean).join(' ') : '';
                         const isChecked = checked.has(s.id);
                         return (
-                          <tr key={s.id} style={{ background: isChecked ? 'var(--sage-50)' : undefined, cursor: 'pointer' }}
+                          <tr key={s.id} className={animateNew ? 'slide-up' : ''} style={{ background: isChecked ? 'var(--sage-50)' : undefined, cursor: 'pointer' }}
                               onClick={() => window.openEntity && window.openEntity('specimen', s.id)}>
                             <td onClick={e => e.stopPropagation()}>
                               <input type="checkbox" checked={isChecked} onChange={() => toggleOne(s.id)}
@@ -536,7 +620,9 @@ const WorklistsPage = () => {
                             <td><span className="mono" style={{ color: 'var(--ink-400)' }}>{formatTime(s.receivedAt)}</span></td>
                             <td onClick={e => e.stopPropagation()}>
                               {selected.id === '__unrouted' ? (
-                                <button className="btn" data-variant="primary" data-size="xs" onClick={() => releaseToInstrument(s)}>Route</button>
+                                <button className="btn" data-variant="primary" data-size="xs" onClick={() => releaseToInstrument(s)}
+                                  disabled={!canAccession}
+                                  title={permissionTitle(canAccession, 'Route specimen', 'accession or route specimens')}>Route</button>
                               ) : null}
                             </td>
                           </tr>

@@ -44,6 +44,7 @@ const LabelsPage = ({ onBack }) => {
   const [draft, setDraft] = useStateOS(null);
   const [q, setQ] = useStateOS('');
   const [preview, setPreview] = useStateOS(null);
+  const canEditLabelTemplates = hasPermission('EDIT_LABEL_TEMPLATES');
 
   const filtered = useMemoOS(() => {
     const needle = q.trim().toLowerCase();
@@ -51,13 +52,16 @@ const LabelsPage = ({ onBack }) => {
       .filter(t => !needle || [t.code, t.name, t.specimenType, t.testCode].filter(Boolean).join(' ').toLowerCase().includes(needle))
       .sort((a, b) => (a.code || '').localeCompare(b.code || ''));
   }, [all, q]);
+  const pager = usePagination(filtered);
 
   const startNew = () => {
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     setEditingId(null);
     // Portrait by default — width 1.0", height 2.0".
     setDraft({ code: '', name: '', specimenType: '', testCode: '', width: 1.0, height: 2.0, dpi: 203, zpl: PORTRAIT_DEFAULT_ZPL_BODY, printerEndpoint: '', notes: '', active: true });
   };
   const startEdit = (t) => {
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     setEditingId(t.id);
     setDraft({
       code: t.code || '', name: t.name || '',
@@ -70,6 +74,7 @@ const LabelsPage = ({ onBack }) => {
   };
   const cancel = () => { setEditingId(null); setDraft(null); };
   const save = async () => {
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     if (!draft || !draft.code || !draft.name) return;
     const init = { ...draft, width: Number(draft.width), height: Number(draft.height), dpi: Number(draft.dpi) };
     if (window.labels && typeof window.labels.lintZpl === 'function') {
@@ -95,6 +100,7 @@ const LabelsPage = ({ onBack }) => {
       confirmLabel: editingId ? 'Save template' : 'Create template',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     if (editingId) {
       const existing = await window.db.get('label_templates', editingId);
       if (existing) await window.db.put('label_templates', { ...existing, ...init });
@@ -105,6 +111,7 @@ const LabelsPage = ({ onBack }) => {
     cancel();
   };
   const remove = async (t) => {
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     const ask = await safetyConfirm({
       id: 'admin.label_template.delete',
       tone: 'danger',
@@ -121,6 +128,7 @@ const LabelsPage = ({ onBack }) => {
       confirmLabel: 'Delete template',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     const fresh = await window.db.get('label_templates', t.id);
     if (!fresh) return;
     await window.db.delete('label_templates', t.id);
@@ -128,6 +136,7 @@ const LabelsPage = ({ onBack }) => {
   };
 
   const toggleActive = async (t) => {
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     const nextActive = t.active === false;
     const ask = await confirmConfigChange({
       id: nextActive ? 'admin.label.activate' : 'admin.label.deactivate',
@@ -145,6 +154,7 @@ const LabelsPage = ({ onBack }) => {
       confirmLabel: nextActive ? 'Activate template' : 'Deactivate template',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LABEL_TEMPLATES')) return;
     const fresh = await window.db.get('label_templates', t.id);
     if (!fresh) return;
     await window.db.put('label_templates', { ...fresh, active: nextActive });
@@ -178,7 +188,9 @@ const LabelsPage = ({ onBack }) => {
       <PageHeader title="Labels & Printing" sub="ZPL II templates per specimen type. Printer config + preview against live specimens."
         actions={[
           <button key="b" className="btn" data-size="sm" data-variant="ghost" onClick={onBack}><IconChevRight size={13} style={{ transform: 'rotate(180deg)' }}/> Admin</button>,
-          <button key="n" className="btn" data-size="sm" data-variant="primary" onClick={startNew}><IconPlus size={13}/> New template</button>,
+          <button key="n" className="btn" data-size="sm" data-variant="primary" onClick={startNew}
+            disabled={!canEditLabelTemplates}
+            title={permissionTitle(canEditLabelTemplates, 'Create new label template', 'edit label templates')}><IconPlus size={13}/> New template</button>,
         ]}/>
 
       <div style={{ display: 'grid', gridTemplateColumns: draft ? '1fr 460px' : '1fr', gap: 12, height: 'calc(100% - 80px)' }}>
@@ -189,6 +201,7 @@ const LabelsPage = ({ onBack }) => {
             <div style={{ flex: 1 }}/>
             <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{filtered.length} of {all.length}</span>
           </div>
+          {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {filtered.length === 0 ? (
               <div className="empty" style={{ padding: '40px 24px' }}>
@@ -208,9 +221,11 @@ const LabelsPage = ({ onBack }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(t => (
+                  {pager.slice.map(t => (
                     <tr key={t.id} style={{ opacity: t.active === false ? 0.5 : 1, background: editingId === t.id ? 'var(--sage-50)' : undefined }}>
-                      <td onClick={() => toggleActive(t)} style={{ cursor: 'pointer' }} title={t.active === false ? 'Inactive — click to activate' : 'Active — click to deactivate'}>
+                      <td onClick={() => toggleActive(t)}
+                        style={{ cursor: canEditLabelTemplates ? 'pointer' : 'not-allowed' }}
+                        title={permissionTitle(canEditLabelTemplates, t.active === false ? 'Inactive - click to activate' : 'Active - click to deactivate', 'edit label templates')}>
                         <span className="dot" data-tone={t.active === false ? 'idle' : 'ok'}/>
                       </td>
                       <td><span className="mono">{t.code}</span></td>
@@ -222,8 +237,12 @@ const LabelsPage = ({ onBack }) => {
                       <td>
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button className="btn" data-size="xs" onClick={() => showPreview(t)}>Preview</button>
-                          <button className="btn" data-size="xs" onClick={() => startEdit(t)}>Edit</button>
-                          <button className="btn" data-variant="danger" data-size="xs" onClick={() => remove(t)}>Delete</button>
+                          <button className="btn" data-size="xs" onClick={() => startEdit(t)}
+                            disabled={!canEditLabelTemplates}
+                            title={permissionTitle(canEditLabelTemplates, 'Edit label template', 'edit label templates')}>Edit</button>
+                          <button className="btn" data-variant="danger" data-size="xs" onClick={() => remove(t)}
+                            disabled={!canEditLabelTemplates}
+                            title={permissionTitle(canEditLabelTemplates, 'Delete label template', 'edit label templates')}>Delete</button>
                         </div>
                       </td>
                     </tr>
@@ -232,6 +251,7 @@ const LabelsPage = ({ onBack }) => {
               </table>
             )}
           </div>
+          {filtered.length > 0 && <TablePagination {...pager}/>}
         </div>
 
         {draft && (
@@ -375,7 +395,9 @@ const LabelsPage = ({ onBack }) => {
             </div>
             <div style={{ padding: '10px 14px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
               <button className="btn" data-size="sm" onClick={cancel}>Cancel</button>
-              <button className="btn" data-variant="primary" data-size="sm" onClick={save} disabled={!draft.code || !draft.name}>
+              <button className="btn" data-variant="primary" data-size="sm" onClick={save}
+                disabled={!draft.code || !draft.name || !canEditLabelTemplates}
+                title={permissionTitle(canEditLabelTemplates, editingId ? 'Save label template' : 'Create label template', 'edit label templates')}>
                 {editingId ? 'Save' : 'Create'}
               </button>
             </div>

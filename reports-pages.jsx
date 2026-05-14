@@ -1,11 +1,18 @@
 const ReportsPage = () => {
   const events = window.useEntities('audit_events');
+  const instruments = window.useEntities('instruments');
+  const instrumentsById = useMemoOS(() => {
+    const m = {};
+    instruments.forEach(i => { m[i.id] = i; if (i.code) m[i.code] = i; });
+    return m;
+  }, [instruments]);
   const [q, setQ] = useStateOS('');
   const [filter, setFilter] = useStateOS('all');
   const [eventType, setEventType] = useStateOS('');     // exact event type, '' = any
   const [actor, setActor] = useStateOS('');             // exact actor, '' = any
   const [entityType, setEntityType] = useStateOS('');   // exact entity type, '' = any
   const [timeWindow, setTimeWindow] = useStateOS('all'); // '1h'|'6h'|'24h'|'7d'|'all'
+  const animateNew = window.useDeferredEnter();
 
   // Build dropdown options from the live data.
   const distinctEventTypes = useMemoOS(() => {
@@ -53,6 +60,8 @@ const ReportsPage = () => {
       .sort((a, b) => (b.ts || 0) - (a.ts || 0))
       .slice(0, 500);
   }, [events, q, filter, eventType, actor, entityType, windowMs]);
+
+  const pager = usePagination(filtered);
 
   const resetFilters = () => {
     setQ(''); setFilter('all'); setEventType(''); setActor(''); setEntityType(''); setTimeWindow('all');
@@ -171,6 +180,7 @@ const ReportsPage = () => {
           </div>
         </div>
         <div style={{ flex: 1, overflowY: 'auto' }}>
+          {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
           {filtered.length === 0 ? (
             <div className="empty" style={{ padding: '40px 24px' }}>
               <div className="empty-sub">{events.length === 0 ? 'No events yet.' : 'No events match the filter.'}</div>
@@ -186,8 +196,8 @@ const ReportsPage = () => {
                   <th style={{ width: 100 }}>Entity</th>
                 </tr>
               </thead>
-              <tbody>
-                {filtered.map(e => {
+              <tbody className="stagger-children">
+                {pager.slice.map(e => {
                   // The entity column becomes a click-through to the entity drawer
                   // when both entityType and entityId are present and the drawer
                   // supports that kind. Otherwise the raw id is shown un-linked.
@@ -200,6 +210,7 @@ const ReportsPage = () => {
                     : null;
                   return (
                     <tr key={e.id}
+                        className={animateNew ? 'slide-up' : ''}
                         style={canOpen ? { cursor: 'pointer' } : {}}
                         onClick={onRowClick}
                         title={canOpen ? `Open ${e.entityType} drawer` : undefined}>
@@ -224,7 +235,7 @@ const ReportsPage = () => {
                           );
                         })()}
                       </td>
-                      <td><span style={{ fontSize: 11.5, color: 'var(--ink-700)' }}>{summarizeEvent(e)}</span></td>
+                      <td><span style={{ fontSize: 11.5, color: 'var(--ink-700)' }}>{summarizeEvent(e, instrumentsById)}</span></td>
                       <td>
                         {e.entityId ? (
                           <span className="mono" style={{ fontSize: 10.5, color: canOpen ? 'var(--sage-700)' : 'var(--ink-400)', textDecoration: canOpen ? 'underline' : 'none' }}>
@@ -240,6 +251,7 @@ const ReportsPage = () => {
               </tbody>
             </table>
           )}
+          {filtered.length > 0 && <TablePagination {...pager}/>}
         </div>
       </div>
     </Page>

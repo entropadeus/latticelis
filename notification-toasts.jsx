@@ -27,6 +27,7 @@ const ntConfirm = (options) => {
 
 const NotificationToasts = () => {
   const [toasts, setToasts] = useStateNT([]);
+  const canAckCritical = hasPermission('ACK_CRITICAL');
 
   useEffectNT(() => {
     const onEvent = async (evt) => {
@@ -60,6 +61,7 @@ const NotificationToasts = () => {
   // we offer an inline Ack so the operator doesn't have to navigate. Same write
   // shape as critical-alerts.jsx for consistency.
   const ackCritical = async (t) => {
+    if (!hasPermission('ACK_CRITICAL')) return;
     if (!t.ctx || !t.ctx.resultId) return;
     const r = await window.db.get('results', t.ctx.resultId);
     if (!r || r.criticalAckedAt) return;
@@ -83,6 +85,7 @@ const NotificationToasts = () => {
       confirmLabel: 'Acknowledge',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('ACK_CRITICAL')) return;
     const fresh = await window.db.get('results', r.id);
     if (!fresh || fresh.criticalAckedAt) return;
     const actor = window.currentUser ? window.currentUser.id : 'unknown';
@@ -109,7 +112,7 @@ const NotificationToasts = () => {
         const hasCtx = t.ctx && (t.ctx.resultId || t.ctx.specimenId || t.ctx.orderId);
         const isCriticalEsc = t.ctx && t.ctx.resultId && (t.msg || '').toUpperCase().includes('ESCALATION');
         return (
-          <div key={t.id} className="panel slide-up" style={{
+          <div key={t.id} className="panel fade-in slide-up" style={{
             padding: '10px 12px', boxShadow: 'var(--shadow-pop)',
             background: '#fff', pointerEvents: 'auto',
             borderLeft: isCriticalEsc ? '3px solid var(--rust)' : '1px solid var(--line)',
@@ -146,6 +149,8 @@ const NotificationToasts = () => {
               <div style={{ marginTop: 6, display: 'flex', gap: 4 }}>
                 {isCriticalEsc && (
                   <button className="btn" data-size="xs" data-variant="primary"
+                    disabled={!canAckCritical}
+                    title={permissionTitle(canAckCritical, 'Acknowledge critical result', 'acknowledge critical results')}
                     onClick={() => ackCritical(t)}>
                     Acknowledge
                   </button>

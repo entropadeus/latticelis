@@ -1,26 +1,27 @@
-const AdminPage = ({ onNav }) => {
-  // Each tile declares the permission needed to see it. Tiles without a
-  // permission gate are visible to everyone who reached the Admin page
-  // (the Admin page itself is gated at the sidebar level via anyPermission).
-  const tiles = [
-    { id: 'users',        label: 'Users & Roles',     desc: 'Manage users, roles, permissions',           icon: 'IconUser',       go: 'users',         permission: 'EDIT_USERS' },
-    { id: 'clients',      label: 'Clients',           desc: 'Referring clinics, delivery preferences',    icon: 'IconMap',        go: 'clients',       permission: 'EDIT_LAB_CONFIG' },
-    { id: 'locations',    label: 'Locations',         desc: 'Facilities, departments, sites',             icon: 'IconMap',        go: 'locations',     permission: 'EDIT_LAB_CONFIG' },
-    { id: 'instruments',  label: 'Instruments',       desc: 'Configure devices and connectivity',         icon: 'IconInstrument', go: 'instruments',   permission: 'EDIT_INTERFACES' },
-    { id: 'interfaces',   label: 'Interfaces',        desc: 'HL7 integrations and endpoints',             icon: 'IconInterface',  go: 'interfaces',    permission: 'EDIT_INTERFACES' },
-    { id: 'tests',        label: 'Test Catalog',      desc: 'Tests, panels, analytes, LOINC',             icon: 'IconBeaker',     go: 'tests',         permission: 'EDIT_TEST_CATALOG' },
-    { id: 'mappers',      label: 'Mappers (LML)',     desc: 'Inbound/outbound format scripts',            icon: 'IconBranch',     go: 'mappers',       permission: 'EDIT_INTERFACES' },
-    { id: 'qc',           label: 'QC (Westgard)',     desc: 'Control levels, runs, rule violations',      icon: 'IconBeaker',     go: 'qc',            permission: 'RESOLVE_QC' },
-    { id: 'rules',        label: 'Rules Engine',      desc: 'Order routing, validation, reflex logic',    icon: 'IconRules',      go: 'rules',         permission: 'EDIT_RULES' },
-    { id: 'ranges',       label: 'Reference Ranges',  desc: 'Ranges by test, age, sex, population',       icon: 'IconReports',    go: 'tests',         permission: 'EDIT_TEST_CATALOG' },
-    { id: 'notifications',label: 'Notifications',     desc: 'TAT thresholds, alert routing, recent breaches', icon: 'IconBell',  go: 'notifications', permission: 'EDIT_LAB_CONFIG' },
-    { id: 'labels',       label: 'Labels & Printing', desc: 'Label templates, printers, formats',         icon: 'IconLabel',      go: 'labels',        permission: 'EDIT_LABEL_TEMPLATES' },
-    { id: 'audit',        label: 'Audit & Compliance',desc: 'Audit log, retention, access reviews',       icon: 'IconShield',     go: 'reports' },
-  ].filter(t => {
-    if (!t.permission) return true;
-    if (!window.userRoles || !window.currentUser) return true;
-    return window.userRoles.userHasPermission(window.currentUser.id, t.permission);
-  });
+// Reusable snapshot/demo controls. Returns { actions, modal } so a host page
+// can drop the four-button row into its PageHeader and render the import
+// preview modal alongside its main content. Used by AdminPage (legacy tile
+// grid) and by ManagePage (the AdminCenter > Manage route, which is the new
+// home for these operations). Hook form keeps the state local to whichever
+// page mounts it; navigating away unmounts the modal cleanly.
+const useSnapshotActions = () => {
+  const canRestoreSnapshot = hasPermission('RESTORE_SNAPSHOT');
+  const [importPreview, setImportPreview] = useStateOS(null);
+  const [seeding, setSeeding] = useStateOS(false);
+
+  // Test hook so a non-file-dialog code path can drive the modal (E2E tests).
+  useEffectOS(() => {
+    window.__previewImport = async (snap) => {
+      if (!hasPermission('RESTORE_SNAPSHOT')) return;
+      try {
+        const diff = await window.db.diffSnapshot(snap);
+        setImportPreview({ snap, diff, fileName: '(programmatic)' });
+      } catch (e) {
+        await safetyNotice({ tone: 'danger', title: 'Restore blocked', message: e.message });
+      }
+    };
+    return () => { delete window.__previewImport; };
+  }, []);
 
   const exportSnapshot = async () => {
     const snap = await window.db.exportAll();
@@ -34,27 +35,12 @@ const AdminPage = ({ onNav }) => {
     URL.revokeObjectURL(url);
   };
 
-  const [importPreview, setImportPreview] = useStateOS(null);
-
-  // Test hook so a non-file-dialog code path can drive the modal (for E2E tests).
-  // The file-input flow is the user's normal entry point; this exists because
-  // synthetic click events on detached <input type=file> can't carry a File.
-  useEffectOS(() => {
-    window.__previewImport = async (snap) => {
-      try {
-        const diff = await window.db.diffSnapshot(snap);
-        setImportPreview({ snap, diff, fileName: '(programmatic)' });
-      } catch (e) {
-        await safetyNotice({ tone: 'danger', title: 'Restore blocked', message: e.message });
-      }
-    };
-    return () => { delete window.__previewImport; };
-  }, []);
-
   const importSnapshot = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     const input = document.createElement('input');
     input.type = 'file'; input.accept = '.json,application/json';
     input.onchange = async () => {
+      if (!hasPermission('RESTORE_SNAPSHOT')) return;
       const file = input.files && input.files[0];
       if (!file) return;
       const text = await file.text();
@@ -75,6 +61,7 @@ const AdminPage = ({ onNav }) => {
   };
 
   const confirmImport = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     if (!importPreview) return;
     const totalAdded = Object.values(importPreview.diff.collections || {}).reduce((n, c) => n + (c.added || 0), 0);
     const totalRemoved = Object.values(importPreview.diff.collections || {}).reduce((n, c) => n + (c.removed || 0), 0);
@@ -100,6 +87,7 @@ const AdminPage = ({ onNav }) => {
       confirmLabel: 'Restore database',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     try {
       const freshDiff = await window.db.diffSnapshot(importPreview.snap);
       setImportPreview({ ...importPreview, diff: freshDiff });
@@ -115,37 +103,8 @@ const AdminPage = ({ onNav }) => {
     }
   };
 
-  const resetDb = async () => {
-    const snap = await window.db.exportAll();
-    const counts = Object.entries(snap.collections || {}).map(([name, rows]) => `${name}:${(rows || []).length}`).join(' ');
-    const ask = await safetyConfirm({
-      id: 'admin.database.reset',
-      tone: 'danger',
-      title: 'Reset database',
-      message: 'This wipes every collection in the browser database. Export first if anything matters.',
-      facts: [safetyFact('collections', counts || 'empty'), safetyFact('version', snap.version)],
-      requireTypedText: 'RESET',
-      entityType: 'database',
-      entityId: 'all',
-      confirmLabel: 'Reset database',
-      audit: false,
-    });
-    if (!ask.confirmed) return;
-    await window.db.dropAll();
-    if (window.events) {
-      window.events.publish('operator.safety.confirmed', {
-        actor: currentActorId(),
-        actionId: 'admin.database.reset',
-        entityType: 'database',
-        entityId: 'all',
-        typedText: ask.typedText,
-      });
-    }
-    await safetyNotice({ tone: 'info', title: 'Database reset', message: 'Database cleared.' });
-  };
-
-  const [seeding, setSeeding] = useStateOS(false);
   const seedDemo = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     if (!window.seed) { await safetyNotice({ tone: 'danger', title: 'Seed unavailable', message: 'Seed module not loaded.' }); return; }
     const ask = await safetyConfirm({
       id: 'admin.demo.seed',
@@ -158,6 +117,7 @@ const AdminPage = ({ onNav }) => {
       confirmLabel: 'Seed demo',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     setSeeding(true);
     try {
       const summary = await window.seed.demo();
@@ -173,7 +133,9 @@ const AdminPage = ({ onNav }) => {
       setSeeding(false);
     }
   };
+
   const clearDemo = async () => {
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     if (!window.seed) { await safetyNotice({ tone: 'danger', title: 'Seed unavailable', message: 'Seed module not loaded.' }); return; }
     const ask = await safetyConfirm({
       id: 'admin.demo.clear',
@@ -186,22 +148,70 @@ const AdminPage = ({ onNav }) => {
       confirmLabel: 'Clear demo',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESTORE_SNAPSHOT')) return;
     const removed = await window.seed.clear();
     await safetyNotice({ tone: 'info', title: 'Demo data cleared', message: 'Removed ' + removed + ' demo records.' });
   };
 
+  const actions = (
+    <div key="snapshot-actions" style={{ display: 'flex', gap: 8 }}>
+      <button key="seed" className="btn" data-size="sm" data-variant="primary" onClick={seedDemo}
+        disabled={seeding || !canRestoreSnapshot}
+        title={permissionTitle(canRestoreSnapshot, 'Seed demo data', 'restore or reset data')}>
+        {seeding ? 'Seeding…' : 'Seed demo'}
+      </button>
+      <button key="seedClr" className="btn" data-size="sm" onClick={clearDemo}
+        disabled={seeding || !canRestoreSnapshot}
+        title={permissionTitle(canRestoreSnapshot, 'Clear demo data', 'restore or reset data')}>Clear demo</button>
+      <button key="exp" className="btn" data-size="sm" onClick={exportSnapshot}>Export local</button>
+      <button key="imp" className="btn" data-size="sm" onClick={importSnapshot}
+        disabled={!canRestoreSnapshot}
+        title={permissionTitle(canRestoreSnapshot, 'Import local snapshot', 'restore or reset data')}>Import local</button>
+    </div>
+  );
+
+  const modal = importPreview ? (
+    <ImportPreviewModal preview={importPreview}
+      canRestoreSnapshot={canRestoreSnapshot}
+      onConfirm={confirmImport}
+      onCancel={() => setImportPreview(null)}/>
+  ) : null;
+
+  return { actions, modal };
+};
+
+const AdminPage = ({ onNav }) => {
+  // Each tile declares the permission needed to see it. Tiles without a
+  // permission gate are visible to everyone who reached the Admin page
+  // (the Admin page itself is gated at the sidebar level via anyPermission).
+  const tiles = [
+    { id: 'users',        label: 'Users & Roles',     desc: 'Manage users, roles, permissions',           icon: 'IconUser',       go: 'users',         permission: 'EDIT_USERS' },
+    { id: 'clients',      label: 'Clients',           desc: 'Referring clinics, delivery preferences',    icon: 'IconMap',        go: 'clients',       permission: 'EDIT_LAB_CONFIG' },
+    { id: 'locations',    label: 'Locations',         desc: 'Facilities, departments, sites',             icon: 'IconMap',        go: 'locations',     permission: 'EDIT_LAB_CONFIG' },
+    { id: 'instruments',  label: 'Instruments',       desc: 'Configure devices and connectivity',         icon: 'IconInstrument', go: 'instruments',   permission: 'EDIT_INTERFACES' },
+    { id: 'interfaces',   label: 'Interfaces',        desc: 'HL7 integrations and endpoints',             icon: 'IconInterface',  go: 'interfaces',    permission: 'EDIT_INTERFACES' },
+    { id: 'tests',        label: 'Test Catalog',      desc: 'Tests, panels, analytes, LOINC',             icon: 'IconBeaker',     go: 'tests',         permission: 'EDIT_TEST_CATALOG' },
+    { id: 'mappers',      label: 'Mappers (LML)',     desc: 'Inbound/outbound format scripts',            icon: 'IconBranch',     go: 'mappers',       permission: 'EDIT_INTERFACES' },
+    { id: 'qc',           label: 'QC (Westgard)',     desc: 'Control levels, runs, rule violations',      icon: 'IconBeaker',     go: 'qc',            permission: 'RESOLVE_QC' },
+    { id: 'rules',        label: 'Rules Engine',      desc: 'Order routing, validation, reflex logic',    icon: 'IconRules',      go: 'rules',         permission: 'EDIT_RULES' },
+    { id: 'ranges',       label: 'Reference Ranges',  desc: 'Ranges by test, age, sex, population',       icon: 'IconReports',    go: 'tests',         permission: 'EDIT_TEST_CATALOG' },
+    { id: 'notifications',label: 'Notifications',     desc: 'TAT thresholds, alert routing, recent breaches', icon: 'IconBell',  go: 'notifications', permission: 'EDIT_LAB_CONFIG' },
+    { id: 'labels',       label: 'Labels & Printing', desc: 'Label templates, printers, formats',         icon: 'IconLabel',      go: 'labels',        permission: 'EDIT_LABEL_TEMPLATES' },
+    { id: 'audit',        label: 'Audit & Compliance',desc: 'Audit log, retention, access reviews',       icon: 'IconShield',     go: 'reports' },
+  ].filter(t => {
+    if (!t.permission) return true;
+    if (!window.userRoles || !window.currentUser) return true;
+    return window.userRoles.userHasPermission(window.currentUser.id, t.permission);
+  });
+
+  // Snapshot/demo actions now live in a shared hook so the AdminCenter > Manage
+  // page can render the same controls without duplicating state/handlers.
+  const { actions: snapshotActions, modal: snapshotModal } = useSnapshotActions();
+
   return (
     <Page label="Admin">
       <PageHeader title="Admin" sub="System configuration and governance."
-        actions={[
-          <button key="seed" className="btn" data-size="sm" data-variant="primary" onClick={seedDemo} disabled={seeding}>
-            {seeding ? 'Seeding…' : 'Seed demo'}
-          </button>,
-          <button key="seedClr" className="btn" data-size="sm" onClick={clearDemo} disabled={seeding}>Clear demo</button>,
-          <button key="exp" className="btn" data-size="sm" onClick={exportSnapshot}>Export</button>,
-          <button key="imp" className="btn" data-size="sm" onClick={importSnapshot}>Import</button>,
-          <button key="rst" className="btn" data-size="sm" data-variant="danger" onClick={resetDb}>Reset</button>,
-        ]}/>
+        actions={[snapshotActions]}/>
       {/* Environment strip — honest about prototype status. The amber dot
           signals "this is not production"; the tooltip explains where to
           find the actual capability roster (the Build Ledger). */}
@@ -213,7 +223,7 @@ const AdminPage = ({ onNav }) => {
             </span>
           ) },
           { l: 'Build', v: <span className="mono" title="Cache-bust build identifier">{(window.__LIS_VERSION || '0.x') + ''}</span> },
-          { l: 'Database', v: <><span className="dot" data-tone="ok" style={{ marginRight: 6 }}/>IndexedDB</> },
+          { l: 'Database', v: <span title="Local-only IndexedDB in this browser profile. No cloud sync."><span className="dot" data-tone="ok" style={{ marginRight: 6 }}/>Local only · IndexedDB</span> },
           { l: 'System time', v: new Date().toISOString().slice(0,16).replace('T', ' ') + ' UTC' },
         ].map((s, i) => (
           <div key={s.l} style={{ padding: '12px 16px', borderRight: i < 3 ? '1px solid var(--line)' : 'none' }}>
@@ -255,18 +265,14 @@ const AdminPage = ({ onNav }) => {
         })}
       </div>
 
-      {importPreview && (
-        <ImportPreviewModal preview={importPreview}
-          onConfirm={confirmImport}
-          onCancel={() => setImportPreview(null)}/>
-      )}
+      {snapshotModal}
     </Page>
   );
 };
 
 // Modal showing the diff before import-wipe-restore. Counts only — per-record
 // drill-down would be a future iteration.
-const ImportPreviewModal = ({ preview, onConfirm, onCancel }) => {
+const ImportPreviewModal = ({ preview, onConfirm, onCancel, canRestoreSnapshot }) => {
   const { snap, diff, fileName } = preview;
   const collEntries = useMemoOS(() => {
     return Object.entries(diff.collections)
@@ -359,7 +365,9 @@ const ImportPreviewModal = ({ preview, onConfirm, onCancel }) => {
           <span style={{ fontSize: 11, color: 'var(--err-700)' }}>This wipes the current database before restoring.</span>
           <div style={{ flex: 1 }}/>
           <button className="btn" data-size="sm" onClick={onCancel}>Cancel</button>
-          <button className="btn" data-size="sm" data-variant="primary" onClick={onConfirm}>Restore now</button>
+          <button className="btn" data-size="sm" data-variant="primary" onClick={onConfirm}
+            disabled={!canRestoreSnapshot}
+            title={permissionTitle(canRestoreSnapshot, 'Restore snapshot', 'restore or reset data')}>Restore now</button>
         </div>
       </div>
     </div>
@@ -373,4 +381,12 @@ Object.assign(window, {
   NotificationsPage,
   PageHeader, Page, EmptyTable,
   TatPill,
+  // Exposed so the AdminCenter > Manage page can reuse the same restore-preview
+  // surface without re-implementing the diff/validation UI. Keep the modal API
+  // (`preview`, `onConfirm`, `onCancel`, `canRestoreSnapshot`) stable — both
+  // call sites depend on it.
+  ImportPreviewModal,
+  // Same reason: the shared seed/export/import controls live here so AdminPage
+  // and ManagePage stay in lockstep without diverging copies of the handlers.
+  useSnapshotActions,
 });

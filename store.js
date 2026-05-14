@@ -59,6 +59,26 @@ const useStoreCount = (collection, filter) => {
   return items.length;
 };
 
+// useDeferredEnter — gate-flag for entry animations on streaming lists.
+//
+// Returns `false` on the very first render, then `true` from the second
+// render onward (after the post-mount effect commits). Pattern:
+//
+//   const animate = useDeferredEnter();
+//   {rows.map(r => <tr key={r.id} className={animate ? 'slide-up' : ''}>…
+//
+// CSS animations only fire on element INSERT — applying className to a
+// DOM node React already reused is a no-op. So rows present at first
+// paint mount with className="" (no animation), and any row added later
+// mounts with className="slide-up" (animation runs once on insert). No
+// per-id bookkeeping needed.
+const useDeferredEnter = () => {
+  const [on, setOn] = useStateST(false);
+  useEffectST(() => { setOn(true); }, []);
+  return on;
+};
+
 window.useEntities = useEntities;
 window.useEntity = useEntity;
 window.useStoreCount = useStoreCount;
+window.useDeferredEnter = useDeferredEnter;

@@ -12,17 +12,20 @@ const RulesEnginePage = ({ rules, setRules, onBack }) => {
   const [view, setView] = useStateRE('list'); // list | editor | test
   const [activeRuleId, setActiveRuleId] = useStateRE(null);
   const [filter, setFilter] = useStateRE({ q: '', status: 'all', cat: 'all' });
+  const canEditRules = hasPermission('EDIT_RULES');
 
   const activeRule = rules.find(r => r.id === activeRuleId);
 
   const openRule = (id) => { setActiveRuleId(id); setView('editor'); };
   const newRule = () => {
+    if (!hasPermission('EDIT_RULES')) return;
     const r = createBlankRule();
     setRules([r, ...rules]);
     setActiveRuleId(r.id);
     setView('editor');
   };
   const updateRule = async (updated, opts = {}) => {
+    if (!hasPermission('EDIT_RULES')) return false;
     const prev = rules.find(r => r.id === updated.id) || null;
     if (!updated || !updated.id) return false;
     if (await needsRuleSafetyConfirm(prev, updated, opts)) {
@@ -46,10 +49,12 @@ const RulesEnginePage = ({ rules, setRules, onBack }) => {
         return false;
       }
     }
+    if (!hasPermission('EDIT_RULES')) return false;
     setRules(rules.map(r => r.id === updated.id ? updated : r));
     return true;
   };
   const deleteRule = async (id) => {
+    if (!hasPermission('EDIT_RULES')) return;
     const rule = rules.find(r => r.id === id);
     if (!rule) return;
     const ask = window.safetyConfirm
@@ -70,10 +75,12 @@ const RulesEnginePage = ({ rules, setRules, onBack }) => {
         })
       : { confirmed: false };
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_RULES')) return;
     setRules(rules.filter(r => r.id !== id));
     if (activeRuleId === id) { setActiveRuleId(null); setView('list'); }
   };
   const duplicateRule = (id) => {
+    if (!hasPermission('EDIT_RULES')) return;
     const src = rules.find(r => r.id === id);
     if (!src) return;
     const copy = { ...src, id: 'r_' + Math.random().toString(36).slice(2, 9), name: src.name + ' (copy)', enabled: false, version: 1, updatedAt: Date.now() };
@@ -88,6 +95,7 @@ const RulesEnginePage = ({ rules, setRules, onBack }) => {
         onClose={() => { setActiveRuleId(null); setView('list'); }}
         onDelete={deleteRule}
         onDuplicate={duplicateRule}
+        canEdit={canEditRules}
       />
     );
   }
@@ -107,6 +115,7 @@ const RulesEnginePage = ({ rules, setRules, onBack }) => {
       onDuplicate={duplicateRule}
       onDelete={deleteRule}
       onBack={onBack}
+      canEdit={canEditRules}
     />
   );
 };
@@ -242,7 +251,7 @@ const RULE_CATEGORIES = [
 // =====================================================================
 // Rules List View
 // =====================================================================
-const RulesListView = ({ rules, filter, setFilter, onOpen, onNew, onToggle, onDuplicate, onDelete, onBack }) => {
+const RulesListView = ({ rules, filter, setFilter, onOpen, onNew, onToggle, onDuplicate, onDelete, onBack, canEdit }) => {
   const filtered = rules.filter(r => {
     if (filter.status === 'enabled' && !r.enabled) return false;
     if (filter.status === 'disabled' && r.enabled) return false;
@@ -278,7 +287,9 @@ const RulesListView = ({ rules, filter, setFilter, onOpen, onNew, onToggle, onDu
           <button className="btn" data-size="sm">
             <IconArchive size={13}/> Versions
           </button>
-          <button className="btn" data-variant="primary" data-size="sm" onClick={onNew}>
+          <button className="btn" data-variant="primary" data-size="sm" onClick={onNew}
+            disabled={!canEdit}
+            title={permissionTitle(canEdit, 'Create new rule', 'edit rules')}>
             <IconPlus size={13}/> New rule
           </button>
         </div>
@@ -324,7 +335,7 @@ const RulesListView = ({ rules, filter, setFilter, onOpen, onNew, onToggle, onDu
         </div>
 
         {filtered.length === 0 ? (
-          <RulesEmpty hasAny={rules.length > 0} onNew={onNew}/>
+          <RulesEmpty hasAny={rules.length > 0} onNew={onNew} canEdit={canEdit}/>
         ) : (
           <table className="tbl">
             <thead>
@@ -347,7 +358,8 @@ const RulesListView = ({ rules, filter, setFilter, onOpen, onNew, onToggle, onDu
                   onOpen={() => onOpen(r.id)}
                   onToggle={(en) => onToggle(r.id, en)}
                   onDuplicate={() => onDuplicate(r.id)}
-                  onDelete={() => onDelete(r.id)}/>
+                  onDelete={() => onDelete(r.id)}
+                  canEdit={canEdit}/>
               ))}
             </tbody>
           </table>
@@ -364,14 +376,16 @@ const StatBlock = ({ label, value, accent }) => (
   </div>
 );
 
-const RuleRow = ({ rule, onOpen, onToggle, onDuplicate, onDelete }) => {
+const RuleRow = ({ rule, onOpen, onToggle, onDuplicate, onDelete, canEdit }) => {
   const cat = RULE_CATEGORIES.find(c => c.id === rule.category);
   const trig = RULE_TRIGGERS.find(t => t.id === rule.trigger);
   const condCount = countConditions(rule.conditions);
   return (
     <tr style={{ cursor: 'pointer' }} onClick={onOpen}>
       <td onClick={e => e.stopPropagation()}>
-        <Toggle checked={rule.enabled} onChange={onToggle}/>
+        <Toggle checked={rule.enabled} onChange={onToggle}
+          disabled={!canEdit}
+          title={permissionTitle(canEdit, rule.enabled ? 'Disable rule' : 'Enable rule', 'edit rules')}/>
       </td>
       <td>
         <div style={{ fontWeight: 500, color: 'var(--ink-900)' }}>{rule.name}</div>
@@ -387,15 +401,15 @@ const RuleRow = ({ rule, onOpen, onToggle, onDuplicate, onDelete }) => {
       <td onClick={e => e.stopPropagation()}>
         <Menu items={[
           { label: 'Open', onClick: onOpen },
-          { label: 'Duplicate', onClick: onDuplicate },
-          { label: 'Delete', onClick: onDelete, danger: true },
+          { label: 'Duplicate', onClick: onDuplicate, disabled: !canEdit, title: permissionTitle(canEdit, 'Duplicate rule', 'edit rules') },
+          { label: 'Delete', onClick: onDelete, danger: true, disabled: !canEdit, title: permissionTitle(canEdit, 'Delete rule', 'edit rules') },
         ]}/>
       </td>
     </tr>
   );
 };
 
-const RulesEmpty = ({ hasAny, onNew }) => (
+const RulesEmpty = ({ hasAny, onNew, canEdit }) => (
   <div className="empty" style={{ padding: '60px 24px' }}>
     <div className="empty-icon"><IconRules size={18}/></div>
     <div className="empty-title">{hasAny ? 'No rules match your filters' : 'No rules yet'}</div>
@@ -406,7 +420,9 @@ const RulesEmpty = ({ hasAny, onNew }) => (
     </div>
     {!hasAny && (
       <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-        <button className="btn" data-variant="primary" data-size="sm" onClick={onNew}>
+        <button className="btn" data-variant="primary" data-size="sm" onClick={onNew}
+          disabled={!canEdit}
+          title={permissionTitle(canEdit, 'Create first rule', 'edit rules')}>
           <IconPlus size={13}/> Create first rule
         </button>
         <button className="btn" data-size="sm">
@@ -458,17 +474,20 @@ const relativeTime = (ts) => {
 // =====================================================================
 // Small UI atoms
 // =====================================================================
-const Toggle = ({ checked, onChange, size = 'sm' }) => {
+const Toggle = ({ checked, onChange, size = 'sm', disabled = false, title }) => {
   const w = size === 'sm' ? 26 : 32, h = size === 'sm' ? 14 : 18;
   return (
-    <button onClick={() => onChange(!checked)}
+    <button onClick={() => { if (!disabled) onChange(!checked); }}
+      disabled={disabled}
+      title={title}
       style={{
         width: w, height: h, padding: 0,
         border: '1px solid ' + (checked ? 'var(--sage-700)' : 'var(--line-strong)'),
         background: checked ? 'var(--sage-700)' : 'var(--ivory-100)',
         borderRadius: 999, position: 'relative',
         transition: 'background 100ms linear, border-color 100ms linear',
-        cursor: 'pointer',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.55 : 1,
       }}>
       <span style={{
         position: 'absolute', top: 1, left: checked ? (w - h + 1) : 1,
@@ -569,12 +588,15 @@ const Menu = ({ items }) => {
           boxShadow: 'var(--shadow-pop)', zIndex: 50,
         }}>
           {items.map((it, i) => (
-            <button key={i} onClick={() => { setOpen(false); it.onClick(); }}
+            <button key={i} onClick={() => { if (it.disabled) return; setOpen(false); it.onClick(); }}
+              disabled={it.disabled}
+              title={it.title}
               style={{
                 width: '100%', display: 'block', textAlign: 'left',
                 padding: '6px 10px', border: 'none', background: 'transparent',
                 color: it.danger ? 'var(--err-700)' : 'var(--ink-900)',
-                borderRadius: 4, cursor: 'pointer', fontSize: 12.5,
+                borderRadius: 4, cursor: it.disabled ? 'not-allowed' : 'pointer', fontSize: 12.5,
+                opacity: it.disabled ? 0.5 : 1,
               }}
               onMouseEnter={e => e.currentTarget.style.background = it.danger ? '#F5E5DD' : 'var(--ivory-100)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>

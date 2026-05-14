@@ -15,6 +15,8 @@ const LOGIN_FAIL_REASON = {
   unknown_user:  'Unknown username (or this account is inactive). Try again.',
   no_password:   'This account has no password set. An admin needs to assign one before login.',
   bad_password:  'Wrong password. Try again.',
+  setup_disabled: 'Initial setup is already complete. Sign in with an existing password.',
+  not_admin:     'Initial setup must use an IT admin or lab director account.',
   // Generic fallback — should only fire if auth.verify itself throws.
   internal:      'Something went wrong. Try again, or refresh the page.',
 };
@@ -22,16 +24,28 @@ const LOGIN_FAIL_REASON = {
 const LoginPage = ({ onSuccess }) => {
   const [username, setUsername] = useStateLP('');
   const [password, setPassword] = useStateLP('');
+  const [confirmPassword, setConfirmPassword] = useStateLP('');
   const [showPw, setShowPw]     = useStateLP(false);
   const [busy, setBusy]         = useStateLP(false);
   const [error, setError]       = useStateLP(null);
+  const [bootstrapMode, setBootstrapMode] = useStateLP(false);
   const [shakeKey, setShakeKey] = useStateLP(0);  // bump to retrigger CSS animation
-  const [seedOpen, setSeedOpen] = useStateLP(false);
   const usernameRef = useRefLP(null);
 
   useEffectLP(() => {
     // Autofocus username on mount and any time the form is reset.
     if (usernameRef.current) usernameRef.current.focus();
+    let alive = true;
+    (async () => {
+      if (!window.auth || !window.auth.needsBootstrap) return;
+      try {
+        const needed = await window.auth.needsBootstrap();
+        if (alive) setBootstrapMode(!!needed);
+      } catch (e) {
+        console.warn('[login] bootstrap check failed', e);
+      }
+    })();
+    return () => { alive = false; };
   }, []);
 
   const submit = async (e) => {
@@ -42,11 +56,23 @@ const LoginPage = ({ onSuccess }) => {
       setShakeKey(k => k + 1);
       return;
     }
+    if (bootstrapMode && password !== confirmPassword) {
+      setError('The new password and confirmation do not match.');
+      setShakeKey(k => k + 1);
+      return;
+    }
+    if (bootstrapMode && password.length < 8) {
+      setError('Use at least 8 characters for the first admin password.');
+      setShakeKey(k => k + 1);
+      return;
+    }
     setBusy(true);
     setError(null);
     let result;
     try {
-      result = await window.auth.verify(username.trim(), password);
+      result = bootstrapMode
+        ? await window.auth.bootstrapFirstAdminPassword(username.trim(), password)
+        : await window.auth.verify(username.trim(), password);
     } catch (err) {
       console.error('[login] verify threw', err);
       result = { ok: false, reason: 'internal' };
@@ -61,6 +87,7 @@ const LoginPage = ({ onSuccess }) => {
     setError(LOGIN_FAIL_REASON[result.reason] || LOGIN_FAIL_REASON.internal);
     setShakeKey(k => k + 1);
     setPassword('');
+    setConfirmPassword('');
     setBusy(false);
     // Don't refocus the username — focus belongs on password since username
     // is presumably correct (most fails are bad password, not bad username).
@@ -77,14 +104,13 @@ const LoginPage = ({ onSuccess }) => {
       {/* ── Brand panel ─────────────────────────────────────────────── */}
       <div className="login-brand">
         <div>
-          {/* Lockup — geometric mark + wordmark. SVG inline so first-paint doesn't wait on a fetch. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.25">
-              <circle cx="16" cy="16" r="13"/>
-              <circle cx="16" cy="16" r="7"/>
-              <line x1="16" y1="3" x2="16" y2="29"/>
-              <line x1="3" y1="16" x2="29" y2="16"/>
-            </svg>
+          {/* Lockup — actual brand mark (assets/lattice-logo.png) + wordmark.
+              Same asset the sidebar uses in the running app, so the auth
+              screen carries identical brand identity. Larger here (44px) for
+              presence on a hero-sized brand panel. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
+            <img src="assets/lattice-logo.png" alt="Lattice LIS" width="44" height="44"
+              style={{ display: 'block', objectFit: 'contain', flex: '0 0 auto', borderRadius: 6 }}/>
             <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.05 }}>
               <span style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-0.012em' }}>Lattice LIS</span>
               <span style={{ fontSize: 10.5, color: 'rgba(246,244,238,0.55)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 4 }}>
@@ -109,10 +135,10 @@ const LoginPage = ({ onSuccess }) => {
         <div className="login-form-card">
           <div style={{ marginBottom: 28 }}>
             <h2 style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-0.012em', color: 'var(--ink-900)', margin: 0 }}>
-              Welcome back
+              {bootstrapMode ? 'First local setup' : 'Welcome back'}
             </h2>
             <p style={{ fontSize: 13, color: 'var(--ink-400)', marginTop: 6, marginBottom: 0 }}>
-              Sign in to continue.
+              {bootstrapMode ? 'Set the first admin password for this browser.' : 'Sign in to continue.'}
             </p>
           </div>
 
@@ -150,7 +176,7 @@ const LoginPage = ({ onSuccess }) => {
                   id="login-password"
                   className="login-input"
                   type={showPw ? 'text' : 'password'}
-                  autoComplete="current-password"
+                  autoComplete={bootstrapMode ? 'new-password' : 'current-password'}
                   placeholder="••••••••"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
@@ -169,15 +195,33 @@ const LoginPage = ({ onSuccess }) => {
               </div>
             </div>
 
+            {bootstrapMode && (
+              <div style={{ marginBottom: 18 }}>
+                <label htmlFor="login-confirm-password" style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--ink-700)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                  Confirm password
+                </label>
+                <input
+                  id="login-confirm-password"
+                  className="login-input"
+                  type={showPw ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  disabled={busy}
+                />
+              </div>
+            )}
+
             <button
               type="submit"
               className="login-btn"
-              disabled={busy || !username.trim() || !password.length}>
+              disabled={busy || !username.trim() || !password.length || (bootstrapMode && !confirmPassword.length)}>
               {busy ? (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-                  <span className="login-spinner"/> Signing in…
+                  <span className="login-spinner"/> {bootstrapMode ? 'Setting up...' : 'Signing in...'}
                 </span>
-              ) : 'Sign in'}
+              ) : (bootstrapMode ? 'Set password' : 'Sign in')}
             </button>
 
             {error && (
@@ -185,37 +229,6 @@ const LoginPage = ({ onSuccess }) => {
             )}
           </form>
 
-          {/* ── Dev seed credentials disclosure ───────────────────────
-              The prototype ships with hashed default passwords (= username)
-              for the 5 seeded operators. Surfacing them here makes the LIS
-              self-service for testing — close before any pilot/demo. */}
-          <div style={{ marginTop: 28, paddingTop: 18, borderTop: '1px solid var(--line-soft)' }}>
-            <button
-              type="button"
-              onClick={() => setSeedOpen(o => !o)}
-              style={{
-                background: 'transparent', border: 0, cursor: 'pointer', padding: 0,
-                fontSize: 11, color: 'var(--ink-500)', letterSpacing: '0.04em',
-                textTransform: 'uppercase', fontWeight: 500,
-              }}>
-              {seedOpen ? '− Hide' : '+ Show'} dev seed credentials
-            </button>
-            {seedOpen && (
-              <div style={{ marginTop: 10, padding: '10px 12px', background: 'var(--ivory-100)', border: '1px solid var(--line)', borderRadius: 6, fontSize: 11.5, color: 'var(--ink-500)', lineHeight: 1.7 }}>
-                Each seeded user's default password equals their username:
-                <div style={{ marginTop: 6, fontFamily: 'var(--font-mono, monospace)', color: 'var(--ink-700)' }}>
-                  rivera / rivera <span style={{ color: 'var(--ink-300)' }}>· Lab Director + Pathologist</span><br/>
-                  morgan / morgan <span style={{ color: 'var(--ink-300)' }}>· Lab Supervisor</span><br/>
-                  alex / alex <span style={{ color: 'var(--ink-300)' }}>· Medical Technologist</span><br/>
-                  priya / priya <span style={{ color: 'var(--ink-300)' }}>· Lab Assistant</span><br/>
-                  jordan / jordan <span style={{ color: 'var(--ink-300)' }}>· IT Admin</span>
-                </div>
-                <div style={{ marginTop: 8, fontSize: 10.5, color: 'var(--ink-400)' }}>
-                  Change defaults via the Users & Roles admin page.
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>

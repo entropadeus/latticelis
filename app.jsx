@@ -47,12 +47,20 @@ const App = () => {
   // a related view (e.g., Dashboard "Top clients" → Orders pinned to that
   // client). Clear via the X chip in the Orders toolbar.
   const [ordersFilterClientId, setOrdersFilterClientId] = useStateApp(null);
+  // Optional preselected patient for the Patient Search page. Set when a
+  // drawer hands off (e.g. "Open in Patient Search" on a patient drawer).
+  // Cleared by PatientsPage once consumed, or by the auto-clear effect
+  // below when the user navigates away.
+  const [patientsInitialId, setPatientsInitialId] = useStateApp(null);
   const [tweaks, setTweak] = window.useTweaks(TWEAK_DEFAULTS);
 
   // Expose a global hook so the command palette, OrdersPage button, and any future
   // shortcut can all open the New Order drawer without prop-drilling.
   useEffectApp(() => {
-    window.openNewOrder = () => setNewOrderOpen(true);
+    window.openNewOrder = () => {
+      if (!hasPermission('CREATE_ORDER')) return;
+      setNewOrderOpen(true);
+    };
     return () => { delete window.openNewOrder; };
   }, []);
 
@@ -76,6 +84,24 @@ const App = () => {
   // so a fresh visit doesn't see stale state.
   useEffectApp(() => {
     if (active !== 'orders' && ordersFilterClientId) setOrdersFilterClientId(null);
+  }, [active]);
+
+  // Cross-component "open Patient Search with this patient preselected" hook.
+  // Used by the patient entity drawer's "Open in Patient Search" action so the
+  // tech lands directly on the record they were viewing, with demographics +
+  // order history + recent results already populated.
+  useEffectApp(() => {
+    window.openPatientInSearch = (patientId) => {
+      setPatientsInitialId(patientId || null);
+      setActive('patients');
+    };
+    return () => { delete window.openPatientInSearch; };
+  }, []);
+
+  // Drop the preselected patient when the user navigates away from the
+  // Patient Search page, so a fresh visit doesn't auto-open a stale record.
+  useEffectApp(() => {
+    if (active !== 'patients' && patientsInitialId) setPatientsInitialId(null);
   }, [active]);
 
   // Rules now live in the persistence pipeline (IndexedDB) — same store everything else uses,
@@ -106,6 +132,7 @@ const App = () => {
   }, []);
 
   const setRules = useCallbackApp((updater) => {
+    if (!hasPermission('EDIT_RULES')) return;
     const next = typeof updater === 'function' ? updater(rules) : updater;
     const nextIds = new Set(next.map(r => r.id));
     const prevIds = new Set(rules.map(r => r.id));
@@ -129,72 +156,49 @@ const App = () => {
   const showSidebar = navStyle === 'sidebar' || navStyle === 'hybrid';
   const showTopRail = navStyle === 'top';
 
-  // Route-level permission gate. Pages that should restrict access by role
-  // declare the permission here; if the current user lacks it, we render
-  // a Forbidden panel instead of the page. Routes not in this map are
-  // unrestricted.
-  const ROUTE_PERMISSIONS = {
-    accession:     'ACCESSION',
-    instruments:   'EDIT_INTERFACES',
-    interfaces:    'EDIT_INTERFACES',
-    rules:         'EDIT_RULES',
-    tests:         'EDIT_TEST_CATALOG',
-    clients:       'EDIT_LAB_CONFIG',
-    locations:     'EDIT_LAB_CONFIG',
-    labels:        'EDIT_LABEL_TEMPLATES',
-    mappers:       'EDIT_INTERFACES',
-    qc:            'RESOLVE_QC',
-    notifications: 'EDIT_LAB_CONFIG',
-    users:         'EDIT_USERS',
-  };
-
-  const Forbidden = ({ route, perm }) => (
-    <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 32 }}>
-      <div className="panel" style={{ padding: 32, maxWidth: 440, textAlign: 'center' }}>
-        <div style={{ fontSize: 28, marginBottom: 8 }}>🔒</div>
-        <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--ink-900)', marginBottom: 8 }}>
-          Your role doesn't allow this
-        </div>
-        <div style={{ fontSize: 12.5, color: 'var(--ink-500)', lineHeight: 1.6, marginBottom: 14 }}>
-          The <span className="mono">{route}</span> page requires the
-          <span className="mono"> {perm}</span> permission. Talk to a Lab Director or IT Admin if you need access, or sign out and use an account that holds that permission.
-        </div>
-        <button className="btn" data-size="sm" onClick={() => setActive('dashboard')}>Back to Dashboard</button>
-      </div>
-    </div>
-  );
-
   const activePage = useMemoApp(() => {
-    const perm = ROUTE_PERMISSIONS[active];
-    if (perm && window.userRoles && window.currentUser
-        && !window.userRoles.userHasPermission(window.currentUser.id, perm)) {
-      return <Forbidden route={active} perm={perm}/>;
-    }
     switch (active) {
       case 'dashboard':   return <DashboardPage/>;
       case 'orders':      return <OrdersPage filterClientId={ordersFilterClientId}
                                               onClearFilter={() => setOrdersFilterClientId(null)}/>;
       case 'specimens':   return <SpecimensPage/>;
       case 'results':     return <ResultsPage/>;
-      case 'patients':    return <PatientsPage/>;
+      case 'patients':    return <PatientsPage initialPatientId={patientsInitialId} onClearInitial={() => setPatientsInitialId(null)}/>;
       case 'accession':   return <AccessioningPage/>;
       case 'worklists':   return <WorklistsPage/>;
-      case 'instruments': return <InstrumentsPage onBack={() => setActive('admin')}/>;
-      case 'interfaces':  return <InterfacesPage onBack={() => setActive('admin')}/>;
-      case 'rules':       return <RulesEnginePage rules={rules} setRules={setRules} onBack={() => setActive('admin')}/>;
+      case 'instruments': return <InstrumentsPage onBack={() => setActive('manage')}/>;
+      case 'interfaces':  return <InterfacesPage onBack={() => setActive('manage')}/>;
+      case 'rules':       return <RulesEnginePage rules={rules} setRules={setRules} onBack={() => setActive('manage')}/>;
       case 'reports':     return <ReportsPage/>;
-      case 'admin':       return <AdminPage onNav={setActive}/>;
-      case 'tests':       return <TestCatalogPage onBack={() => setActive('admin')}/>;
-      case 'clients':     return <ClientsPage onBack={() => setActive('admin')}/>;
-      case 'locations':   return <LocationsPage onBack={() => setActive('admin')}/>;
-      case 'labels':      return <LabelsPage onBack={() => setActive('admin')}/>;
-      case 'mappers':     return <MappersPage onBack={() => setActive('admin')}/>;
-      case 'qc':          return <QcPage onBack={() => setActive('admin')}/>;
-      case 'notifications': return <NotificationsPage onBack={() => setActive('admin')}/>;
-      case 'users':       return <UsersPage onBack={() => setActive('admin')}/>;
+      // Legacy 'admin' route — the original tile-grid AdminPage is no longer
+      // reachable from the sidebar or any AdminCenter tile. Alias to ManagePage
+      // so any stray hardcoded nav lands on the new admin hub instead of
+      // 404-ing back to Dashboard via the default branch.
+      case 'admin':       return <window.ManagePage onNav={setActive}/>;
+      case 'tests':       return <TestCatalogPage onBack={() => setActive('manage')}/>;
+      case 'clients':     return <ClientsPage onBack={() => setActive('manage')}/>;
+      case 'locations':   return <LocationsPage onBack={() => setActive('manage')}/>;
+      case 'labels':      return <LabelsPage onBack={() => setActive('manage')}/>;
+      case 'mappers':     return <MappersPage onBack={() => setActive('manage')}/>;
+      case 'qc':          return <QcPage onBack={() => setActive('manage')}/>;
+      case 'notifications': return <NotificationsPage onBack={() => setActive('manage')}/>;
+      case 'users':       return <UsersPage onBack={() => setActive('manage')}/>;
+      // ── Outreach-shaped buckets (TaskCenter + AdminCenter) ─────────────
+      case 'this-location': return <window.ThisLocationPage onNav={setActive}/>;
+      case 'preferences':   return <window.PreferencesPage/>;
+      case 'admin-reports': return <window.AdminReportsPage onNav={setActive}/>;
+      case 'system-setup':  return <window.SystemSetupPage onNav={setActive}/>;
+      case 'billing':       return <window.BillingPage onNav={setActive}/>;
+      case 'customization': return <window.CustomizationPage onNav={setActive}/>;
+      case 'insurance':     return <window.InsurancePage onNav={setActive}/>;
+      case 'other-setup':   return <window.OtherSetupPage onNav={setActive}/>;
+      case 'patient-setup': return <window.PatientSetupPage onNav={setActive}/>;
+      case 'toxicology':    return <window.ToxicologyPage onNav={setActive}/>;
+      case 'manage':        return <window.ManagePage onNav={setActive}/>;
+      case 'monitor':       return <window.MonitorPage onNav={setActive}/>;
       default:            return <DashboardPage/>;
     }
-  }, [active, rules, ordersFilterClientId, authedUser && authedUser.id]);
+  }, [active, rules, ordersFilterClientId, patientsInitialId, authedUser && authedUser.id]);
 
   // Render the LoginPage until both (a) the auth flag is set AND (b) the
   // user record hydrated. After verify() succeeds, both hold within one
@@ -207,7 +211,7 @@ const App = () => {
   return (
     <div className="app" data-nav={navStyle}>
       {showSidebar && <Sidebar active={active} onNav={setActive} collapsed={navStyle === 'hybrid'}/>}
-      <Topbar onCmdK={() => setCmdOpen(true)}/>
+      <Topbar onCmdK={() => setCmdOpen(true)} onNav={setActive}/>
       <main style={{
         gridColumn: showSidebar ? '2 / 3' : '1 / 2',
         gridRow: '2 / 3',
@@ -216,7 +220,10 @@ const App = () => {
         background: 'var(--ivory-50)',
       }}>
         {showTopRail && <TopRail active={active} onNav={setActive}/>}
-        <div key={active} className="fade-in" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        {/* Page transition. `key={active}` re-mounts on route change so the
+            entry animation re-fires; `slide-up` is the out-quint, 6px-lift
+            entrance per the design system (out-quint for entries). */}
+        <div key={active} className="slide-up" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {activePage}
         </div>
         <StatusBar/>
@@ -227,6 +234,7 @@ const App = () => {
       <window.EntityDrawer/>
       <CriticalAlerts/>
       <window.NotificationToasts/>
+      <window.ResultReportModal/>
       <window.SafetyConfirmHost/>
 
       <window.TweaksPanel title="Tweaks">

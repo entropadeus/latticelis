@@ -1,6 +1,6 @@
 // db.js — Lattice LIS persistence adapter
 //
-// Browser today (IndexedDB). Electron tomorrow (better-sqlite3 in main process via IPC).
+// Local-only browser persistence (IndexedDB). No remote sync, shared cloud store, or background network write.
 // Call sites only touch this surface — keep it small and stable so the swap is a one-file change.
 //
 //   await db.put(collection, record)        upsert by id
@@ -17,6 +17,14 @@
 const DB_NAME = 'lattice-lis';
 // Bumped to 6 to add the 'notifications' collection (history of toasts).
 const DB_VERSION = 8;
+const STORAGE_SCOPE = Object.freeze({
+  mode: 'local-only',
+  driver: 'indexeddb',
+  database: DB_NAME,
+  sync: false,
+  remote: false,
+  description: 'records stay in this browser profile; export/import are manual file operations only',
+});
 const COLLECTIONS = [
   'patients', 'orders', 'specimens', 'tests', 'results',
   'rules', 'instruments', 'interfaces', 'worklists', 'audit_events',
@@ -184,6 +192,7 @@ const __validateSnapshot = (snapshot) => {
 
 const db = {
   COLLECTIONS,
+  STORAGE_SCOPE,
   validateSnapshot: __validateSnapshot,
 
   put: async (collection, record) => {
@@ -227,7 +236,7 @@ const db = {
     }
   },
 
-  // Whole-database export/import. Mirrors of the schema for backup,
+  // Whole-database export/import. Mirrors of the local schema for backup,
   // audit reports, and migration. The shape is { version, exportedAt, collections: { name: [records] } }.
   // Importers MUST honor `version` — older snapshots may be missing collections;
   // newer snapshots may have collections this version doesn't know about.
@@ -240,6 +249,8 @@ const db = {
     }
     return {
       version: DB_VERSION,
+      storageScope: STORAGE_SCOPE.mode,
+      storageDriver: STORAGE_SCOPE.driver,
       exportedAt: Date.now(),
       collections,
     };

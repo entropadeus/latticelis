@@ -31,6 +31,7 @@ const CriticalAlerts = () => {
   const specimenById = useMemoCA(() => Object.fromEntries(specimens.map(s => [s.id, s])), [specimens]);
   const patientById = useMemoCA(() => Object.fromEntries(patients.map(p => [p.id, p])), [patients]);
   const testById = useMemoCA(() => Object.fromEntries(tests.map(t => [t.id, t])), [tests]);
+  const canAckCritical = hasPermission('ACK_CRITICAL');
 
   const unacked = useMemoCA(() => {
     return results
@@ -38,9 +39,35 @@ const CriticalAlerts = () => {
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [results]);
 
-  const [collapsed, setCollapsed] = useStateCA(false);
+  // Collapse state is persisted across reloads. When there are many criticals,
+  // default to collapsed so the cascade doesn't bury the page on first paint —
+  // the user can expand to triage when they're ready.
+  const [collapsed, setCollapsed] = useStateCA(() => {
+    try {
+      const saved = window.localStorage.getItem('lattice.criticalAlertsCollapsed');
+      if (saved === 'true') return true;
+      if (saved === 'false') return false;
+    } catch (e) { /* localStorage unavailable */ }
+    return null; // sentinel — fall through to count-based default below
+  });
+
+  useEffectCA(() => {
+    // Only resolve the sentinel once results have actually loaded. On first
+    // mount unacked.length is 0 (useEntities hasn't pushed data yet); if we
+    // resolved here we'd lock to `false` forever, even when 32 criticals show
+    // up a tick later.
+    if (collapsed === null && unacked.length > 0) {
+      setCollapsed(unacked.length > 4);
+    }
+  }, [unacked.length, collapsed]);
+
+  const setCollapsedPersisted = (v) => {
+    setCollapsed(v);
+    try { window.localStorage.setItem('lattice.criticalAlertsCollapsed', String(v)); } catch (e) { /* ignore */ }
+  };
 
   const ack = async (r) => {
+    if (!hasPermission('ACK_CRITICAL')) return;
     const spec = r.specimenId ? specimenById[r.specimenId] : null;
     const pat = spec && spec.patientId ? patientById[spec.patientId] : null;
     const test = r.testId ? testById[r.testId] : null;
@@ -65,6 +92,7 @@ const CriticalAlerts = () => {
       confirmLabel: 'Acknowledge',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('ACK_CRITICAL')) return;
     const fresh = await window.db.get('results', r.id);
     if (!fresh || fresh.criticalAckedAt) return;
     const actor = window.currentUser ? window.currentUser.id : 'unknown';
@@ -77,6 +105,7 @@ const CriticalAlerts = () => {
   };
 
   const ackAll = async () => {
+    if (!hasPermission('ACK_CRITICAL')) return;
     const ask = await caConfirm({
       id: 'critical.ack.batch',
       tone: 'danger',
@@ -98,6 +127,7 @@ const CriticalAlerts = () => {
       confirmLabel: 'Acknowledge all',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('ACK_CRITICAL')) return;
     const actor = window.currentUser ? window.currentUser.id : 'unknown';
     for (const r of unacked) {
       const fresh = await window.db.get('results', r.id);
@@ -112,10 +142,11 @@ const CriticalAlerts = () => {
   };
 
   if (unacked.length === 0) return null;
+  if (collapsed === null) return null; // wait for the count-based default to resolve
 
   if (collapsed) {
     return (
-      <button onClick={() => setCollapsed(false)} className="slide-down" style={{
+      <button onClick={() => setCollapsedPersisted(false)} className="slide-down" style={{
         position: 'fixed', top: 12, right: 12, zIndex: 800,
         height: 36, padding: '0 14px',
         background: 'var(--rust)', color: '#fff',
@@ -146,13 +177,17 @@ const CriticalAlerts = () => {
           {unacked.length} critical {unacked.length === 1 ? 'result' : 'results'} pending
         </span>
         {unacked.length > 1 && (
-          <button onClick={ackAll} style={{
+          <button onClick={ackAll}
+            disabled={!canAckCritical}
+            title={permissionTitle(canAckCritical, 'Acknowledge all critical results', 'acknowledge critical results')}
+            style={{
             background: 'rgba(255,255,255,0.18)', color: '#fff',
             border: 0, borderRadius: 4, height: 22, padding: '0 8px',
-            fontSize: 11, cursor: 'pointer',
+            fontSize: 11, cursor: canAckCritical ? 'pointer' : 'not-allowed',
+            opacity: canAckCritical ? 1 : 0.55,
           }}>Ack all</button>
         )}
-        <button onClick={() => setCollapsed(true)} style={{
+        <button onClick={() => setCollapsedPersisted(true)} style={{
           background: 'transparent', color: '#fff', border: 0, padding: '0 4px',
           fontSize: 14, cursor: 'pointer', lineHeight: 1,
         }} title="Collapse">−</button>
@@ -218,7 +253,10 @@ const CriticalAlerts = () => {
               </div>
             )}
             <div style={{ display: 'flex', gap: 6 }}>
-              <button className="btn" data-variant="primary" data-size="xs" onClick={() => ack(r)} style={{ flex: 1 }}>
+              <button className="btn" data-variant="primary" data-size="xs" onClick={() => ack(r)}
+                disabled={!canAckCritical}
+                title={permissionTitle(canAckCritical, 'Acknowledge critical result', 'acknowledge critical results')}
+                style={{ flex: 1 }}>
                 Acknowledge
               </button>
               <button className="btn" data-size="xs" onClick={() => {

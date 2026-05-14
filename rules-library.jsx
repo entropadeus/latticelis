@@ -19,7 +19,8 @@ const RULE_TRIGGERS = [
   { id: 'message.inbound',       label: 'HL7 inbound message',     group: 'Interfaces', desc: 'ORM, ORU, ADT inbound from external systems' },
   { id: 'message.outbound',      label: 'HL7 outbound message',    group: 'Interfaces' },
   { id: 'analyzer.qc',           label: 'Analyzer QC event',       group: 'Instruments' },
-  { id: 'tat.threshold',         label: 'TAT threshold breached',  group: 'Operations' },
+  { id: 'order.tat.warned',       label: 'TAT warning threshold crossed',  group: 'Operations', desc: 'Fires when an order reaches the warning percentage of its TAT target' },
+  { id: 'order.tat.breached',     label: 'TAT breach threshold crossed',   group: 'Operations', desc: 'Fires when an order exceeds its full TAT target' },
   { id: 'schedule.cron',         label: 'On schedule (cron)',      group: 'Operations',  desc: 'Fires on a recurring schedule' },
 ];
 
@@ -69,7 +70,11 @@ const CONDITION_PRIMITIVES = [
   { id: 'time.day.in',                label: 'Day of week in',              cat: 'Time',        args: [{ k: 'days', t: 'enum[]', opts: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] }] },
   { id: 'time.hour.between',          label: 'Hour between',                cat: 'Time',        args: [{ k: 'start', t: 'time' }, { k: 'end', t: 'time' }] },
   { id: 'time.holiday',               label: 'Is holiday',                  cat: 'Time',        args: [] },
-  { id: 'tat.elapsed.gt',             label: 'TAT elapsed >',               cat: 'Time',        args: [{ k: 'minutes', t: 'number', unit: 'min' }] },
+
+  // TAT — check elapsed time or pre-computed TAT state on the associated order
+  { id: 'tat.elapsed.gt',             label: 'TAT elapsed >',               cat: 'TAT',         args: [{ k: 'minutes', t: 'number', unit: 'min' }] },
+  { id: 'order.tat.warned',           label: 'Order TAT is in warning',     cat: 'TAT',         args: [] },
+  { id: 'order.tat.breached',         label: 'Order TAT is breached',       cat: 'TAT',         args: [] },
 
   // Interface / message
   { id: 'message.type.is',            label: 'Message type',                cat: 'Message',     args: [{ k: 'type', t: 'enum', opts: ['ORM','ORU','ADT','MDM','SIU','BAR'] }] },
@@ -128,7 +133,7 @@ const ACTION_PRIMITIVES = [
   { id: 'metric.increment',           label: 'Increment metric',            cat: 'Audit',       args: [{ k: 'metric', t: 'metric' }] },
 ];
 
-const COND_CATS = ['Source','Test','Specimen','Patient','Result','Time','Message'];
+const COND_CATS = ['Source','Test','Specimen','Patient','Result','Time','TAT','Message'];
 const ACTION_CATS = ['Routing','Validation','Reflex','Result','Notify','Output','Audit'];
 
 Object.assign(window, {

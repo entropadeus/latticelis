@@ -13,12 +13,24 @@ const DashboardPage = () => {
     const resultsToVerify = results.filter(r => r.status === 'preliminary' || r.status === 'pending').length;
     const criticalResults = results.filter(r => r.flag === 'LL' || r.flag === 'HH' || r.flag === 'A').length;
     const interfaceAlerts = interfaces.filter(i => i.status === 'error' || i.status === 'offline').length;
+    // `zeroCaption` overrides the default "No data" foot-text when the KPI
+    // is zero. Counters where zero is the *good* state (criticals, interface
+    // alerts, review queue) get reassuring copy; counters where zero is just
+    // "nothing yet today" get neutral copy. `zeroIsGood` lights the value
+    // sage instead of muted ink so the dashboard reads as healthy at a glance.
     return [
-      { l: 'Orders today',         v: ordersToday,         i: 'IconOrder' },
-      { l: 'Specimens in transit', v: specimensInTransit,  i: 'IconTube' },
-      { l: 'Results to verify',    v: resultsToVerify,     i: 'IconResults' },
-      { l: 'Critical results',     v: criticalResults,     i: 'IconFlag', tone: criticalResults > 0 ? 'rust' : null },
-      { l: 'Interface alerts',     v: interfaceAlerts,     i: 'IconInterface', tone: interfaceAlerts > 0 ? 'amber' : null },
+      { l: 'Orders today',         v: ordersToday,         i: 'IconOrder',
+        zeroCaption: 'No orders yet today' },
+      { l: 'Specimens in transit', v: specimensInTransit,  i: 'IconTube',
+        zeroCaption: 'None in transit' },
+      { l: 'Results to verify',    v: resultsToVerify,     i: 'IconResults',
+        zeroCaption: 'Queue is clear', zeroIsGood: true },
+      { l: 'Critical results',     v: criticalResults,     i: 'IconFlag',
+        tone: criticalResults > 0 ? 'rust' : null,
+        zeroCaption: 'All clear', zeroIsGood: true },
+      { l: 'Interface alerts',     v: interfaceAlerts,     i: 'IconInterface',
+        tone: interfaceAlerts > 0 ? 'amber' : null,
+        zeroCaption: 'All systems healthy', zeroIsGood: true },
     ];
   }, [orders, specimens, results, interfaces]);
 
@@ -35,10 +47,13 @@ const DashboardPage = () => {
       {kpis.map(k => {
         const Ico = window[k.i];
         const isZero = k.v === 0;
-        const valueColor = isZero ? 'var(--ink-300)'
+        const valueColor = isZero
+          ? (k.zeroIsGood ? 'var(--sage-600)' : 'var(--ink-300)')
           : k.tone === 'rust'  ? 'var(--err-700)'
           : k.tone === 'amber' ? 'var(--warn-700)'
           : 'var(--ink-900)';
+        const captionColor = isZero && k.zeroIsGood ? 'var(--sage-700)' : 'var(--ink-300)';
+        const caption = isZero ? (k.zeroCaption || 'No data') : 'Live';
         return (
           <div key={k.l} className="panel" style={{ padding: 14 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -46,7 +61,7 @@ const DashboardPage = () => {
               <Ico size={14} style={{ color: 'var(--ink-300)' }}/>
             </div>
             <div className="mono tnum" style={{ fontSize: 26, color: valueColor, fontWeight: 400, letterSpacing: '-0.02em' }}>{isZero ? '0' : k.v}</div>
-            <div style={{ fontSize: 11, color: 'var(--ink-300)', marginTop: 2 }}>{isZero ? 'No data' : 'Live'}</div>
+            <div style={{ fontSize: 11, color: captionColor, marginTop: 2 }}>{caption}</div>
           </div>
         );
       })}
@@ -117,7 +132,15 @@ const TatPanel = ({ results, specimens, orders }) => {
     };
   }, [results, specimens, orders]);
 
-  const fmt = (m) => m == null ? '—' : (m < 60 ? Math.round(m) + 'm' : (m / 60).toFixed(1) + 'h');
+  // Compact TAT: minutes under an hour, hours under a day, days beyond.
+  // The 1.4h vs 105.7h column-wrap problem comes from triple-digit hour
+  // strings — switching to days at 24h keeps every value at ≤ 5 chars.
+  const fmt = (m) => {
+    if (m == null) return '—';
+    if (m < 60) return Math.round(m) + 'm';
+    if (m < 24 * 60) return (m / 60).toFixed(1) + 'h';
+    return (m / (24 * 60)).toFixed(1) + 'd';
+  };
 
   return (
     <div className="panel" style={{ padding: 14, height: 220, display: 'flex', flexDirection: 'column' }}>
@@ -268,7 +291,15 @@ const ClientVolumePanel = ({ orders, results, specimens, clients }) => {
     return { rows, total: Object.values(ordersByClient).reduce((s, n) => s + n, 0) };
   }, [orders, results, specimens, clients]);
 
-  const fmt = (m) => m == null ? '—' : (m < 60 ? Math.round(m) + 'm' : (m / 60).toFixed(1) + 'h');
+  // Compact TAT: minutes under an hour, hours under a day, days beyond.
+  // The 1.4h vs 105.7h column-wrap problem comes from triple-digit hour
+  // strings — switching to days at 24h keeps every value at ≤ 5 chars.
+  const fmt = (m) => {
+    if (m == null) return '—';
+    if (m < 60) return Math.round(m) + 'm';
+    if (m < 24 * 60) return (m / 60).toFixed(1) + 'h';
+    return (m / (24 * 60)).toFixed(1) + 'd';
+  };
 
   return (
     <div className="panel" style={{ padding: 14, height: 220, display: 'flex', flexDirection: 'column' }}>
@@ -292,23 +323,22 @@ const ClientVolumePanel = ({ orders, results, specimens, clients }) => {
               <div key={row.client.id}
                 onClick={onClick}
                 title={`Open Orders filtered to ${row.client.code} — ${row.client.name}`}
+                className="dashboard-bar-row"
                 style={{
                   display: 'grid', gridTemplateColumns: '90px 1fr 60px 60px',
                   gap: 8, alignItems: 'center', fontSize: 12,
                   padding: '4px 6px', borderRadius: 4,
                   cursor: 'pointer',
                   transition: 'background 80ms linear',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'var(--ivory-100)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                }}>
                 <span className="mono" style={{ color: 'var(--sage-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {row.client.code}
                 </span>
-                <div style={{ height: 14, background: 'var(--ivory-200)', borderRadius: 3, position: 'relative' }}>
-                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: widthPct + '%', background: 'var(--info)', borderRadius: 3 }}/>
+                <div style={{ height: 10, background: 'var(--sage-50)', borderRadius: 999, position: 'relative', overflow: 'hidden' }}>
+                  <div className="dashboard-bar-fill" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: widthPct + '%', background: 'var(--sage-600)', borderRadius: 999, transition: 'background 120ms linear, width 240ms var(--ease-out)' }}/>
                 </div>
                 <span className="mono tnum" style={{ color: 'var(--ink-900)', textAlign: 'right' }}>{row.count}</span>
-                <span className="mono" style={{ color: 'var(--ink-400)', fontSize: 11, textAlign: 'right' }}>TAT {fmt(row.tatMedian)}</span>
+                <span className="mono" style={{ color: 'var(--ink-400)', fontSize: 11, textAlign: 'right', whiteSpace: 'nowrap' }}>TAT {fmt(row.tatMedian)}</span>
               </div>
             );
           })}
@@ -426,6 +456,7 @@ const EVENT_LABEL = {
 
 const ActivityPanel = () => {
   const events = window.useEntities('audit_events');
+  const animateNew = window.useDeferredEnter();
   const recent = useMemoOS(() => {
     return [...events]
       .sort((a, b) => (b.ts || 0) - (a.ts || 0))
@@ -451,9 +482,9 @@ const ActivityPanel = () => {
           </div>
         </div>
       ) : (
-        <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+        <div className="stagger-children" style={{ maxHeight: 260, overflowY: 'auto' }}>
           {recent.map(ev => (
-            <ActivityRow key={ev.id} ev={ev}/>
+            <ActivityRow key={ev.id} ev={ev} animate={animateNew}/>
           ))}
         </div>
       )}
@@ -461,12 +492,18 @@ const ActivityPanel = () => {
   );
 };
 
-const ActivityRow = ({ ev }) => {
+const ActivityRow = ({ ev, animate }) => {
+  const instruments = window.useEntities('instruments');
+  const instrumentsById = useMemoOS(() => {
+    const m = {};
+    instruments.forEach(i => { m[i.id] = i; if (i.code) m[i.code] = i; });
+    return m;
+  }, [instruments]);
   const tone = EVENT_TONE[ev.type] || 'ghost';
   const label = EVENT_LABEL[ev.type] || ev.type;
-  const detail = summarizeEvent(ev);
+  const detail = summarizeEvent(ev, instrumentsById);
   return (
-    <div style={{
+    <div className={animate ? 'slide-up' : ''} style={{
       display: 'grid', gridTemplateColumns: '70px 1fr auto',
       alignItems: 'center', gap: 10,
       padding: '7px 14px',
@@ -494,7 +531,8 @@ const ActivityRow = ({ ev }) => {
   );
 };
 
-const summarizeEvent = (ev) => {
+// instruments is an optional id/code → record map for resolving raw instrument IDs.
+const summarizeEvent = (ev, instruments = {}) => {
   const p = ev.payload || {};
   if (ev.type === 'operator.safety.confirmed') {
     return `${p.actionId || 'safety action'} confirmed`;
@@ -506,9 +544,20 @@ const summarizeEvent = (ev) => {
   if (ev.type === 'rule.audit') {
     return p.message || '';
   }
+  if (ev.type === 'lifecycle.transition') {
+    return p.from && p.to ? `${p.from} → ${p.to}` : '';
+  }
   if (p.order && p.order.orderNumber) return `Order ${p.order.orderNumber}`;
-  if (p.specimen && p.specimen.accessionNumber) return `Accession ${p.specimen.accessionNumber}`;
-  if (p.specimen && p.specimen.barcode) return `Barcode ${p.specimen.barcode}`;
+  if (p.specimen && (p.specimen.accessionNumber || p.specimen.barcode)) {
+    const specimenLabel = p.specimen.accessionNumber
+      ? `Accession ${p.specimen.accessionNumber}`
+      : `Barcode ${p.specimen.barcode}`;
+    const targetRaw = p.target;
+    const targetName = targetRaw
+      ? ((instruments[targetRaw] || {}).name || targetRaw)
+      : null;
+    return targetName ? `${specimenLabel} → ${targetName}` : specimenLabel;
+  }
   if (p.result) return p.result.id;
   if (ev.entityType && ev.entityId) return `${ev.entityType} ${String(ev.entityId).slice(-6)}`;
   return '';

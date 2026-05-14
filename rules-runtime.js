@@ -23,10 +23,13 @@
   const TRIGGER_TO_EVENT = {
     'order.modified': 'order.updated',
     'result.amended': 'result.released',
+    // Legacy tat.threshold trigger fires on either TAT event published by tat-watcher.
+    'tat.threshold':  ['order.tat.warned', 'order.tat.breached'],
   };
 
   const matchesTrigger = (ruleTrigger, eventType) => {
     const mapped = TRIGGER_TO_EVENT[ruleTrigger] || ruleTrigger;
+    if (Array.isArray(mapped)) return mapped.includes(eventType);
     return mapped === eventType;
   };
 
@@ -138,6 +141,19 @@
       if (!c.result || c.result.deltaPct == null) return false;
       return Math.abs(c.result.deltaPct) > Number(a.pct);
     },
+    // Per-test delta check — reads deltaCheckPercent / deltaCheckAbsolute from the
+    // test record in ctx. Fires when EITHER configured threshold is exceeded.
+    // If neither field is set on the test, returns false (no gate to match).
+    // Requires the delta precomputation block (see onEvent) to have stamped
+    // deltaPct and deltaAbs onto ctx.result; otherwise returns false safely.
+    'result.delta.test': (a, c) => {
+      if (!c.result || !c.test || c.result.deltaPct == null) return false;
+      const exceedsPct = Number.isFinite(c.test.deltaCheckPercent) && c.test.deltaCheckPercent > 0
+        && Math.abs(c.result.deltaPct) > c.test.deltaCheckPercent;
+      const exceedsAbs = Number.isFinite(c.test.deltaCheckAbsolute) && c.test.deltaCheckAbsolute > 0
+        && c.result.deltaAbs != null && Math.abs(c.result.deltaAbs) > c.test.deltaCheckAbsolute;
+      return exceedsPct || exceedsAbs;
+    },
 
     // Time
     'time.day.in': (a) => {
@@ -155,8 +171,23 @@
       return start <= end ? (h >= start && h < end) : (h >= start || h < end);
     },
 
+    // TAT state — reads tatBreachLevel written by tat-watcher onto the order entity.
+    // If the order hasn't been scanned yet (new, or watcher hasn't run) the field is
+    // absent and both conditions return false — safe default: no false-positive alerts.
+    'order.tat.warned':   (a, c) => !!c.order && c.order.tatBreachLevel === 'warn',
+    'order.tat.breached': (a, c) => !!c.order && c.order.tatBreachLevel === 'breach',
+
+    // TAT elapsed — computes directly from order.orderedAt minus stored pause time.
+    // Does not need cfg/testsById; the pause accounting matches what tat-watcher stores.
+    'tat.elapsed.gt': (a, c) => {
+      if (!c.order || !c.order.orderedAt) return false;
+      const pausedMs = Math.max(0, Number(c.order.tatPausedMs) || 0);
+      const elapsedMin = Math.max(0, (Date.now() - c.order.orderedAt - pausedMs) / 60000);
+      return elapsedMin > Number(a.minutes);
+    },
+
     // Stubs — explicit so console doesn't warn about every primitive in catalog
-    'order.location.is':         () => false,
+    'order.location.is':         (a, c) => !!c.location && (c.location.id === a.location || c.location.name === a.location),
     'order.payer.is':            () => false,
     'order.source.is':           () => false,
     'test.panel.contains':       () => false,
@@ -166,7 +197,6 @@
     'patient.fasting':           () => false,
     // result.delta.gt is now a real evaluator above — see "Delta check" comment.
     'time.holiday':              () => false,
-    'tat.elapsed.gt':            () => false,
     'message.type.is':           () => false,
     'message.field.matches':     () => false,
     'message.field.missing':     () => false,
@@ -385,8 +415,38 @@
     'route.split':          async (a, c) => auditAction('STUB route.split count=' + (a.count || 0), c),
     'order.requireDx':      async (_, c) => auditAction('STUB order.requireDx', c),
     'order.requireAuth':    async (_, c) => auditAction('STUB order.requireAuth', c),
-    'order.duplicate.warn': async (a, c) => auditAction('STUB duplicate.warn within ' + (a.hours || 0) + 'h', c),
-    'order.reflex.replace': async (a, c) => auditAction('STUB reflex.replace ' + (a.from || '?') + ' → ' + (a.to || '?'), c),
+    'order.duplicate.warn': async (a, c) => {
+      if (!c.order) return { ok: false, reason: 'no order in context' };
+      const hours = Math.max(0.1, Number(a.hours) || 24);
+      const since = Date.now() - hours * 3600000;
+      const patientId = c.order.patientId;
+      if (!patientId) return { ok: true, found: 0 };
+      const recentOrders = await window.db.list('orders', o =>
+        o.patientId === patientId && o.id !== c.order.id && (o.createdAt || 0) >= since
+      );
+      const currentTestIds = new Set(Array.isArray(c.order.testIds) ? c.order.testIds : []);
+      const duplicates = recentOrders.filter(o => (o.testIds || []).some(tid => currentTestIds.has(tid)));
+      if (duplicates.length === 0) return { ok: true, found: 0 };
+      window.events.publish('notification', {
+        kind: 'system',
+        msg: `Duplicate order: ${duplicates.length} recent order(s) for this patient share test(s) with ${c.order.orderNumber || c.order.id.slice(-6)} (within ${hours}h).`,
+        viaRule: true,
+        ctx: { orderId: c.order.id, duplicateOrderIds: duplicates.map(o => o.id) },
+      });
+      await auditAction(`duplicate.warn: ${duplicates.length} duplicate(s) within ${hours}h`, c);
+      return { ok: true, found: duplicates.length };
+    },
+    'order.reflex.replace': async (a, c) => {
+      if (!c.order || !a.from || !a.to) return { ok: false, reason: 'missing order or from/to args' };
+      const cancelResult = await ACTION_EXECUTORS['order.reflex.cancel']({ test: a.from }, c);
+      if (!cancelResult.ok && !cancelResult.notPresent) return cancelResult;
+      // Re-fetch the order so the add sees the cancel's removal of testIds.
+      const freshOrder = await window.db.get('orders', c.order.id);
+      const addResult = await ACTION_EXECUTORS['order.reflex.add']({ test: a.to }, { ...c, order: freshOrder });
+      if (!addResult.ok) return addResult;
+      await auditAction(`reflex.replace ${a.from} → ${a.to}`, c);
+      return { ok: true, from: a.from, to: a.to, addedTestId: addResult.addedTestId };
+    },
     'order.panel.expand':   async (_, c) => auditAction('STUB panel.expand', c),
     'result.range.apply':   async (a, c) => auditAction('STUB range.apply ' + (a.range || '?'), c),
     'message.send.hl7':     async (a, c) => auditAction('STUB hl7.send ' + (a.type || '?') + ' via ' + (a.iface || '?'), c),
@@ -395,6 +455,19 @@
     'report.generate':      async (a, c) => auditAction('STUB report.generate ' + (a.template || '?'), c),
     'metric.increment':     async (a, c) => auditAction('STUB metric.increment ' + (a.metric || '?'), c),
   };
+
+  // Stub detection — self-maintaining: when a stub is implemented (function body
+  // changes from `() => false` or stops containing 'STUB '), it drops out naturally.
+  const STUB_COND_IDS = new Set(
+    Object.entries(CONDITION_EVALUATORS)
+      .filter(([, fn]) => /=>\s*false\s*$/.test(fn.toString().trim()))
+      .map(([k]) => k)
+  );
+  const STUB_ACTION_IDS = new Set(
+    Object.entries(ACTION_EXECUTORS)
+      .filter(([, fn]) => fn.toString().includes("'STUB "))
+      .map(([k]) => k)
+  );
 
   // -- Context builder ------------------------------------------------------
   // Pulls related entities from the db so condition primitives can reference
@@ -412,6 +485,11 @@
     if (p.instrument) ctx.instrument = p.instrument;
 
     // Backfill from db where we have an id but not the entity itself.
+    // orderId in payload covers TAT events (order.tat.warned / order.tat.breached)
+    // which carry orderId but not the full order object.
+    if (!ctx.order && p.orderId) {
+      ctx.order = await window.db.get('orders', p.orderId);
+    }
     if (ctx.specimen && !ctx.order && ctx.specimen.orderId) {
       ctx.order = await window.db.get('orders', ctx.specimen.orderId);
     }
@@ -426,6 +504,9 @@
     }
     if (ctx.result && !ctx.test && ctx.result.testId) {
       ctx.test = await window.db.get('tests', ctx.result.testId);
+    }
+    if (ctx.order && ctx.order.locationId && !ctx.location) {
+      ctx.location = await window.db.get('locations', ctx.order.locationId);
     }
 
     return ctx;
@@ -443,6 +524,7 @@
     if (ctx.result)     next.result     = await window.db.get('results', ctx.result.id);
     if (ctx.test)       next.test       = await window.db.get('tests', ctx.test.id);
     if (ctx.instrument) next.instrument = await window.db.get('instruments', ctx.instrument.id);
+    if (ctx.location)   next.location   = await window.db.get('locations',   ctx.location.id);
     return next;
   };
 
@@ -485,8 +567,9 @@
         if (priorMatches.length > 0) {
           const prior = priorMatches[0];
           if (prior.value != null && Number(prior.value) !== 0) {
-            const pct = ((Number(ctx.result.value) - Number(prior.value)) / Number(prior.value)) * 100;
-            ctx = { ...ctx, result: { ...ctx.result, deltaPct: pct, deltaPriorId: prior.id } };
+            const deltaAbs = Number(ctx.result.value) - Number(prior.value);
+            const pct = (deltaAbs / Number(prior.value)) * 100;
+            ctx = { ...ctx, result: { ...ctx.result, deltaPct: pct, deltaAbs, deltaPriorId: prior.id } };
           }
         }
       }
@@ -571,6 +654,8 @@
     buildContext,
     CONDITION_EVALUATORS,
     ACTION_EXECUTORS,
+    STUB_COND_IDS,
+    STUB_ACTION_IDS,
   };
 
   start();

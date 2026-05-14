@@ -11,8 +11,19 @@
 
 (function () {
 
-  const SOON_DAYS = 14;
+  const DEFAULT_SOON_DAYS = 14;
   const KEY = 'lattice.lotExpiryNotified';
+
+  // Per-test override: `test.lotExpirationAmberDays`, in days. Only finite
+  // positive values win — null / undefined / 0 / NaN / negative all fall back
+  // to DEFAULT_SOON_DAYS. Same defensive shape as critical-escalation
+  // resolveThresholds, deliberately, so the two per-test override surfaces
+  // read identically when scanning the codebase.
+  const __resolveSoonDays = (test) => {
+    if (!test) return DEFAULT_SOON_DAYS;
+    const n = Number(test.lotExpirationAmberDays);
+    return Number.isFinite(n) && n > 0 ? n : DEFAULT_SOON_DAYS;
+  };
 
   let __started = false;
 
@@ -50,7 +61,9 @@
     let fired = 0;
     for (const l of levels) {
       const days = Math.ceil((l.lotExpiresAt - Date.now()) / 86400000);
-      if (days > SOON_DAYS) continue;
+      const t = testById[l.testId];
+      const soonDays = __resolveSoonDays(t);
+      if (days > soonDays) continue;
 
       const seenKey = l.id + '|' + ymd;
       if (seen[seenKey] === ymd) {
@@ -58,7 +71,6 @@
         continue;
       }
 
-      const t = testById[l.testId];
       const testCode = t ? t.code : '?';
       const lotLabel = l.lotNumber ? ('lot ' + l.lotNumber) : 'this lot';
       const msg = days < 0
@@ -71,7 +83,14 @@
         kind: 'role',
         target: 'LAB_SUPERVISOR',
         msg,
-        ctx: { qcLevelId: l.id, testId: l.testId },
+        ctx: {
+          qcLevelId: l.id,
+          testId: l.testId,
+          // Surface which threshold fired so audit trail can distinguish
+          // "tight per-test override" from "lab-wide default" in retrospect.
+          thresholdDays: soonDays,
+          thresholdSource: soonDays === DEFAULT_SOON_DAYS ? 'default' : 'test',
+        },
         viaLotExpiry: true,
       });
       compact[seenKey] = ymd;
@@ -100,6 +119,10 @@
   const scanNow = () => scan();
   const resetSeen = () => { try { localStorage.removeItem(KEY); } catch {} };
 
-  window.lotExpiryWatcher = { start, scanNow, resetSeen };
+  window.lotExpiryWatcher = {
+    start, scanNow, resetSeen,
+    resolveSoonDays: __resolveSoonDays,
+    DEFAULT_SOON_DAYS,
+  };
   start();
 })();

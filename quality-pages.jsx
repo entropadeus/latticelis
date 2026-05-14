@@ -90,6 +90,17 @@ const LeveyJenningsChart = ({ results }) => {
 
 // Each rule's purpose, in plain language, so operators can decide what to disable.
 // Sources: Westgard JO. Multi-rule QC procedures. CLSI EP23-Ed2.
+// Display-friendly number: rounds to 2 decimals AND drops trailing zeros so
+// 4.833333333333333 → 4.83, but 15 stays 15 and 4.5 stays 4.5. Float values
+// in QC means/SDs come from upstream calculation (mean of a numeric panel
+// or a fraction like 5/6) and would otherwise leak 16-digit precision noise.
+const fmtQcNum = (n) => {
+  if (n == null || n === '') return '—';
+  const num = Number(n);
+  if (!Number.isFinite(num)) return '—';
+  return parseFloat(num.toFixed(2)).toString();
+};
+
 const WESTGARD_RULE_INFO = {
   '1-2s': { severity: 'warn',   summary: 'One control >2 SD. Warning, not rejection.', advisory: true },
   '1-3s': { severity: 'reject', summary: 'One control >3 SD. Rejection.',                advisory: false },
@@ -104,6 +115,7 @@ const WESTGARD_RULE_INFO = {
 // to all rules enabled (qcDisabledRules = []).
 const WestgardRulesPanel = () => {
   const cfg = window.useEntity('lab_config', window.schema.LAB_CONFIG_ID);
+  const canEditLabConfig = hasPermission('EDIT_LAB_CONFIG');
   const disabledSet = useMemoOS(
     () => new Set((cfg && Array.isArray(cfg.qcDisabledRules)) ? cfg.qcDisabledRules : []),
     [cfg]
@@ -111,6 +123,7 @@ const WestgardRulesPanel = () => {
   const ruleIds = window.westgard ? window.westgard.RULES : Object.keys(WESTGARD_RULE_INFO);
 
   const toggle = async (ruleId) => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     const currentlyEnabled = !disabledSet.has(ruleId);
     const nextEnabled = !currentlyEnabled;
     const info = WESTGARD_RULE_INFO[ruleId] || { severity: 'reject', summary: '' };
@@ -132,6 +145,7 @@ const WestgardRulesPanel = () => {
       confirmLabel: nextEnabled ? 'Enable rule' : 'Disable rule',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     const next = new Set(disabledSet);
     if (next.has(ruleId)) next.delete(ruleId);
     else next.add(ruleId);
@@ -159,17 +173,17 @@ const WestgardRulesPanel = () => {
           const info = WESTGARD_RULE_INFO[id] || { severity: 'reject', summary: '', advisory: false };
           const enabled = !disabledSet.has(id);
           return (
-            <label key={id} title={info.summary}
+            <label key={id} title={permissionTitle(canEditLabConfig, info.summary, 'edit lab configuration')}
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 6,
                 padding: '6px 8px',
                 background: enabled ? '#fff' : 'var(--ivory-100)',
                 border: '1px solid var(--line)',
                 borderRadius: 4,
-                cursor: 'pointer',
-                opacity: enabled ? 1 : 0.7,
+                cursor: canEditLabConfig ? 'pointer' : 'not-allowed',
+                opacity: !canEditLabConfig ? 0.5 : (enabled ? 1 : 0.7),
               }}>
-              <input type="checkbox" checked={enabled} onChange={() => toggle(id)} style={{ marginTop: 2 }}/>
+              <input type="checkbox" checked={enabled} disabled={!canEditLabConfig} onChange={() => toggle(id)} style={{ marginTop: 2 }}/>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span className="mono" style={{ fontSize: 11.5, fontWeight: 500 }}>{id}</span>
@@ -202,6 +216,7 @@ const QcPage = ({ onBack }) => {
   const [entryValue, setEntryValue] = useStateOS('');
   const [entryInstrumentId, setEntryInstrumentId] = useStateOS('');
   const [chartInstrumentId, setChartInstrumentId] = useStateOS('__all');
+  const canResolveQc = hasPermission('RESOLVE_QC');
 
   const testById = useMemoOS(() => Object.fromEntries(tests.map(t => [t.id, t])), [tests]);
   const instrumentById = useMemoOS(() => Object.fromEntries(instruments.map(i => [i.id, i])), [instruments]);
@@ -238,9 +253,11 @@ const QcPage = ({ onBack }) => {
   useEffectOS(() => { setChartInstrumentId('__all'); }, [activeLevelId]);
 
   const startNewLevel = () => {
+    if (!hasPermission('RESOLVE_QC')) return;
     setLevelDraft({ testId: '', level: 'L1', material: '', lotNumber: '', lotExpiresAt: '', mean: '', sd: '', units: '', active: true });
   };
   const startEditLevel = (l) => {
+    if (!hasPermission('RESOLVE_QC')) return;
     setLevelDraft({ id: l.id, testId: l.testId || '', level: l.level || 'L1', material: l.material || '',
       lotNumber: l.lotNumber || '',
       lotExpiresAt: l.lotExpiresAt ? new Date(l.lotExpiresAt).toISOString().slice(0, 10) : '',
@@ -249,6 +266,7 @@ const QcPage = ({ onBack }) => {
   };
   const cancelLevel = () => setLevelDraft(null);
   const saveLevel = async () => {
+    if (!hasPermission('RESOLVE_QC')) return;
     if (!levelDraft || !levelDraft.testId || levelDraft.mean === '' || levelDraft.sd === '') return;
     // Convert YYYY-MM-DD date to epoch ms (end of day local) — matches what schema expects.
     const lotExpiresAt = levelDraft.lotExpiresAt
@@ -266,6 +284,7 @@ const QcPage = ({ onBack }) => {
     cancelLevel();
   };
   const removeLevel = async (l) => {
+    if (!hasPermission('RESOLVE_QC')) return;
     const test = testById[l.testId];
     const ask = await safetyConfirm({
       id: 'admin.qc_level.delete',
@@ -284,6 +303,7 @@ const QcPage = ({ onBack }) => {
       confirmLabel: 'Delete QC level',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESOLVE_QC')) return;
     const fresh = await window.db.get('qc_levels', l.id);
     if (!fresh) return;
     await window.db.delete('qc_levels', l.id);
@@ -292,6 +312,7 @@ const QcPage = ({ onBack }) => {
 
 
   const recordResult = async () => {
+    if (!hasPermission('RESOLVE_QC')) return;
     if (!activeLevel || entryValue === '') return;
     const value = Number(entryValue);
     if (Number.isNaN(value)) {
@@ -312,6 +333,7 @@ const QcPage = ({ onBack }) => {
   };
 
   const ackViolation = async (v) => {
+    if (!hasPermission('RESOLVE_QC')) return;
     const level = levels.find(l => l.id === v.qcLevelId) || activeLevel;
     const test = v.testId ? testById[v.testId] : (level && testById[level.testId]);
     const ask = await safetyConfirm({
@@ -335,17 +357,24 @@ const QcPage = ({ onBack }) => {
       confirmLabel: 'Resolve violation',
     });
     if (!ask.confirmed) return;
+    if (!hasPermission('RESOLVE_QC')) return;
     await window.qcGate.acknowledgeViolation(v.id, { actor: currentActorId(), reason: ask.reason });
   };
 
   // Lot expiry status — used to render a per-row pill.
-  // Returns null when the level has no lotExpiresAt set.
-  const lotStatus = (level) => {
+  // Returns null when the level has no lotExpiresAt set, OR when the lot
+  // is comfortably outside the per-test (or default) amber threshold.
+  // Threshold resolution mirrors `lot-expiry-watcher.js __resolveSoonDays`
+  // so the pill and the notification fire on the same boundary.
+  const lotStatus = (level, test) => {
     if (!level || !level.lotExpiresAt) return null;
     const days = Math.ceil((level.lotExpiresAt - Date.now()) / (24 * 60 * 60 * 1000));
+    const soonDays = window.lotExpiryWatcher
+      ? window.lotExpiryWatcher.resolveSoonDays(test)
+      : 14;
     if (days < 0)  return { label: 'Lot EXPIRED ' + (-days) + 'd ago', tone: 'rust',  days };
     if (days === 0) return { label: 'Lot expires today',                tone: 'rust',  days };
-    if (days <= 14) return { label: 'Expires in ' + days + 'd',         tone: 'amber', days };
+    if (days <= soonDays) return { label: 'Expires in ' + days + 'd',   tone: 'amber', days };
     return null;
   };
 
@@ -354,7 +383,9 @@ const QcPage = ({ onBack }) => {
       <PageHeader title="QC (Westgard)" sub="Define control levels, record runs, monitor rule violations. Out-of-control levels block result release on those tests."
         actions={[
           <button key="b" className="btn" data-size="sm" data-variant="ghost" onClick={onBack}><IconChevRight size={13} style={{ transform: 'rotate(180deg)' }}/> Admin</button>,
-          <button key="n" className="btn" data-size="sm" data-variant="primary" onClick={startNewLevel}><IconPlus size={13}/> New QC level</button>,
+          <button key="n" className="btn" data-size="sm" data-variant="primary" onClick={startNewLevel}
+            disabled={!canResolveQc}
+            title={permissionTitle(canResolveQc, 'Create new QC level', 'resolve QC') }><IconPlus size={13}/> New QC level</button>,
         ]}/>
 
       <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 12, height: 'calc(100% - 80px)' }}>
@@ -374,7 +405,7 @@ const QcPage = ({ onBack }) => {
               const isSel = activeLevelId === l.id;
               const recent = allResults.filter(r => r.qcLevelId === l.id).sort((a,b)=>(b.ranAt||0)-(a.ranAt||0))[0];
               const tone = recent ? (recent.status === 'out_of_control' ? 'err' : recent.status === 'warn' ? 'warn' : 'ok') : 'idle';
-              const lot = lotStatus(l);
+              const lot = lotStatus(l, t);
               return (
                 <button key={l.id} type="button" onClick={() => setActiveLevelId(l.id)}
                   style={{
@@ -388,7 +419,7 @@ const QcPage = ({ onBack }) => {
                     <span className="dot" data-tone={tone}/>
                     <span style={{ fontSize: 12.5, fontWeight: 500 }}>{(t ? t.code : '?')} · {l.level}</span>
                     <span style={{ flex: 1 }}/>
-                    <span className="mono tnum" style={{ fontSize: 11, color: 'var(--ink-400)' }}>{l.mean}±{l.sd}</span>
+                    <span className="mono tnum" style={{ fontSize: 11, color: 'var(--ink-400)' }}>{fmtQcNum(l.mean)}±{fmtQcNum(l.sd)}</span>
                   </div>
                   <div style={{ fontSize: 10.5, color: 'var(--ink-400)', marginTop: 2, paddingLeft: 14, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <span>{l.material || '—'}{l.lotNumber ? ' · lot ' + l.lotNumber : ''}</span>
@@ -434,7 +465,9 @@ const QcPage = ({ onBack }) => {
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
                 <button className="btn" data-size="sm" onClick={cancelLevel}>Cancel</button>
-                <button className="btn" data-variant="primary" data-size="sm" onClick={saveLevel}>{levelDraft.id ? 'Save' : 'Create'}</button>
+                <button className="btn" data-variant="primary" data-size="sm" onClick={saveLevel}
+                  disabled={!canResolveQc}
+                  title={permissionTitle(canResolveQc, levelDraft.id ? 'Save QC level' : 'Create QC level', 'resolve QC')}>{levelDraft.id ? 'Save' : 'Create'}</button>
               </div>
             </div>
           )}
@@ -446,11 +479,15 @@ const QcPage = ({ onBack }) => {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 500 }}>{(testById[activeLevel.testId] || {}).code || '?'} · {activeLevel.level}</div>
                   <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>
-                    Mean <span className="mono tnum">{activeLevel.mean}</span> · SD <span className="mono tnum">{activeLevel.sd}</span> · units {activeLevel.units || (testById[activeLevel.testId] || {}).units || '—'}
+                    Mean <span className="mono tnum">{fmtQcNum(activeLevel.mean)}</span> · SD <span className="mono tnum">{fmtQcNum(activeLevel.sd)}</span> · units {activeLevel.units || (testById[activeLevel.testId] || {}).units || '—'}
                   </div>
                 </div>
-                <button className="btn" data-size="xs" onClick={() => startEditLevel(activeLevel)}>Edit</button>
-                <button className="btn" data-variant="danger" data-size="xs" onClick={() => removeLevel(activeLevel)}>Delete</button>
+                <button className="btn" data-size="xs" onClick={() => startEditLevel(activeLevel)}
+                  disabled={!canResolveQc}
+                  title={permissionTitle(canResolveQc, 'Edit QC level', 'resolve QC')}>Edit</button>
+                <button className="btn" data-variant="danger" data-size="xs" onClick={() => removeLevel(activeLevel)}
+                  disabled={!canResolveQc}
+                  title={permissionTitle(canResolveQc, 'Delete QC level', 'resolve QC')}>Delete</button>
               </div>
 
               <div className="panel" style={{ padding: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -485,7 +522,8 @@ const QcPage = ({ onBack }) => {
                   <input className="input mono" placeholder="instrument id (optional)" value={entryInstrumentId}
                     onChange={e => setEntryInstrumentId(e.target.value)} style={{ flex: 1 }}/>
                   <button className="btn" data-variant="primary" data-size="sm" onClick={recordResult}
-                    disabled={entryValue === ''}>Record</button>
+                    disabled={entryValue === '' || !canResolveQc}
+                    title={permissionTitle(canResolveQc, 'Record QC run', 'resolve QC')}>Record</button>
                 </div>
               </div>
 
@@ -556,7 +594,9 @@ const QcPage = ({ onBack }) => {
                           </td>
                           <td>
                             {!v.resolvedAt && v.severity === 'reject' && (
-                              <button className="btn" data-size="xs" onClick={() => ackViolation(v)}>Acknowledge</button>
+                              <button className="btn" data-size="xs" onClick={() => ackViolation(v)}
+                                disabled={!canResolveQc}
+                                title={permissionTitle(canResolveQc, 'Acknowledge QC violation', 'resolve QC')}>Acknowledge</button>
                             )}
                           </td>
                         </tr>

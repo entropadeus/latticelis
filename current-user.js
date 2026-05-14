@@ -17,116 +17,86 @@
   let __cur = null;       // last-seen user object (or null if none chosen)
   let __started = false;
 
-  // ── Auto-seed: at least one user must exist or the picker is empty. ───────
-  // We seed two operators on first run so the switcher has options and shows
-  // something other than "no user". Both have role hints that align with
-  // Appendix A's Role enum (LAB_ASSISTANT, MEDICAL_TECHNOLOGIST).
-
-  // Seed a starter roster on first install. Goes through schema.newUser so
-  // role coercion + status normalization apply consistently with admin-page
-  // creates. Fixed ids (`usr_seed_…`) so existing localStorage `currentUserId`
-  // selections survive and so audit history pre-dating a fresh install
-  // continues to resolve. Roles are spread across the catalog to give the
-  // TAT recipient picker / Users admin page realistic rosters out of the box
-  // without anyone having to hand-create users to see the routing work.
-  // Default seed credentials: each user's password equals their username.
-  // Documented on the LoginPage's "dev seed" disclosure so the user knows
-  // what to type. Backfill: if seed users exist but lack a passwordHash
-  // (e.g. records from before auth landed), we hash a default for them so
-  // the prototype is usable on second-run installs without manual reset.
-  const SEED_USERS = [
-    // Owner account. Password is non-default (set explicitly, not = username);
-    // deliberately excluded from the LoginPage "dev seed credentials"
-    // disclosure so it isn't shown alongside the prototype demo accounts.
-    // Roles span the full admin spectrum so this account hits no Forbidden
-    // panels anywhere — Director (clinical) + IT Admin (technical).
-    { id: 'usr_owner_blona',   username: 'blona',  firstName: 'Ben',    lastName: 'Lona',
-      credentials: [],             roles: ['LAB_DIRECTOR', 'IT_ADMIN'],   password: 'Privia1!' },
-    { id: 'usr_seed_director', username: 'rivera', firstName: 'Sam',     lastName: 'Rivera',
-      credentials: ['MD', 'FCAP'], roles: ['LAB_DIRECTOR', 'PATHOLOGIST'] },
-    { id: 'usr_seed_super',    username: 'morgan',  firstName: 'Morgan', lastName: 'Lee',
-      credentials: ['MT(ASCP)'],   roles: ['LAB_SUPERVISOR'] },
-    { id: 'usr_seed_tech',     username: 'alex',    firstName: 'Alex',   lastName: 'Tran',
-      credentials: ['MLT'],        roles: ['MEDICAL_TECHNOLOGIST'] },
-    { id: 'usr_seed_assist',   username: 'priya',   firstName: 'Priya',  lastName: 'Patel',
-      credentials: [],             roles: ['LAB_ASSISTANT'] },
-    { id: 'usr_seed_it',       username: 'jordan',  firstName: 'Jordan', lastName: 'Kim',
-      credentials: [],             roles: ['IT_ADMIN'] },
-  ];
-
-  // Resolve the default password for a seed entry. Owner / personal accounts
-  // declare `password` explicitly; everyone else falls back to `username`
-  // (the prototype demo convention surfaced on the login page).
-  const __seedPassword = (seed) => seed.password || seed.username;
-
-  const __hashSeed = async (password) => {
-    if (!window.auth || !window.auth.hashPassword || !window.auth.generateSalt) return null;
-    const salt = window.auth.generateSalt();
-    const hash = await window.auth.hashPassword(password, salt);
-    return { salt, hash };
+  // ── First-launch default user ───────────────────────────────────────────
+  // Local prototype default: exactly one account, username `test`,
+  // password `test`. The plaintext exists here only so a brand-new local
+  // browser profile / Electron data dir can bootstrap itself.
+  // Holds every role in the catalog so it clears every PERMISSIONS gate
+  // and shows up in every role-filtered surface (TAT recipients, critical
+  // escalation, notification targets) — a true full-admin test account.
+  const DEV_USER = {
+    id: 'usr_local_test',
+    username: 'test',
+    firstName: 'Test',
+    lastName: 'User',
+    credentials: [],
+    roles: ['LAB_DIRECTOR', 'LAB_SUPERVISOR', 'PATHOLOGIST', 'MEDICAL_TECHNOLOGIST', 'LAB_ASSISTANT', 'IT_ADMIN'],
+    status: 'ACTIVE',
   };
+  const DEV_PASSWORD = 'test';
+  const LEGACY_SEED_USER_IDS = new Set([
+    'usr_seed_director',
+    'usr_seed_supervisor',
+    'usr_seed_med_tech',
+    'usr_seed_lab_assistant',
+    'usr_seed_it_admin',
+    'usr_owner_blona',
+  ]);
 
   const seedUsers = async () => {
     const existing = await window.db.list('users').catch(() => []);
     const newUser = (window.schema && window.schema.newUser) || ((init) => init);
     const now = Date.now();
-    const existingById = new Map(existing.map(u => [u.id, u]));
 
-    if (existing.length === 0) {
-      // First-install path: create the full roster with hashed default passwords.
-      const records = [];
-      for (const s of SEED_USERS) {
-        const h = await __hashSeed(__seedPassword(s));
-        const { password, ...rest } = s;
-        records.push(newUser({
-          ...rest,
-          createdAt: now,
-          passwordHash: h ? h.hash : null,
-          passwordSalt: h ? h.salt : null,
-          passwordSetAt: h ? now : null,
-        }));
-      }
-      for (const u of records) await window.db.put('users', u);
-      return records;
+    for (const u of existing.filter(u => u && LEGACY_SEED_USER_IDS.has(u.id))) {
+      await window.db.delete('users', u.id);
     }
 
-    // Backfill path: existing browser DB. We do TWO things here.
-    // (1) Create any seed user that doesn't exist yet (so adding a new entry
-    //     to SEED_USERS retroactively propagates to existing installs).
-    // (2) For seed users that exist but lack a password hash (records from
-    //     before auth shipped), hash the default and persist it.
-    // Custom (non-seed) user records are left alone — those need an admin
-    // to assign a password via the Users admin page.
-    let created = 0;
-    let touched = 0;
-    for (const seed of SEED_USERS) {
-      const cur = existingById.get(seed.id);
-      if (!cur) {
-        // Missing → create.
-        const h = await __hashSeed(__seedPassword(seed));
-        const { password, ...rest } = seed;
-        const rec = newUser({
-          ...rest,
-          createdAt: now,
-          passwordHash: h ? h.hash : null,
-          passwordSalt: h ? h.salt : null,
-          passwordSetAt: h ? now : null,
-        });
-        await window.db.put('users', rec);
-        created++;
-        continue;
+    const afterLegacyCleanup = existing.filter(u => u && !LEGACY_SEED_USER_IDS.has(u.id));
+    const current = afterLegacyCleanup.find(u => u && u.id === DEV_USER.id);
+
+    // Always ensure the test/test admin record exists with the right roles,
+    // ACTIVE status, and a known-good password. Previously this bailed when
+    // any non-default users were present, which left the dev account
+    // missing in any DB that had other accounts — producing "unknown account
+    // or account inactive" on login. The dev account is now a guaranteed
+    // back door for local prototype work; real installations should remove
+    // this seeder before going to production.
+    const salt = window.auth && window.auth.generateSalt ? window.auth.generateSalt() : null;
+    const hash = salt && window.auth && window.auth.hashPassword
+      ? await window.auth.hashPassword(DEV_PASSWORD, salt)
+      : null;
+    const record = newUser({
+      ...(current || {}),
+      ...DEV_USER,
+      createdAt: current && current.createdAt ? current.createdAt : now,
+      passwordHash: hash,
+      passwordSalt: salt,
+      passwordSetAt: now,
+      passwordSource: 'local-dev-seed',
+    });
+    await window.db.put('users', record);
+    try {
+      const authed = localStorage.getItem('lattice.authedUserId');
+      if (authed && authed !== record.id) {
+        const allUsers = await window.db.list('users').catch(() => []);
+        if (!allUsers.some(u => u && u.id === authed)) {
+          localStorage.removeItem('lattice.authedUserId');
+        }
       }
-      // Exists → only touch if it lacks a password hash.
-      if (cur.passwordHash && cur.passwordSalt) continue;
-      const h = await __hashSeed(__seedPassword(seed));
-      if (!h) continue;
-      const next = newUser({ ...cur, passwordHash: h.hash, passwordSalt: h.salt, passwordSetAt: now });
-      await window.db.put('users', next);
-      touched++;
-    }
-    if (created > 0) console.log('[current-user] created ' + created + ' missing seed user(s)');
-    if (touched > 0) console.log('[current-user] backfilled passwords for ' + touched + ' seed user(s)');
-    return existing;
+      const legacy = localStorage.getItem(KEY);
+      if (legacy && legacy !== record.id) {
+        const allUsers = await window.db.list('users').catch(() => []);
+        if (!allUsers.some(u => u && u.id === legacy)) {
+          localStorage.removeItem(KEY);
+        }
+      }
+    } catch (e) {}
+    console.log('[current-user] local default user ready: test');
+    return [
+      ...afterLegacyCleanup.filter(u => u && u.id !== record.id),
+      record,
+    ];
   };
 
   // Auth-aware refresh:
@@ -149,9 +119,30 @@
     }
     const authedId = (() => { try { return localStorage.getItem('lattice.authedUserId'); } catch (e) { return null; } })();
     const legacyId = localStorage.getItem(KEY);
+    // Clear orphaned session pointers — if the referenced user no longer
+    // exists, the pointer is dead and we should clear it so the next reload
+    // lands on the login page instead of resolving a deleted ghost.
+    try {
+      if (authedId && !users.some(u => u.id === authedId)) {
+        localStorage.removeItem('lattice.authedUserId');
+      }
+      if (legacyId && !users.some(u => u.id === legacyId)) {
+        localStorage.removeItem(KEY);
+      }
+    } catch (e) {}
     let cur = null;
     if (authedId) cur = users.find(u => u.id === authedId) || null;
     if (!cur && legacyId) cur = users.find(u => u.id === legacyId) || null;
+    // Inactive users get force-signed-out. Status changes via the Users admin
+    // page propagate through db.subscribe → refresh, so deactivating a logged-in
+    // user actually kicks them out instead of waiting for a manual reload.
+    if (cur && cur.status === 'INACTIVE') {
+      try {
+        localStorage.removeItem('lattice.authedUserId');
+        localStorage.removeItem(KEY);
+      } catch (e) {}
+      cur = null;
+    }
     // No auto-fallback to users[0] anymore — that defeats the login gate.
     __cur = cur;
     window.currentUser = cur;
@@ -176,6 +167,12 @@
     await refresh();
   };
 
+  const ensureDefaultUser = async () => {
+    const users = await seedUsers();
+    await refresh();
+    return users;
+  };
+
   // displayName(actor) — accepts a user id or a string actor like 'system'/'auto'/'rules'
   const displayName = (actor) => {
     if (!actor) return 'system';
@@ -188,7 +185,7 @@
   };
 
   window.currentUser = null;
-  window.currentUserApi = { setCurrent, subscribe, displayName, refresh };
+  window.currentUserApi = { setCurrent, subscribe, displayName, refresh, ensureDefaultUser };
 
   start();
 })();

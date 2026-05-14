@@ -90,6 +90,9 @@ const NewOrderDrawer = ({ open, onClose }) => {
 
   const [saving, setSaving] = useStateOF(false);
   const [error, setError] = useStateOF('');
+  const canCreateOrder = hasPermission('CREATE_ORDER');
+  const canEditLabConfig = hasPermission('EDIT_LAB_CONFIG');
+  const canEditTestCatalog = hasPermission('EDIT_TEST_CATALOG');
 
   const firstFieldRef = useRefOF(null);
 
@@ -150,9 +153,11 @@ const NewOrderDrawer = ({ open, onClose }) => {
   );
 
   const startNewClient = () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return;
     setDraftClient({ code: clientQ.trim().toUpperCase(), name: '', type: 'CLINIC', deliveryChannel: 'fax', deliveryEndpoint: '' });
   };
   const commitNewClient = async () => {
+    if (!hasPermission('EDIT_LAB_CONFIG')) return null;
     if (!draftClient) return null;
     if (!draftClient.code || !draftClient.name) {
       setError('New client needs a code and name.');
@@ -185,8 +190,12 @@ const NewOrderDrawer = ({ open, onClose }) => {
     return pat;
   };
 
-  const startNewTest = () => setDraftTest({ code: testQ.trim(), name: '', units: '' });
+  const startNewTest = () => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return;
+    setDraftTest({ code: testQ.trim(), name: '', units: '' });
+  };
   const commitNewTest = async () => {
+    if (!hasPermission('EDIT_TEST_CATALOG')) return null;
     if (!draftTest) return null;
     if (!draftTest.code || !draftTest.name) {
       setError('New test needs at least code and name.');
@@ -204,6 +213,7 @@ const NewOrderDrawer = ({ open, onClose }) => {
   const removeTest = (id) => setSelectedTestIds(ids => ids.filter(x => x !== id));
 
   const save = async () => {
+    if (!hasPermission('CREATE_ORDER')) return;
     setError('');
     let pid = patientId;
     if (!pid && draftPatient) {
@@ -228,6 +238,7 @@ const NewOrderDrawer = ({ open, onClose }) => {
       const t = todayStart.getTime();
       const todayCount = allOrders.filter(o => (o.orderedAt || o.createdAt || 0) >= t).length;
 
+      if (!hasPermission('CREATE_ORDER')) return;
       const order = window.schema.newOrder({
         orderNumber: __orderNumber(todayCount),
         patientId: pid,
@@ -244,7 +255,14 @@ const NewOrderDrawer = ({ open, onClose }) => {
         diagnosisCodes: diagnosisCodes.split(',').map(s => s.trim()).filter(Boolean),
         notes: notes.trim(),
         deliveryChannel: deliveryChannel || '',
-        deliveryEndpoint: deliveryEndpoint.trim() || '',
+        // Normalize the endpoint to its canonical form per the channel's
+        // registry entry (e.g. fax strips punctuation, email lowercases).
+        // Falls back to a simple trim when no channel is set or the channel
+        // isn't in the registry — preserves whatever the operator typed
+        // rather than dropping it on the floor.
+        deliveryEndpoint: (deliveryChannel && window.schema && window.schema.validateDeliveryEndpoint
+          ? window.schema.validateDeliveryEndpoint(deliveryChannel, deliveryEndpoint).normalized
+          : deliveryEndpoint.trim()) || '',
       });
       await window.db.put('orders', order);
       window.events.publish(window.EVENTS.ORDER_CREATED, {
@@ -310,10 +328,12 @@ const NewOrderDrawer = ({ open, onClose }) => {
                         <span className="mono">{c.code}</span>
                         <span style={{ marginLeft: 10 }}>{c.name || '—'}</span>
                         <span style={{ marginLeft: 10, color: 'var(--ink-400)' }}>· {c.type.toLowerCase()}</span>
-                        {c.deliveryChannel && <span style={{ marginLeft: 10, color: 'var(--ink-400)' }}>delivers via {c.deliveryChannel}</span>}
+                        {c.deliveryChannel && <span style={{ marginLeft: 10, color: 'var(--ink-400)' }}>· via {c.deliveryChannel}</span>}
                       </SuggestionRow>
                     ))}
-                    <SuggestionAction onClick={startNewClient}>
+                    <SuggestionAction onClick={startNewClient}
+                      disabled={!canEditLabConfig}
+                      title={permissionTitle(canEditLabConfig, 'Add new client', 'edit lab configuration')}>
                       + Add new client {clientQ ? `(code "${clientQ.toUpperCase()}")` : ''}
                     </SuggestionAction>
                   </Suggestions>
@@ -373,7 +393,8 @@ const NewOrderDrawer = ({ open, onClose }) => {
             )}
             {draftTest ? (
               <NewTestFields draft={draftTest} setDraft={setDraftTest}
-                onCancel={() => setDraftTest(null)} onCommit={commitNewTest}/>
+                onCancel={() => setDraftTest(null)} onCommit={commitNewTest}
+                canEditTestCatalog={canEditTestCatalog}/>
             ) : (
               <div>
                 <input className="input" placeholder="Search test catalogue (code, name, LOINC)…"
@@ -389,7 +410,9 @@ const NewOrderDrawer = ({ open, onClose }) => {
                         {t.units && <span style={{ marginLeft: 10, color: 'var(--ink-400)' }}>{t.units}</span>}
                       </SuggestionRow>
                     ))}
-                    <SuggestionAction onClick={startNewTest}>
+                    <SuggestionAction onClick={startNewTest}
+                      disabled={!canEditTestCatalog}
+                      title={permissionTitle(canEditTestCatalog, 'Add new test', 'edit the test catalog')}>
                       + Add new test {testQ ? `(code "${testQ}")` : ''}
                     </SuggestionAction>
                   </Suggestions>
@@ -425,24 +448,12 @@ const NewOrderDrawer = ({ open, onClose }) => {
                 style={{ height: 64, padding: 8, resize: 'vertical' }} placeholder="Optional"/>
             </FieldRow>
             <FieldRow label="Delivery override">
-              <div style={{ display: 'flex', gap: 6 }}>
-                <select className="input" value={deliveryChannel}
-                  onChange={e => setDeliveryChannel(e.target.value)}
-                  style={{ maxWidth: 140 }}>
-                  <option value="">— inherit from client —</option>
-                  <option value="fax">Fax</option>
-                  <option value="hl7">HL7</option>
-                  <option value="portal">Portal</option>
-                  <option value="email">Email</option>
-                  <option value="print">Print</option>
-                  <option value="manual">Manual</option>
-                </select>
-                <input className="input mono" value={deliveryEndpoint}
-                  onChange={e => setDeliveryEndpoint(e.target.value)}
-                  placeholder={deliveryChannel ? 'Endpoint (fax #, URL, …)' : 'Inherits client endpoint'}
-                  disabled={!deliveryChannel}
-                  style={{ flex: 1 }}/>
-              </div>
+              <window.DeliveryChannelPicker
+                channel={deliveryChannel}
+                endpoint={deliveryEndpoint}
+                onChannelChange={setDeliveryChannel}
+                onEndpointChange={setDeliveryEndpoint}
+                allowInherit/>
             </FieldRow>
           </OrderSection>
 
@@ -462,7 +473,9 @@ const NewOrderDrawer = ({ open, onClose }) => {
         }}>
           <button className="btn" data-size="sm" onClick={onClose} disabled={saving}>Cancel</button>
           <div style={{ flex: 1 }}/>
-          <button className="btn" data-variant="primary" data-size="sm" onClick={save} disabled={saving}>
+          <button className="btn" data-variant="primary" data-size="sm" onClick={save}
+            disabled={saving || !canCreateOrder}
+            title={permissionTitle(canCreateOrder, 'Create order', 'create orders')}>
             {saving ? 'Saving…' : 'Create order'}
           </button>
         </div>
@@ -508,6 +521,11 @@ const SuggestionRow = ({ onClick, children }) => (
       padding: '8px 12px', border: 0, background: 'transparent',
       fontSize: 12.5, color: 'var(--ink-700)',
       borderBottom: '1px solid var(--line-soft)', cursor: 'pointer',
+      // Truncate gracefully when row content exceeds drawer width — long
+      // client names + "via {channel}" suffix were getting hard-clipped by
+      // the parent's overflow:hidden, leaving "delivers via h…" with no
+      // ellipsis affordance. Now the trail dots make it readable.
+      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
     }}>{children}</button>
 );
 
@@ -515,12 +533,14 @@ const SuggestionEmpty = ({ children }) => (
   <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--ink-400)' }}>{children}</div>
 );
 
-const SuggestionAction = ({ onClick, children }) => (
-  <button type="button" onClick={onClick}
+const SuggestionAction = ({ onClick, children, disabled, title }) => (
+  <button type="button" onClick={onClick} disabled={disabled} title={title}
     style={{
       display: 'block', width: '100%', textAlign: 'left',
       padding: '8px 12px', border: 0, background: 'var(--ivory-100)',
-      fontSize: 12, color: 'var(--sage-700)', fontWeight: 500, cursor: 'pointer',
+      fontSize: 12, color: 'var(--sage-700)', fontWeight: 500,
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      opacity: disabled ? 0.55 : 1,
     }}>{children}</button>
 );
 
@@ -570,22 +590,16 @@ const NewClientFields = ({ draft, setDraft, onCancel }) => (
           <option value="OTHER">Other</option>
         </select>
       </Labeled>
-      <Labeled label="Delivery channel">
-        <select className="input" value={draft.deliveryChannel}
-          onChange={e => setDraft(d => ({ ...d, deliveryChannel: e.target.value }))}>
-          <option value="fax">Fax</option>
-          <option value="hl7">HL7</option>
-          <option value="portal">Portal</option>
-          <option value="email">Email</option>
-          <option value="print">Print/Courier</option>
-        </select>
-      </Labeled>
     </div>
     <div style={{ marginTop: 8 }}>
-      <Labeled label="Delivery endpoint">
-        <input className="input mono" value={draft.deliveryEndpoint}
-          placeholder="fax #, HL7 endpoint id, portal URL…"
-          onChange={e => setDraft(d => ({ ...d, deliveryEndpoint: e.target.value }))}/>
+      <Labeled label="Delivery">
+        <window.DeliveryChannelPicker
+          channel={draft.deliveryChannel}
+          endpoint={draft.deliveryEndpoint}
+          onChannelChange={v => setDraft(d => ({ ...d, deliveryChannel: v }))}
+          onEndpointChange={v => setDraft(d => ({ ...d, deliveryEndpoint: v }))}
+          layout="stacked"
+          showHint={false}/>
       </Labeled>
     </div>
   </div>
@@ -651,12 +665,14 @@ const NewPatientFields = ({ draft, setDraft, onCancel }) => (
   </div>
 );
 
-const NewTestFields = ({ draft, setDraft, onCancel, onCommit }) => (
+const NewTestFields = ({ draft, setDraft, onCancel, onCommit, canEditTestCatalog }) => (
   <div style={{ border: '1px solid var(--line)', borderRadius: 6, padding: 10, background: '#fff' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
       <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-700)', flex: 1 }}>New test</span>
       <button className="btn" data-variant="ghost" data-size="xs" onClick={onCancel}>Cancel</button>
-      <button className="btn" data-variant="primary" data-size="xs" onClick={onCommit}>Add</button>
+      <button className="btn" data-variant="primary" data-size="xs" onClick={onCommit}
+        disabled={!canEditTestCatalog}
+        title={permissionTitle(canEditTestCatalog, 'Add test', 'edit the test catalog')}>Add</button>
     </div>
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: 8 }}>
       <Labeled label="Code">
