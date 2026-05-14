@@ -189,12 +189,21 @@
     // Stubs — explicit so console doesn't warn about every primitive in catalog
     'order.location.is':         (a, c) => !!c.location && (c.location.id === a.location || c.location.name === a.location),
     'order.payer.is':            () => false,
-    'order.source.is':           () => false,
+    // Matches the order source system (Athena, Manual, Internal, etc.) stored on order.source.
+    'order.source.is':    (a, c) => !!c.order && c.order.source === (a.source || ''),
     'test.panel.contains':       () => false,
-    'test.department.is':        () => false,
+    // True when the triggering test's category OR any test in the order has the given department.
+    'test.department.is': (a, c) => {
+      const dept = a.dept || '';
+      if (!dept) return false;
+      if (c.test && c.test.category === dept) return true;
+      if (Array.isArray(c.tests) && c.tests.some(t => t.category === dept)) return true;
+      return false;
+    },
     'specimen.temp.outside':     () => false,
     'patient.pregnant':          () => false,
-    'patient.fasting':           () => false,
+    // True when the order was placed with fasting status recorded.
+    'patient.fasting':    (_, c) => !!(c.order && c.order.fasting),
     // result.delta.gt is now a real evaluator above — see "Delta check" comment.
     'time.holiday':              () => false,
     'message.type.is':           () => false,
@@ -508,6 +517,12 @@
     if (ctx.order && ctx.order.locationId && !ctx.location) {
       ctx.location = await window.db.get('locations', ctx.order.locationId);
     }
+    if (ctx.order && ctx.order.clientId && !ctx.client) {
+      ctx.client = await window.db.get('clients', ctx.order.clientId);
+    }
+    if (ctx.order && Array.isArray(ctx.order.testIds) && ctx.order.testIds.length && !ctx.tests) {
+      ctx.tests = await window.db.list('tests', t => ctx.order.testIds.includes(t.id));
+    }
 
     return ctx;
   };
@@ -525,6 +540,8 @@
     if (ctx.test)       next.test       = await window.db.get('tests', ctx.test.id);
     if (ctx.instrument) next.instrument = await window.db.get('instruments', ctx.instrument.id);
     if (ctx.location)   next.location   = await window.db.get('locations',   ctx.location.id);
+    if (ctx.client)     next.client     = await window.db.get('clients',     ctx.client.id);
+    if (ctx.tests)      next.tests      = ctx.tests;   // test catalog stable mid-rule
     return next;
   };
 

@@ -17,14 +17,14 @@ const TestCatalogPage = ({ onBack }) => {
   const startNew = () => {
     if (!hasPermission('EDIT_TEST_CATALOG')) return;
     setEditingId(null);
-    setDraft({ code: '', name: '', shortName: '', loinc: '', units: '', refRangeLow: '', refRangeHigh: '', turnaroundMinutes: '', referenceRanges: [], criticalEscalationT1Sec: '', criticalEscalationT2Sec: '', lotExpirationAmberDays: '', deltaCheckPercent: '', deltaCheckAbsolute: '', active: true });
+    setDraft({ code: '', name: '', shortName: '', loinc: '', units: '', category: '', refRangeLow: '', refRangeHigh: '', turnaroundMinutes: '', referenceRanges: [], criticalEscalationT1Sec: '', criticalEscalationT2Sec: '', lotExpirationAmberDays: '', deltaCheckPercent: '', deltaCheckAbsolute: '', active: true });
   };
   const startEdit = (t) => {
     if (!hasPermission('EDIT_TEST_CATALOG')) return;
     setEditingId(t.id);
     setDraft({
       code: t.code || '', name: t.name || '', shortName: t.shortName || '',
-      loinc: t.loinc || '', units: t.units || '',
+      loinc: t.loinc || '', units: t.units || '', category: t.category || '',
       refRangeLow: t.refRangeLow == null ? '' : t.refRangeLow,
       refRangeHigh: t.refRangeHigh == null ? '' : t.refRangeHigh,
       turnaroundMinutes: t.turnaroundMinutes == null ? '' : t.turnaroundMinutes,
@@ -235,6 +235,12 @@ const TestCatalogPage = ({ onBack }) => {
               </CatalogField>
               <CatalogField label="Units">
                 <input className="input mono" value={draft.units} onChange={e => setDraft({ ...draft, units: e.target.value })} placeholder="UCUM (mg/dL, mmol/L, …)"/>
+              </CatalogField>
+              <CatalogField label="Department">
+                <select className="input" value={draft.category} onChange={e => setDraft({ ...draft, category: e.target.value })}>
+                  <option value="">— unassigned —</option>
+                  {(window.schema?.TEST_CATEGORIES || []).map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
               </CatalogField>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <CatalogField label="Default low">
