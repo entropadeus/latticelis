@@ -42,6 +42,7 @@ const jsxFiles = [
   'tox-pages.jsx',
   'outreach-pages.jsx',
   'accessioning.jsx',
+  'result-report.jsx',
   'app.jsx',
 ];
 

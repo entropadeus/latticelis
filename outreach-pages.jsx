@@ -22,7 +22,7 @@ const { useState: useStateOR, useEffect: useEffectOR, useMemo: useMemoOR } = Rea
 // If `go` is set, clicking navigates to that route id via `onNav`. `external`
 // is a one-shot side effect (open drawer, run action) — for now unused but
 // the signature is reserved.
-const OutreachBucketPage = ({ title, sub, tiles, onNav, label }) => {
+const OutreachBucketPage = ({ title, sub, tiles, onNav, label, actions, extra }) => {
   const visible = (tiles || []).filter(t => {
     if (!t.permission) return true;
     if (!window.userRoles || !window.currentUser) return true;
@@ -30,7 +30,8 @@ const OutreachBucketPage = ({ title, sub, tiles, onNav, label }) => {
   });
   return (
     <Page label={label || title}>
-      <PageHeader title={title} sub={sub}/>
+      <PageHeader title={title} sub={sub} actions={actions}/>
+      {extra}
       {visible.length === 0 ? (
         <div className="panel" style={{ padding: '56px 24px', textAlign: 'center' }}>
           <div className="empty-icon" style={{ margin: '0 auto 10px' }}><IconInbox size={18}/></div>
@@ -462,13 +463,15 @@ const PreferencesPage = () => {
 // Buckets that aggregate existing pages route via tiles; pure-stub buckets
 // render the empty-bucket state in OutreachBucketPage.
 
+// System Setup used to surface "Snapshot & Migration" as a tile that drilled
+// into the legacy AdminPage. Those actions now live in the Manage page header
+// (the AdminCenter > Manage route), so this bucket is empty for the moment.
+// Lab identity / audit retention sub-pages will land here when they ship.
 const SystemSetupPage = ({ onNav }) => (
   <OutreachBucketPage title="System Setup" label="System Setup"
-    sub="Lab identity, snapshot management, audit retention."
+    sub="Lab identity, audit retention. (Snapshot tools moved to Manage.)"
     onNav={onNav}
-    tiles={[
-      { id: 'admin', label: 'Snapshot & Migration', desc: 'Export, import, reset the local database', icon: 'IconShield', go: 'admin', permission: 'RESTORE_SNAPSHOT' },
-    ]}/>
+    tiles={[]}/>
 );
 
 const BillingPage = ({ onNav }) => (
@@ -527,15 +530,25 @@ const ToxicologyPage = ({ onNav }) => (
     ]}/>
 );
 
-const ManagePage = ({ onNav }) => (
-  <OutreachBucketPage title="Manage" label="Manage"
-    sub="Operational oversight — quality control, re-routes, recollects."
-    onNav={onNav}
-    tiles={[
-      { id: 'qc',          label: 'QC (Westgard)',  desc: 'Control levels, runs, rule violations',  icon: 'IconBeaker',     go: 'qc',          permission: 'RESOLVE_QC' },
-      { id: 'instruments', label: 'Instruments',    desc: 'Connected devices, simulator controls',  icon: 'IconInstrument', go: 'instruments', permission: 'EDIT_INTERFACES' },
-    ]}/>
-);
+// Manage is the operational/admin hub now — quality oversight tiles plus the
+// snapshot/demo controls (Seed demo / Clear demo / Export local / Import local)
+// in the header. The controls live in a shared hook (`useSnapshotActions` in
+// admin-pages.jsx) so AdminPage and ManagePage render the same widget without
+// drift.
+const ManagePage = ({ onNav }) => {
+  const snap = window.useSnapshotActions ? window.useSnapshotActions() : { actions: null, modal: null };
+  return (
+    <OutreachBucketPage title="Manage" label="Manage"
+      sub="Operational oversight — quality control, re-routes, recollects, snapshot management."
+      onNav={onNav}
+      actions={snap.actions ? [snap.actions] : null}
+      extra={snap.modal}
+      tiles={[
+        { id: 'qc',          label: 'QC (Westgard)',  desc: 'Control levels, runs, rule violations',  icon: 'IconBeaker',     go: 'qc',          permission: 'RESOLVE_QC' },
+        { id: 'instruments', label: 'Instruments',    desc: 'Connected devices, simulator controls',  icon: 'IconInstrument', go: 'instruments', permission: 'EDIT_INTERFACES' },
+      ]}/>
+  );
+};
 
 const MonitorPage = ({ onNav }) => (
   <OutreachBucketPage title="Monitor" label="Monitor"

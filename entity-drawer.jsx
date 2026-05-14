@@ -161,7 +161,15 @@ const ClientOverview = ({ client }) => {
         { l: 'Contact',  v: client.contactName || '—' },
         { l: 'Phone',    v: <span className="mono">{client.phone || '—'}</span> },
         { l: 'Fax',      v: <span className="mono">{client.fax || '—'}</span> },
-        { l: 'Delivery', v: client.deliveryChannel ? <><span className="pill" data-tone="info">{client.deliveryChannel}</span>{client.deliveryEndpoint ? <span className="mono" style={{ marginLeft: 6, fontSize: 11, color: 'var(--ink-500)' }}>{client.deliveryEndpoint}</span> : null}</> : '—' },
+        // Resolve through the registry so the label tracks whatever the
+        // channel calls itself (e.g. "HL7 over MLLP" instead of the raw
+        // 'hl7' id). Legacy or hidden channels fall back to the stored id
+        // so dropped channels still render readably.
+        { l: 'Delivery', v: client.deliveryChannel ? (() => {
+          const def = window.schema && window.schema.getDeliveryChannel ? window.schema.getDeliveryChannel(client.deliveryChannel) : null;
+          const label = def ? def.label : client.deliveryChannel;
+          return <><span className="pill" data-tone="info">{label}</span>{client.deliveryEndpoint ? <span className="mono" style={{ marginLeft: 6, fontSize: 11, color: 'var(--ink-500)' }}>{client.deliveryEndpoint}</span> : null}</>;
+        })() : '—' },
       ]}/>
       <div style={{ marginTop: 16 }}>
         <div className="section-title" style={{ marginBottom: 8 }}>Orders ({orders.length})</div>
@@ -751,7 +759,14 @@ const PatientOverview = ({ patient }) => {
         )}
       </div>
       <button className="btn" data-variant="primary" data-size="sm" style={{ marginTop: 12 }}
-        onClick={() => { window.closeEntity(); window.__navTo && window.__navTo('patients'); }}>
+        onClick={() => {
+          window.closeEntity();
+          // Prefer the preselect-aware hook so we land on this patient's
+          // detail pane directly. Fall back to a bare nav if app.jsx hasn't
+          // registered the hook yet (older bundle / mid-reload race).
+          if (window.openPatientInSearch) window.openPatientInSearch(patient.id);
+          else if (window.__navTo) window.__navTo('patients');
+        }}>
         Open in Patient Search
       </button>
     </div>
@@ -882,15 +897,20 @@ const ResultOverview = ({ result }) => {
         </div>
       )}
 
-      {correctable && (
-        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+      <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <button className="btn" data-size="sm" data-variant="ghost"
+          onClick={() => window.openResultReport && window.openResultReport(result.id)}
+          title="Print or save a PDF of this result report">
+          <IconPrint/> Print report
+        </button>
+        {correctable && (
           <button className="btn" data-size="sm" data-variant="primary" onClick={openCorrect}
             disabled={!canCorrect}
             title={permissionTitle(canCorrect, 'Correct this result', 'correct results')}>
             <IconCorrect/> Correct this result
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {(result.deliveryStatus || result.lastHl7Message) && (
         <DeliverySection result={result}/>
@@ -902,6 +922,15 @@ const ResultOverview = ({ result }) => {
 // Tone map shared with the result-history strip. Mirrors RESULT_FLAG_TONE
 // from the shared page helpers but kept local so this file doesn't need to import.
 const RESULT_FLAG_TONE_INLINE = { L: 'info', H: 'amber', LL: 'rust', HH: 'rust', A: 'amber', AA: 'rust' };
+
+const IconPrint = ({ size = 13 }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 6V2h8v4"/>
+    <rect x="2" y="6" width="12" height="6" rx="1"/>
+    <path d="M4 9h8M4 12h8v2H4v-2z"/>
+    <circle cx="4.5" cy="8.5" r="0.5" fill="currentColor" stroke="none"/>
+  </svg>
+);
 
 // Tiny inline icon — pencil-on-line. Custom 1.25px geometric per the design system.
 const IconCorrect = ({ size = 13 }) => (

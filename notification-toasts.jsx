@@ -112,7 +112,7 @@ const NotificationToasts = () => {
         const hasCtx = t.ctx && (t.ctx.resultId || t.ctx.specimenId || t.ctx.orderId);
         const isCriticalEsc = t.ctx && t.ctx.resultId && (t.msg || '').toUpperCase().includes('ESCALATION');
         return (
-          <div key={t.id} className="panel slide-up" style={{
+          <div key={t.id} className="panel fade-in slide-up" style={{
             padding: '10px 12px', boxShadow: 'var(--shadow-pop)',
             background: '#fff', pointerEvents: 'auto',
             borderLeft: isCriticalEsc ? '3px solid var(--rust)' : '1px solid var(--line)',
