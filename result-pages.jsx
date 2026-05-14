@@ -115,7 +115,21 @@ const ResultsPage = () => {
       return;
     }
 
-    if (window.qcGate) {
+    if (!window.qcGate) {
+      // qc-gate.js is loaded in index.html alongside the rest of the runtime;
+      // a missing window.qcGate means the script failed to load. Refusing
+      // release is the right default — silently skipping the gate would let
+      // QC-locked tests slip through.
+      console.error('[results] qcGate missing — refusing release until reload');
+      await safetyNotice({
+        id: 'results.release.qcgate.missing',
+        tone: 'danger',
+        title: 'QC gate unavailable',
+        message: 'qc-gate.js did not load. Reload the page before releasing results so QC lockouts can be evaluated.',
+      });
+      return;
+    }
+    {
       const gate = await window.qcGate.canRelease(fresh);
       if (!gate.ok) {
         await safetyNotice({
@@ -382,7 +396,14 @@ const ResultsPage = () => {
         outcome.blocked.push({ id: r.id, accession: (specimenById[r.specimenId] || {}).accessionNumber, reason: 'changed before release' });
         continue;
       }
-      const gate = window.qcGate ? await window.qcGate.canRelease(fresh) : { ok: true };
+      // Batch release also refuses when qcGate is missing rather than silently
+      // assuming pass. Block-with-reason keeps the partial-outcome report
+      // honest about why nothing made it through.
+      if (!window.qcGate) {
+        outcome.blocked.push({ id: fresh.id, accession: (specimenById[fresh.specimenId] || {}).accessionNumber, reason: 'qc-gate.js not loaded — reload page' });
+        continue;
+      }
+      const gate = await window.qcGate.canRelease(fresh);
       if (!gate.ok) {
         outcome.blocked.push({ id: fresh.id, accession: (specimenById[fresh.specimenId] || {}).accessionNumber, reason: gate.reason });
         continue;
@@ -635,6 +656,10 @@ const CorrectResultModal = ({ prior, test, specimen, patient, onCancel, onSave }
     return null;
   }, [test, patient]);
 
+  // Only L/H — reference-ranges.pick returns { low, high } with no critical
+  // or panic thresholds, so LL/HH/A/AA/Critical can't be derived here. Adding
+  // those flags will require schema fields (e.g. criticalLow/criticalHigh on
+  // tests or per-range entries) and a separate evaluator.
   const previewFlag = useMemoOS(() => {
     if (draft.value === '' || !resolvedRange) return '';
     const v = Number(draft.value);
@@ -819,6 +844,9 @@ const PatientsPage = ({ initialPatientId, onClearInitial }) => {
       .sort((a, b) => (b.orderedAt || b.createdAt || 0) - (a.orderedAt || a.createdAt || 0));
   }, [orders, selected]);
 
+  // Full per-patient result list (no slice). PatientDetail slices to its
+  // display cap and surfaces the total so the operator sees "showing 50 of N"
+  // rather than silently dropping rows.
   const patientResults = useMemoOS(() => {
     if (!selected) return [];
     return results
@@ -826,8 +854,7 @@ const PatientsPage = ({ initialPatientId, onClearInitial }) => {
         const s = r.specimenId ? specimenById[r.specimenId] : null;
         return s && s.patientId === selected.id;
       })
-      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-      .slice(0, 50);
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [results, specimenById, selected]);
 
   return (
@@ -898,10 +925,15 @@ const PatientsPage = ({ initialPatientId, onClearInitial }) => {
   );
 };
 
+const ORDERS_DISPLAY_CAP = 20;
+const RESULTS_DISPLAY_CAP = 50;
+
 const PatientDetail = ({ patient, orders, results, testById, specimenById }) => {
   const locations = window.useEntities('locations');
   const locationById = useMemoOS(() => Object.fromEntries(locations.map(l => [l.id, l])), [locations]);
   const canCreateOrder = hasPermission('CREATE_ORDER');
+  const ordersShown  = orders.slice(0, ORDERS_DISPLAY_CAP);
+  const resultsShown = results.slice(0, RESULTS_DISPLAY_CAP);
   return (
     <div style={{ flex: 1, overflow: 'auto' }}>
       {/* Demographics header */}
@@ -942,7 +974,7 @@ const PatientDetail = ({ patient, orders, results, testById, specimenById }) => 
               </tr>
             </thead>
             <tbody>
-              {orders.slice(0, 20).map(o => {
+              {ordersShown.map(o => {
                 const loc = o.locationId ? locationById[o.locationId] : null;
                 return (
                   <tr key={o.id}>
@@ -957,6 +989,11 @@ const PatientDetail = ({ patient, orders, results, testById, specimenById }) => 
               })}
             </tbody>
           </table>
+        )}
+        {orders.length > ORDERS_DISPLAY_CAP && (
+          <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 6 }}>
+            Showing most recent {ORDERS_DISPLAY_CAP} of {orders.length}.
+          </div>
         )}
       </div>
 
@@ -973,7 +1010,7 @@ const PatientDetail = ({ patient, orders, results, testById, specimenById }) => 
               </tr>
             </thead>
             <tbody>
-              {results.map(r => {
+              {resultsShown.map(r => {
                 const test = r.testId ? testById[r.testId] : null;
                 return (
                   <tr key={r.id}>
@@ -991,6 +1028,11 @@ const PatientDetail = ({ patient, orders, results, testById, specimenById }) => 
               })}
             </tbody>
           </table>
+        )}
+        {results.length > RESULTS_DISPLAY_CAP && (
+          <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 6 }}>
+            Showing most recent {RESULTS_DISPLAY_CAP} of {results.length}.
+          </div>
         )}
       </div>
     </div>

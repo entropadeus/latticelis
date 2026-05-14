@@ -9,9 +9,7 @@
 //   ⌘↵      Accession (commit current row, advance)
 //   ⌘R      Reject specimen
 //   ⌘L      Print label
-//   F2      Open container detail
 //   Esc     Clear current row
-//   /       Focus search
 
 const { useState: useStateAC, useEffect: useEffectAC, useRef: useRefAC, useMemo: useMemoAC, useCallback: useCallbackAC } = React;
 
@@ -266,7 +264,19 @@ const AccessioningPage = () => {
         }
       }
     } catch (e) {
+      // commit failed before the specimen was persisted (or before its event
+      // fired). Surfacing the error matters here — without it the draft clears
+      // and the operator believes the specimen was accepted, then re-scans the
+      // same tube on top of a phantom record. Don't clear the draft on failure.
       console.error('[accessioning] commit failed', e);
+      try {
+        await safetyNotice({
+          tone: 'danger',
+          title: 'Could not save specimen',
+          message: (e && e.message) || 'Unknown error. The draft has been kept so you can retry.',
+        });
+      } catch { /* notice can fail in tests — error already logged */ }
+      return;
     }
 
     setDraft(blankRow());
@@ -900,9 +910,7 @@ const KeyboardRail = () => (
       ['⌘↵', 'accession'],
       ['⌘R', 'reject'],
       ['⌘L', 'print label'],
-      ['F2', 'open detail'],
       ['esc', 'clear row'],
-      ['/', 'search'],
     ].map(([k, label]) => (
       <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
         <span className="kbd" style={{ fontSize: 10 }}>{k}</span>

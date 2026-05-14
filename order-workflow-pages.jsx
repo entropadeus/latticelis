@@ -213,7 +213,7 @@ const SpecimensPage = () => {
         {filtered.length > 0 && <TablePagination {...pager} pos="top"/>}
         {filtered.length === 0 ? (
           <EmptyTable
-            columns={['Accession','Barcode','Patient','Order','Type','Container','Collected','Received','Flags','State']}
+            columns={['Accession','Barcode','Patient','Order','Type','Container','Collected','Received','Condition','Flags','State']}
             message={specimens.length === 0 ? 'No specimens yet' : 'No specimens match the filter'}
             sub={specimens.length === 0 ? 'Accession a specimen to populate the pipeline.' : 'Adjust the filter or search.'}/>
         ) : (
@@ -221,7 +221,7 @@ const SpecimensPage = () => {
             <thead>
               <tr>
                 <th>Accession</th><th>Barcode</th><th>Patient</th><th>Order</th>
-                <th>Type</th><th>Container</th><th>Received</th>
+                <th>Type</th><th>Container</th><th>Collected</th><th>Received</th>
                 <th>Condition</th><th>Flags</th><th>State</th>
               </tr>
             </thead>
@@ -245,6 +245,7 @@ const SpecimensPage = () => {
                     </td>
                     <td>{s.type || '—'}</td>
                     <td>{s.container || '—'}</td>
+                    <td><span className="mono">{formatTime(s.collectedAt)}</span></td>
                     <td><span className="mono">{formatTime(s.receivedAt)}</span></td>
                     <td><ConditionPill condition={s.condition} rejectReason={s.rejectReason}/></td>
                     <td>

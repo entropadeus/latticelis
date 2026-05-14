@@ -8950,6 +8950,7 @@ var PatientOverview = ({
 }) => {
   var [editing, setEditing] = React.useState(false);
   var [draft, setDraft] = React.useState(null);
+  var [saving, setSaving] = React.useState(false);
   var startEdit = () => {
     setDraft({
       phone: patient.phone || '',
@@ -8963,11 +8964,25 @@ var PatientOverview = ({
     setEditing(false);
   };
   var save = async () => {
-    await window.db.put('patients', {
-      ...patient,
-      ...draft
-    });
-    cancel();
+    setSaving(true);
+    try {
+      await window.db.put('patients', {
+        ...patient,
+        ...draft
+      });
+      cancel();
+    } catch (e) {
+      try {
+        await safetyNotice({
+          tone: 'danger',
+          title: 'Could not save contact info',
+          message: e && e.message || 'Unknown error. Your edits have been kept so you can retry.'
+        });
+      } catch {}
+      console.error('[patient] contact save failed', e);
+    } finally {
+      setSaving(false);
+    }
   };
   return React.createElement("div", null, React.createElement(FactGrid, {
     items: [{
@@ -9018,16 +9033,18 @@ var PatientOverview = ({
     className: "btn",
     "data-size": "xs",
     "data-variant": "ghost",
-    onClick: cancel
+    onClick: cancel,
+    disabled: saving
   }, "Cancel"), editing && React.createElement("button", {
     className: "btn",
     "data-size": "xs",
     "data-variant": "primary",
     onClick: save,
+    disabled: saving,
     style: {
       marginLeft: 4
     }
-  }, "Save")), editing ? React.createElement("div", {
+  }, saving ? 'Saving…' : 'Save')), editing ? React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: '1fr 1fr',
@@ -12406,12 +12423,12 @@ var SpecimensPage = () => {
   }, filtered.length, " specimens")), filtered.length > 0 && React.createElement(TablePagination, _extends({}, pager, {
     pos: "top"
   })), filtered.length === 0 ? React.createElement(EmptyTable, {
-    columns: ['Accession', 'Barcode', 'Patient', 'Order', 'Type', 'Container', 'Collected', 'Received', 'Flags', 'State'],
+    columns: ['Accession', 'Barcode', 'Patient', 'Order', 'Type', 'Container', 'Collected', 'Received', 'Condition', 'Flags', 'State'],
     message: specimens.length === 0 ? 'No specimens yet' : 'No specimens match the filter',
     sub: specimens.length === 0 ? 'Accession a specimen to populate the pipeline.' : 'Adjust the filter or search.'
   }) : React.createElement("table", {
     className: "tbl"
-  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Accession"), React.createElement("th", null, "Barcode"), React.createElement("th", null, "Patient"), React.createElement("th", null, "Order"), React.createElement("th", null, "Type"), React.createElement("th", null, "Container"), React.createElement("th", null, "Received"), React.createElement("th", null, "Condition"), React.createElement("th", null, "Flags"), React.createElement("th", null, "State"))), React.createElement("tbody", {
+  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Accession"), React.createElement("th", null, "Barcode"), React.createElement("th", null, "Patient"), React.createElement("th", null, "Order"), React.createElement("th", null, "Type"), React.createElement("th", null, "Container"), React.createElement("th", null, "Collected"), React.createElement("th", null, "Received"), React.createElement("th", null, "Condition"), React.createElement("th", null, "Flags"), React.createElement("th", null, "State"))), React.createElement("tbody", {
     className: "stagger-children"
   }, pager.slice.map(s => {
     var pat = s.patientId ? patientById[s.patientId] : null;
@@ -12458,6 +12475,8 @@ var SpecimensPage = () => {
         color: 'var(--sage-700)'
       } : {}
     }, ord ? ord.orderNumber : '—')), React.createElement("td", null, s.type || '—'), React.createElement("td", null, s.container || '—'), React.createElement("td", null, React.createElement("span", {
+      className: "mono"
+    }, formatTime(s.collectedAt))), React.createElement("td", null, React.createElement("span", {
       className: "mono"
     }, formatTime(s.receivedAt))), React.createElement("td", null, React.createElement(ConditionPill, {
       condition: s.condition,
@@ -13049,7 +13068,17 @@ var ResultsPage = () => {
       });
       return;
     }
-    if (window.qcGate) {
+    if (!window.qcGate) {
+      console.error('[results] qcGate missing — refusing release until reload');
+      await safetyNotice({
+        id: 'results.release.qcgate.missing',
+        tone: 'danger',
+        title: 'QC gate unavailable',
+        message: 'qc-gate.js did not load. Reload the page before releasing results so QC lockouts can be evaluated.'
+      });
+      return;
+    }
+    {
       var gate = await window.qcGate.canRelease(fresh);
       if (!gate.ok) {
         await safetyNotice({
@@ -13290,9 +13319,15 @@ var ResultsPage = () => {
         });
         continue;
       }
-      var gate = window.qcGate ? await window.qcGate.canRelease(fresh) : {
-        ok: true
-      };
+      if (!window.qcGate) {
+        outcome.blocked.push({
+          id: fresh.id,
+          accession: (specimenById[fresh.specimenId] || {}).accessionNumber,
+          reason: 'qc-gate.js not loaded — reload page'
+        });
+        continue;
+      }
+      var gate = await window.qcGate.canRelease(fresh);
       if (!gate.ok) {
         outcome.blocked.push({
           id: fresh.id,
@@ -14025,7 +14060,7 @@ var PatientsPage = ({
     return results.filter(r => {
       var s = r.specimenId ? specimenById[r.specimenId] : null;
       return s && s.patientId === selected.id;
-    }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 50);
+    }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [results, specimenById, selected]);
   return React.createElement(Page, {
     label: "Patient Search"
@@ -14141,6 +14176,8 @@ var PatientsPage = ({
     specimenById: specimenById
   }))));
 };
+var ORDERS_DISPLAY_CAP = 20;
+var RESULTS_DISPLAY_CAP = 50;
 var PatientDetail = ({
   patient,
   orders,
@@ -14151,6 +14188,8 @@ var PatientDetail = ({
   var locations = window.useEntities('locations');
   var locationById = useMemoOS(() => Object.fromEntries(locations.map(l => [l.id, l])), [locations]);
   var canCreateOrder = hasPermission('CREATE_ORDER');
+  var ordersShown = orders.slice(0, ORDERS_DISPLAY_CAP);
+  var resultsShown = results.slice(0, RESULTS_DISPLAY_CAP);
   return React.createElement("div", {
     style: {
       flex: 1,
@@ -14243,7 +14282,7 @@ var PatientDetail = ({
     style: {
       fontSize: 12
     }
-  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Order #"), React.createElement("th", null, "Tests"), React.createElement("th", null, "Priority"), React.createElement("th", null, "Status"), React.createElement("th", null, "Ordered"), React.createElement("th", null, "Facility"))), React.createElement("tbody", null, orders.slice(0, 20).map(o => {
+  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Order #"), React.createElement("th", null, "Tests"), React.createElement("th", null, "Priority"), React.createElement("th", null, "Status"), React.createElement("th", null, "Ordered"), React.createElement("th", null, "Facility"))), React.createElement("tbody", null, ordersShown.map(o => {
     var loc = o.locationId ? locationById[o.locationId] : null;
     return React.createElement("tr", {
       key: o.id
@@ -14267,7 +14306,13 @@ var PatientDetail = ({
         color: 'var(--ink-500)'
       }
     }, loc.code)) : o.facility || '—'));
-  })))), React.createElement("div", {
+  }))), orders.length > ORDERS_DISPLAY_CAP && React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--ink-400)',
+      marginTop: 6
+    }
+  }, "Showing most recent ", ORDERS_DISPLAY_CAP, " of ", orders.length, ".")), React.createElement("div", {
     style: {
       padding: '14px 16px'
     }
@@ -14286,7 +14331,7 @@ var PatientDetail = ({
     style: {
       fontSize: 12
     }
-  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Test"), React.createElement("th", null, "Value"), React.createElement("th", null, "Units"), React.createElement("th", null, "Ref range"), React.createElement("th", null, "Flag"), React.createElement("th", null, "Status"), React.createElement("th", null, "Resulted"))), React.createElement("tbody", null, results.map(r => {
+  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Test"), React.createElement("th", null, "Value"), React.createElement("th", null, "Units"), React.createElement("th", null, "Ref range"), React.createElement("th", null, "Flag"), React.createElement("th", null, "Status"), React.createElement("th", null, "Resulted"))), React.createElement("tbody", null, resultsShown.map(r => {
     var test = r.testId ? testById[r.testId] : null;
     return React.createElement("tr", {
       key: r.id
@@ -14317,7 +14362,13 @@ var PatientDetail = ({
         color: 'var(--ink-400)'
       }
     }, formatDateTime(r.createdAt))));
-  })))));
+  }))), results.length > RESULTS_DISPLAY_CAP && React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--ink-400)',
+      marginTop: 6
+    }
+  }, "Showing most recent ", RESULTS_DISPLAY_CAP, " of ", results.length, ".")));
 };
 //# sourceURL=result-pages.jsx
 
@@ -16384,9 +16435,12 @@ var ReportsPage = () => {
       if (!q) return true;
       var blob = [e.type, e.actor, JSON.stringify(e.payload || {})].join(' ').toLowerCase();
       return blob.includes(q.toLowerCase());
-    }).sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 500);
+    }).sort((a, b) => (b.ts || 0) - (a.ts || 0));
   }, [events, q, filter, eventType, actor, entityType, windowMs]);
-  var pager = usePagination(filtered);
+  var FILTERED_DISPLAY_CAP = 500;
+  var displayed = filtered.slice(0, FILTERED_DISPLAY_CAP);
+  var truncated = filtered.length > FILTERED_DISPLAY_CAP;
+  var pager = usePagination(displayed);
   var resetFilters = () => {
     setQ('');
     setFilter('all');
@@ -16535,7 +16589,12 @@ var ReportsPage = () => {
       fontSize: 11.5,
       color: 'var(--ink-400)'
     }
-  }, filtered.length, " of ", events.length)), React.createElement("div", {
+  }, filtered.length, " of ", events.length), truncated && React.createElement("span", {
+    style: {
+      fontSize: 11.5,
+      color: 'var(--amber)'
+    }
+  }, "\xB7 only first ", FILTERED_DISPLAY_CAP, " rendered \u2014 refine filters to see older events")), React.createElement("div", {
     style: {
       display: 'flex',
       gap: 8,
@@ -23203,7 +23262,7 @@ var ThisLocationPage = ({
     label: "This Location"
   }, React.createElement(PageHeader, {
     title: "This Location",
-    sub: activeLoc ? `Scoped to ${activeLoc.name || activeLoc.code || activeLoc.id}. Switch via the topbar.` : 'No location selected — operating across all locations.'
+    sub: activeLoc ? `Scoped to ${activeLoc.name || activeLoc.code || activeLoc.id}.` : 'No location selected — operating across all locations.'
   }), React.createElement("div", {
     className: "panel",
     style: {
@@ -23757,6 +23816,14 @@ var AccessioningPage = () => {
       }
     } catch (e) {
       console.error('[accessioning] commit failed', e);
+      try {
+        await safetyNotice({
+          tone: 'danger',
+          title: 'Could not save specimen',
+          message: e && e.message || 'Unknown error. The draft has been kept so you can retry.'
+        });
+      } catch {}
+      return;
     }
     setDraft(blankRow());
     setActiveField('barcode');
@@ -24748,7 +24815,7 @@ var KeyboardRail = () => React.createElement("div", {
     color: 'var(--ink-400)',
     overflowX: 'auto'
   }
-}, [['⌘B', 'focus barcode'], ['Tab', 'next field'], ['⇧Tab', 'previous'], ['↵', 'next field'], ['⌘↵', 'accession'], ['⌘R', 'reject'], ['⌘L', 'print label'], ['F2', 'open detail'], ['esc', 'clear row'], ['/', 'search']].map(([k, label]) => React.createElement("span", {
+}, [['⌘B', 'focus barcode'], ['Tab', 'next field'], ['⇧Tab', 'previous'], ['↵', 'next field'], ['⌘↵', 'accession'], ['⌘R', 'reject'], ['⌘L', 'print label'], ['esc', 'clear row']].map(([k, label]) => React.createElement("span", {
   key: k,
   style: {
     display: 'flex',

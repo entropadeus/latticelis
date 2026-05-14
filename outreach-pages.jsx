@@ -93,7 +93,7 @@ const ThisLocationPage = ({ onNav }) => {
   return (
     <Page label="This Location">
       <PageHeader title="This Location"
-        sub={activeLoc ? `Scoped to ${activeLoc.name || activeLoc.code || activeLoc.id}. Switch via the topbar.` : 'No location selected — operating across all locations.'}/>
+        sub={activeLoc ? `Scoped to ${activeLoc.name || activeLoc.code || activeLoc.id}.` : 'No location selected — operating across all locations.'}/>
       <div className="panel" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 14 }}>
         {[
           { l: 'Orders here', v: myOrders.length, go: 'orders' },

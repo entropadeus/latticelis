@@ -57,11 +57,17 @@ const ReportsPage = () => {
         const blob = [e.type, e.actor, JSON.stringify(e.payload || {})].join(' ').toLowerCase();
         return blob.includes(q.toLowerCase());
       })
-      .sort((a, b) => (b.ts || 0) - (a.ts || 0))
-      .slice(0, 500);
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0));
   }, [events, q, filter, eventType, actor, entityType, windowMs]);
 
-  const pager = usePagination(filtered);
+  // Hard cap on rendered rows so the pager + table stay snappy on long-lived
+  // audit logs. We keep `filtered.length` available below so the operator can
+  // see "showing first 500 of N" and refine filters rather than silently
+  // losing the tail.
+  const FILTERED_DISPLAY_CAP = 500;
+  const displayed = filtered.slice(0, FILTERED_DISPLAY_CAP);
+  const truncated = filtered.length > FILTERED_DISPLAY_CAP;
+  const pager = usePagination(displayed);
 
   const resetFilters = () => {
     setQ(''); setFilter('all'); setEventType(''); setActor(''); setEntityType(''); setTimeWindow('all');
@@ -156,6 +162,11 @@ const ReportsPage = () => {
               </button>
             )}
             <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{filtered.length} of {events.length}</span>
+            {truncated && (
+              <span style={{ fontSize: 11.5, color: 'var(--amber)' }}>
+                · only first {FILTERED_DISPLAY_CAP} rendered — refine filters to see older events
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <select className="input" value={eventType} onChange={e => setEventType(e.target.value)} style={{ height: 26, fontSize: 11.5, maxWidth: 220 }}>

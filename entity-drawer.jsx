@@ -707,11 +707,26 @@ const OrderTatBlock = ({ order }) => {
 const PatientOverview = ({ patient }) => {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(null);
+  const [saving, setSaving] = React.useState(false);
   const startEdit = () => { setDraft({ phone: patient.phone || '', email: patient.email || '', preferredContact: patient.preferredContact || '' }); setEditing(true); };
   const cancel = () => { setDraft(null); setEditing(false); };
   const save = async () => {
-    await window.db.put('patients', { ...patient, ...draft });
-    cancel();
+    setSaving(true);
+    try {
+      await window.db.put('patients', { ...patient, ...draft });
+      cancel();
+    } catch (e) {
+      try {
+        await safetyNotice({
+          tone: 'danger',
+          title: 'Could not save contact info',
+          message: (e && e.message) || 'Unknown error. Your edits have been kept so you can retry.',
+        });
+      } catch { /* notice may be unavailable in tests — error already logged */ }
+      console.error('[patient] contact save failed', e);
+    } finally {
+      setSaving(false);
+    }
   };
   return (
     <div>
@@ -726,8 +741,8 @@ const PatientOverview = ({ patient }) => {
           <span className="section-title" style={{ fontSize: 9.5 }}>Contact</span>
           <span style={{ flex: 1 }}/>
           {!editing && <button className="btn" data-size="xs" onClick={startEdit}>Edit</button>}
-          {editing && <button className="btn" data-size="xs" data-variant="ghost" onClick={cancel}>Cancel</button>}
-          {editing && <button className="btn" data-size="xs" data-variant="primary" onClick={save} style={{ marginLeft: 4 }}>Save</button>}
+          {editing && <button className="btn" data-size="xs" data-variant="ghost" onClick={cancel} disabled={saving}>Cancel</button>}
+          {editing && <button className="btn" data-size="xs" data-variant="primary" onClick={save} disabled={saving} style={{ marginLeft: 4 }}>{saving ? 'Saving…' : 'Save'}</button>}
         </div>
         {editing ? (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
