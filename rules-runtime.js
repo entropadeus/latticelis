@@ -188,13 +188,31 @@
 
     // Stubs — explicit so console doesn't warn about every primitive in catalog
     'order.location.is':         (a, c) => !!c.location && (c.location.id === a.location || c.location.name === a.location),
-    'order.payer.is':            () => false,
+    // Payer: compare against order.billType (CLIENT/PATIENT/INSURANCE/HOSPITAL).
+    // Rule authors write the billType value; comparison is case-insensitive.
+    'order.payer.is': (a, c) => !!c.order && !!(a.payer) &&
+      (c.order.billType || '').toLowerCase() === String(a.payer).toLowerCase(),
     'order.source.is':           () => false,
     'test.panel.contains':       () => false,
-    'test.department.is':        () => false,
+    // Department: map UI enum labels to schema category constants.
+    // UI opts: Chemistry, Hematology, Microbiology, Molecular, Toxicology, Cytology, Anatomic Pathology
+    // Schema: CHEMISTRY, HEMATOLOGY, MICROBIOLOGY, MOLECULAR, TOXICOLOGY, CYTOLOGY, PATHOLOGY
+    'test.department.is': (a, c) => {
+      if (!c.test || !a.dept) return false;
+      const DEPT_MAP = {
+        'chemistry': 'CHEMISTRY', 'hematology': 'HEMATOLOGY',
+        'microbiology': 'MICROBIOLOGY', 'molecular': 'MOLECULAR',
+        'toxicology': 'TOXICOLOGY', 'cytology': 'CYTOLOGY',
+        'anatomic pathology': 'PATHOLOGY',
+      };
+      const mapped = DEPT_MAP[String(a.dept).toLowerCase()];
+      return mapped ? c.test.category === mapped : c.test.category === String(a.dept).toUpperCase();
+    },
     'specimen.temp.outside':     () => false,
     'patient.pregnant':          () => false,
-    'patient.fasting':           () => false,
+    // Fasting status lives on the order (fastingStatus: 'FASTING'|'NON_FASTING'|'UNKNOWN').
+    // The condition name "patient.fasting" reflects clinical framing; the data gate is the order.
+    'patient.fasting': (a, c) => !!c.order && c.order.fastingStatus === 'FASTING',
     // result.delta.gt is now a real evaluator above — see "Delta check" comment.
     'time.holiday':              () => false,
     'message.type.is':           () => false,
@@ -413,7 +431,25 @@
     // -- Stubs (still wire up the audit so the activity is visible) --------
     'route.to.refLab':      async (a, c) => auditAction('STUB route.to.refLab → ' + (a.refLab || '?'), c),
     'route.split':          async (a, c) => auditAction('STUB route.split count=' + (a.count || 0), c),
-    'order.requireDx':      async (_, c) => auditAction('STUB order.requireDx', c),
+    // requireDx: if the order has no ICD-10 diagnoses, flag it and publish a
+    // notification so the missing-Dx work item surfaces in the notification drawer.
+    // Returns { ok: true, satisfied: true } when diagnoses are present.
+    'order.requireDx': async (a, c) => {
+      if (!c.order) return { ok: false, reason: 'no order in context' };
+      const hasDx = Array.isArray(c.order.diagnoses) && c.order.diagnoses.length > 0;
+      if (hasDx) return { ok: true, satisfied: true };
+      const flags = Array.isArray(c.order.flags) ? [...c.order.flags] : [];
+      if (!flags.includes('missing-dx')) flags.push('missing-dx');
+      const note = 'Requires ICD-10 diagnosis — order flagged pending Dx entry';
+      const notes = c.order.notes ? c.order.notes + '\n' + note : note;
+      await window.db.put('orders', { ...c.order, flags, notes });
+      window.events.publish('notification', {
+        kind: 'system', msg: note, viaRule: true,
+        ctx: { orderId: c.order.id },
+      });
+      await auditAction('order.requireDx: missing diagnoses — flagged missing-dx', c);
+      return { ok: true, satisfied: false, flagged: true };
+    },
     'order.requireAuth':    async (_, c) => auditAction('STUB order.requireAuth', c),
     'order.duplicate.warn': async (a, c) => {
       if (!c.order) return { ok: false, reason: 'no order in context' };
