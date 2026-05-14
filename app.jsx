@@ -168,6 +168,8 @@ const App = () => {
       case 'worklists':   return <WorklistsPage/>;
       case 'instruments': return <InstrumentsPage onBack={() => setActive('manage')}/>;
       case 'interfaces':  return <InterfacesPage onBack={() => setActive('manage')}/>;
+      case 'partners':    return <PartnersPage onBack={() => setActive('manage')}/>;
+      case 'hl7-messages': return <MessageLogPage onBack={() => setActive('manage')}/>;
       case 'rules':       return <RulesEnginePage rules={rules} setRules={setRules} onBack={() => setActive('manage')}/>;
       case 'reports':     return <ReportsPage/>;
       // Legacy 'admin' route — the original tile-grid AdminPage is no longer

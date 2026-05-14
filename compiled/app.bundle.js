@@ -1885,6 +1885,18 @@ var NAV = [{
     permission: 'EDIT_INTERFACES'
   }, {
     kind: 'item',
+    id: 'partners',
+    label: 'HL7 Partners',
+    icon: 'IconInterface',
+    permission: 'EDIT_INTERFACES'
+  }, {
+    kind: 'item',
+    id: 'hl7-messages',
+    label: 'HL7 Message Log',
+    icon: 'IconReports',
+    permission: 'EDIT_INTERFACES'
+  }, {
+    kind: 'item',
     id: 'insurance',
     label: 'Insurance',
     icon: 'IconShield'
@@ -14311,6 +14323,7 @@ var PatientDetail = ({
 
 
 // ---- interop-pages.jsx ----
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 var INTAKE_LIMITS = {
   payloadBytes: 512 * 1024,
   rows: 250,
@@ -15164,12 +15177,54 @@ var Hl7IntakePanel = () => {
         patient,
         viaInterface: 'hl7-orm-intake'
       });
+      var hl7MessageId = null;
+      try {
+        var parsedHeader = window.hl7Mllp && window.hl7Mllp.parseHeader ? window.hl7Mllp.parseHeader(text) : null;
+        var partner = null;
+        if (parsedHeader) {
+          var partners = await window.db.list('hl7_partners', p => p.active !== false);
+          partner = partners.find(p => (!p.partnerApp || p.partnerApp === parsedHeader.sendingApp) && (!p.partnerFacility || p.partnerFacility === parsedHeader.sendingFacility)) || null;
+        }
+        if (!partner && clientId) {
+          var cli = await window.db.get('clients', clientId);
+          if (cli && cli.partnerId) partner = await window.db.get('hl7_partners', cli.partnerId);
+        }
+        var msgRec = window.schema.newHl7Message({
+          direction: 'inbound',
+          partnerId: partner ? partner.id : null,
+          controlId: parsedHeader ? parsedHeader.controlId : '',
+          messageType: parsedHeader ? parsedHeader.messageType : 'ORM^O01',
+          sendingApp: parsedHeader ? parsedHeader.sendingApp : '',
+          sendingFacility: parsedHeader ? parsedHeader.sendingFacility : '',
+          receivingApp: parsedHeader ? parsedHeader.receivingApp : 'LATTICE',
+          receivingFacility: parsedHeader ? parsedHeader.receivingFacility : 'MAIN',
+          raw: text,
+          status: 'accepted',
+          attemptCount: 1,
+          lastAttemptAt: Date.now(),
+          ackCode: 'AA',
+          orderId: order.id,
+          patientId: patient.id
+        });
+        await window.db.put('hl7_messages', msgRec);
+        hl7MessageId = msgRec.id;
+        if (partner) {
+          await window.db.put('hl7_partners', {
+            ...partner,
+            lastSeenAt: Date.now(),
+            updatedAt: Date.now()
+          });
+        }
+      } catch (e) {
+        console.warn('[hl7-intake] message log write failed', e);
+      }
       setResult({
         ok: true,
         orderId: order.id,
         orderNumber: order.orderNumber,
         patientMrn: patient.mrn,
-        testCount: testIds.length
+        testCount: testIds.length,
+        hl7MessageId
       });
     } catch (e) {
       console.error('[hl7-intake] ingest failed', e);
@@ -15418,6 +15473,861 @@ var Hl7IntakePanel = () => {
     className: "mono"
   }, result.patientMrn), " with ", result.testCount, " test", result.testCount === 1 ? '' : 's', ".") : React.createElement(React.Fragment, null, "Failed: ", result.error)))));
 };
+var PARTNER_TRANSPORTS = ['loopback', 'mllp', 'http', 'sftp'];
+var PARTNER_ACK_MODES = ['sync', 'async', 'none'];
+var PARTNER_TYPES = ['ORM^O01', 'ORU^R01', 'ADT^A04', 'ADT^A08', 'ADT^A31', 'ACK^R01', 'ORR^O02', 'QRY^A19'];
+var PartnerVendorPill = ({
+  vendor
+}) => {
+  if (!vendor) return React.createElement("span", {
+    className: "pill",
+    "data-tone": "ghost"
+  }, "\u2014");
+  var TONE = {
+    athena: 'info',
+    harvest: 'sage',
+    epic: 'amber',
+    cerner: 'rust',
+    generic: 'ghost'
+  };
+  return React.createElement("span", {
+    className: "pill",
+    "data-tone": TONE[vendor] || 'ghost'
+  }, vendor);
+};
+var PartnersPage = ({
+  onBack
+}) => {
+  var partners = window.useEntities('hl7_partners');
+  var canEdit = hasPermission('EDIT_INTERFACES');
+  var [q, setQ] = useStateOS('');
+  var [editingId, setEditingId] = useStateOS(null);
+  var [draft, setDraft] = useStateOS(null);
+  var [savedFlash, setSavedFlash] = useStateOS(null);
+  var filtered = useMemoOS(() => {
+    var needle = q.trim().toLowerCase();
+    return [...partners].filter(p => !needle || [p.name, p.vendor, p.partnerApp, p.partnerFacility, p.endpoint].filter(Boolean).join(' ').toLowerCase().includes(needle)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [partners, q]);
+  var pager = usePagination(filtered);
+  var startNew = () => {
+    if (!canEdit) return;
+    setEditingId(null);
+    setDraft(window.schema.newHl7Partner({
+      name: 'New partner',
+      vendor: 'generic',
+      active: false
+    }));
+  };
+  var startEdit = p => {
+    if (!canEdit) return;
+    setEditingId(p.id);
+    setDraft({
+      ...p
+    });
+  };
+  var cancel = () => {
+    setEditingId(null);
+    setDraft(null);
+  };
+  var save = async () => {
+    if (!canEdit || !draft) return;
+    var id = draft.id;
+    var existing = await window.db.get('hl7_partners', id);
+    var next = {
+      ...(existing || {}),
+      ...draft,
+      updatedAt: Date.now()
+    };
+    if (!existing) next.createdAt = next.createdAt || Date.now();
+    await window.db.put('hl7_partners', next);
+    setSavedFlash(next.id);
+    setTimeout(() => setSavedFlash(null), 1200);
+    cancel();
+  };
+  var remove = async p => {
+    if (!canEdit) return;
+    var ask = await safetyConfirm({
+      id: 'admin.partner.delete',
+      tone: 'danger',
+      title: 'Delete HL7 partner',
+      message: 'This removes the partner record. Existing message log rows linked to this partner stay (with a null partnerId).',
+      facts: [safetyFact('partner', p.name), safetyFact('vendor', p.vendor || '-'), safetyFact('transport', p.transport || '-'), safetyFact('active', p.active === false ? 'no' : 'yes')],
+      entityType: 'hl7_partner',
+      entityId: p.id,
+      confirmLabel: 'Delete partner'
+    });
+    if (!ask.confirmed) return;
+    await window.db.delete('hl7_partners', p.id);
+    if (editingId === p.id) cancel();
+  };
+  var toggleActive = async p => {
+    if (!canEdit) return;
+    await window.db.put('hl7_partners', {
+      ...p,
+      active: p.active === false,
+      updatedAt: Date.now()
+    });
+  };
+  var sendTest = async p => {
+    if (!canEdit) return;
+    if (!window.hl7Transport || !window.hl7) return;
+    var ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
+    var ctl = 'TEST' + ts;
+    var raw = [`MSH|^~\\&|${p.sendingApp || 'LATTICE'}|${p.sendingFacility || 'MAIN'}|${p.partnerApp || ''}|${p.partnerFacility || ''}|${ts}||ORU^R01|${ctl}|P|2.5`, 'PID|1||TEST-MRN||Test^Patient||19700101|U', `OBR|1|TEST-ORD|TEST-FILLER|GLU^Glucose^L|R|${ts}`, 'OBX|1|NM|GLU^Glucose^L||95|mg/dL|70-99|N|||F'].join('\r');
+    var out = await window.hl7Transport.send(p.id, raw, {
+      messageType: 'ORU^R01'
+    });
+    setSavedFlash(p.id + (out.ok ? ':ok' : ':fail'));
+    setTimeout(() => setSavedFlash(null), 1500);
+  };
+  var setDraftField = (key, value) => setDraft(d => ({
+    ...d,
+    [key]: value
+  }));
+  var toggleType = (which, t) => {
+    setDraft(d => {
+      var arr = Array.isArray(d[which]) ? [...d[which]] : [];
+      var i = arr.indexOf(t);
+      if (i >= 0) arr.splice(i, 1);else arr.push(t);
+      return {
+        ...d,
+        [which]: arr
+      };
+    });
+  };
+  return React.createElement(Page, {
+    label: "HL7 Partners"
+  }, React.createElement(PageHeader, {
+    title: "HL7 Partners",
+    sub: "EMR / LIS counterparties \u2014 Athena, Harvest, Epic, Cerner, \u2026",
+    actions: [...(onBack ? [React.createElement("button", {
+      key: "b",
+      className: "btn",
+      "data-size": "sm",
+      "data-variant": "ghost",
+      onClick: onBack
+    }, React.createElement(IconChevRight, {
+      size: 13,
+      style: {
+        transform: 'rotate(180deg)'
+      }
+    }), " Admin")] : []), React.createElement("button", {
+      key: "n",
+      className: "btn",
+      "data-size": "sm",
+      "data-variant": "primary",
+      onClick: startNew,
+      disabled: !canEdit,
+      title: permissionTitle(canEdit, 'Add HL7 partner', 'edit interfaces')
+    }, React.createElement(IconPlus, {
+      size: 13
+    }), " Add partner")]
+  }), React.createElement("div", {
+    className: "panel",
+    style: {
+      marginBottom: 12,
+      display: 'flex',
+      flexDirection: 'column'
+    }
+  }, React.createElement("div", {
+    style: {
+      padding: '8px 12px',
+      borderBottom: '1px solid var(--line)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8
+    }
+  }, React.createElement("input", {
+    className: "input",
+    value: q,
+    onChange: e => setQ(e.target.value),
+    placeholder: "Search partners\u2026",
+    style: {
+      width: 260,
+      height: 28
+    }
+  }), React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }), React.createElement("span", {
+    style: {
+      fontSize: 11.5,
+      color: 'var(--ink-400)'
+    }
+  }, filtered.length, " of ", partners.length)), filtered.length > 0 && React.createElement(TablePagination, _extends({}, pager, {
+    pos: "top"
+  })), React.createElement("div", {
+    style: {
+      flex: 1,
+      overflowY: 'auto'
+    }
+  }, filtered.length === 0 ? React.createElement(EmptyTable, {
+    columns: ['Partner', 'Vendor', 'Sender ↔ Receiver', 'Transport', 'Endpoint', 'Last seen', 'Status'],
+    message: "No partners configured",
+    sub: "Run seed.demo() to populate presets (Athena, Harvest, Epic, Cerner, Generic) \u2014 or add one above."
+  }) : React.createElement("table", {
+    className: "tbl"
+  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Partner"), React.createElement("th", null, "Vendor"), React.createElement("th", null, "Sender \u2194 Receiver"), React.createElement("th", null, "Transport"), React.createElement("th", null, "Endpoint"), React.createElement("th", null, "Last seen"), React.createElement("th", null, "Status"), React.createElement("th", null))), React.createElement("tbody", null, pager.slice.map(p => React.createElement("tr", {
+    key: p.id,
+    style: {
+      opacity: p.active === false ? 0.55 : 1,
+      background: editingId === p.id ? 'var(--sage-50)' : undefined
+    }
+  }, React.createElement("td", null, React.createElement("span", {
+    style: {
+      fontWeight: 500
+    }
+  }, p.name || '—')), React.createElement("td", null, React.createElement(PartnerVendorPill, {
+    vendor: p.vendor
+  })), React.createElement("td", null, React.createElement("span", {
+    className: "mono",
+    style: {
+      color: 'var(--ink-500)',
+      fontSize: 11.5
+    }
+  }, (p.sendingApp || '?') + '|' + (p.sendingFacility || '?'), ' → ', (p.partnerApp || '?') + '|' + (p.partnerFacility || '?'))), React.createElement("td", null, React.createElement("span", {
+    className: "pill",
+    "data-tone": "ghost"
+  }, p.transport || '—')), React.createElement("td", null, React.createElement("span", {
+    className: "mono",
+    style: {
+      color: 'var(--ink-500)',
+      fontSize: 11.5
+    }
+  }, p.endpoint || '—')), React.createElement("td", null, React.createElement("span", {
+    className: "mono",
+    style: {
+      color: 'var(--ink-400)',
+      fontSize: 11.5
+    }
+  }, formatDateTime(p.lastSeenAt))), React.createElement("td", null, React.createElement("span", {
+    className: "pill",
+    "data-tone": p.active === false ? 'ghost' : 'sage'
+  }, p.active === false ? 'inactive' : 'active'), savedFlash === p.id + ':ok' && React.createElement("span", {
+    className: "pill",
+    "data-tone": "sage",
+    style: {
+      marginLeft: 6
+    }
+  }, "sent \u2713"), savedFlash === p.id + ':fail' && React.createElement("span", {
+    className: "pill",
+    "data-tone": "rust",
+    style: {
+      marginLeft: 6
+    }
+  }, "send failed")), React.createElement("td", {
+    style: {
+      textAlign: 'right',
+      whiteSpace: 'nowrap'
+    }
+  }, React.createElement("button", {
+    className: "btn",
+    "data-size": "xs",
+    "data-variant": "ghost",
+    onClick: () => sendTest(p),
+    disabled: !canEdit || p.active === false,
+    title: p.active === false ? 'Activate partner first' : 'Send a synthetic ORU^R01 to this partner'
+  }, "Send test"), React.createElement("button", {
+    className: "btn",
+    "data-size": "xs",
+    "data-variant": "ghost",
+    onClick: () => toggleActive(p),
+    disabled: !canEdit
+  }, p.active === false ? 'Activate' : 'Deactivate'), React.createElement("button", {
+    className: "btn",
+    "data-size": "xs",
+    "data-variant": "ghost",
+    onClick: () => startEdit(p),
+    disabled: !canEdit
+  }, "Edit"), React.createElement("button", {
+    className: "btn",
+    "data-size": "xs",
+    "data-variant": "ghost",
+    onClick: () => remove(p),
+    disabled: !canEdit
+  }, "Delete"))))))), filtered.length > 0 && React.createElement(TablePagination, pager)), draft && React.createElement("div", {
+    className: "panel",
+    style: {
+      padding: 14,
+      marginBottom: 12
+    }
+  }, React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: 10
+    }
+  }, React.createElement("span", {
+    style: {
+      fontSize: 13,
+      fontWeight: 500
+    }
+  }, editingId ? 'Edit partner' : 'New partner'), React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }), React.createElement("button", {
+    className: "btn",
+    "data-size": "sm",
+    "data-variant": "ghost",
+    onClick: cancel
+  }, "Cancel"), React.createElement("button", {
+    className: "btn",
+    "data-size": "sm",
+    "data-variant": "primary",
+    onClick: save,
+    disabled: !draft.name
+  }, "Save")), React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(2, 1fr)',
+      gap: 12
+    }
+  }, React.createElement("div", null, React.createElement("div", {
+    className: "field-label"
+  }, "Name"), React.createElement("input", {
+    className: "input",
+    value: draft.name || '',
+    onChange: e => setDraftField('name', e.target.value),
+    style: {
+      width: '100%'
+    }
+  })), React.createElement("div", null, React.createElement("div", {
+    className: "field-label"
+  }, "Vendor"), React.createElement("select", {
+    className: "input",
+    value: draft.vendor || 'generic',
+    onChange: e => setDraftField('vendor', e.target.value),
+    style: {
+      width: '100%'
+    }
+  }, ['athena', 'harvest', 'epic', 'cerner', 'generic'].map(v => React.createElement("option", {
+    key: v,
+    value: v
+  }, v)))), React.createElement("div", null, React.createElement("div", {
+    className: "field-label"
+  }, "Our sending app (MSH-3)"), React.createElement("input", {
+    className: "input",
+    value: draft.sendingApp || '',
+    onChange: e => setDraftField('sendingApp', e.target.value),
+    style: {
+      width: '100%'
+    }
+  })), React.createElement("div", null, React.createElement("div", {
+    className: "field-label"
+  }, "Our sending facility (MSH-4)"), React.createElement("input", {
+    className: "input",
+    value: draft.sendingFacility || '',
+    onChange: e => setDraftField('sendingFacility', e.target.value),
+    style: {
+      width: '100%'
+    }
+  })), React.createElement("div", null, React.createElement("div", {
+    className: "field-label"
+  }, "Partner app (their MSH-3 inbound; MSH-5 outbound)"), React.createElement("input", {
+    className: "input",
+    value: draft.partnerApp || '',
+    onChange: e => setDraftField('partnerApp', e.target.value),
+    style: {
+      width: '100%'
+    }
+  })), React.createElement("div", null, React.createElement("div", {
+    className: "field-label"
+  }, "Partner facility (their MSH-4 inbound; MSH-6 outbound)"), React.createElement("input", {
+    className: "input",
+    value: draft.partnerFacility || '',
+    onChange: e => setDraftField('partnerFacility', e.target.value),
+    style: {
+      width: '100%'
+    }
+  })), React.createElement("div", null, React.createElement("div", {
+    className: "field-label"
+  }, "Transport"), React.createElement("select", {
+    className: "input",
+    value: draft.transport || 'loopback',
+    onChange: e => setDraftField('transport', e.target.value),
+    style: {
+      width: '100%'
+    }
+  }, PARTNER_TRANSPORTS.map(t => React.createElement("option", {
+    key: t,
+    value: t
+  }, t)))), React.createElement("div", null, React.createElement("div", {
+    className: "field-label"
+  }, "Endpoint (host:port, URL, path \u2014 opaque to facade)"), React.createElement("input", {
+    className: "input",
+    value: draft.endpoint || '',
+    onChange: e => setDraftField('endpoint', e.target.value),
+    style: {
+      width: '100%'
+    }
+  })), React.createElement("div", null, React.createElement("div", {
+    className: "field-label"
+  }, "ACK mode"), React.createElement("select", {
+    className: "input",
+    value: draft.ackMode || 'sync',
+    onChange: e => setDraftField('ackMode', e.target.value),
+    style: {
+      width: '100%'
+    }
+  }, PARTNER_ACK_MODES.map(t => React.createElement("option", {
+    key: t,
+    value: t
+  }, t)))), React.createElement("div", null, React.createElement("div", {
+    className: "field-label"
+  }, "Active"), React.createElement("label", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+      fontSize: 12.5,
+      color: 'var(--ink-700)'
+    }
+  }, React.createElement("input", {
+    type: "checkbox",
+    checked: draft.active !== false,
+    onChange: e => setDraftField('active', e.target.checked)
+  }), "Partner can send/receive messages")), React.createElement("div", {
+    style: {
+      gridColumn: '1 / -1'
+    }
+  }, React.createElement("div", {
+    className: "field-label"
+  }, "Inbound message types we accept"), React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 6
+    }
+  }, PARTNER_TYPES.map(t => {
+    var on = (draft.inboundTypes || []).includes(t);
+    return React.createElement("button", {
+      key: t,
+      type: "button",
+      onClick: () => toggleType('inboundTypes', t),
+      className: "pill",
+      "data-tone": on ? 'sage' : 'ghost',
+      style: {
+        height: 22,
+        padding: '0 8px',
+        cursor: 'pointer',
+        border: '1px solid var(--line)'
+      }
+    }, React.createElement("span", {
+      className: "mono"
+    }, t));
+  }))), React.createElement("div", {
+    style: {
+      gridColumn: '1 / -1'
+    }
+  }, React.createElement("div", {
+    className: "field-label"
+  }, "Outbound message types we send"), React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 6
+    }
+  }, PARTNER_TYPES.map(t => {
+    var on = (draft.outboundTypes || []).includes(t);
+    return React.createElement("button", {
+      key: t,
+      type: "button",
+      onClick: () => toggleType('outboundTypes', t),
+      className: "pill",
+      "data-tone": on ? 'sage' : 'ghost',
+      style: {
+        height: 22,
+        padding: '0 8px',
+        cursor: 'pointer',
+        border: '1px solid var(--line)'
+      }
+    }, React.createElement("span", {
+      className: "mono"
+    }, t));
+  }))), React.createElement("div", {
+    style: {
+      gridColumn: '1 / -1'
+    }
+  }, React.createElement("div", {
+    className: "field-label"
+  }, "Notes (operator-facing)"), React.createElement("textarea", {
+    value: draft.notes || '',
+    onChange: e => setDraftField('notes', e.target.value),
+    rows: 2,
+    style: {
+      width: '100%',
+      padding: 8,
+      fontSize: 12.5,
+      fontFamily: 'inherit',
+      border: '1px solid var(--line)',
+      borderRadius: 4,
+      background: 'var(--ivory-50)',
+      resize: 'vertical',
+      outline: 'none'
+    }
+  })))));
+};
+var MSG_DIRECTIONS = ['all', 'inbound', 'outbound'];
+var MSG_STATUSES_OUT = ['queued', 'sending', 'acked', 'nakked', 'timed-out', 'failed'];
+var MSG_STATUSES_IN = ['received', 'accepted', 'rejected', 'errored'];
+var MessageStatusPill = ({
+  status
+}) => {
+  var tone = status === 'acked' || status === 'accepted' ? 'sage' : status === 'queued' || status === 'sending' || status === 'received' ? 'info' : status === 'nakked' || status === 'rejected' ? 'amber' : status === 'failed' || status === 'errored' || status === 'timed-out' ? 'rust' : 'ghost';
+  return React.createElement("span", {
+    className: "pill",
+    "data-tone": tone
+  }, status || '—');
+};
+var MessageLogPage = ({
+  onBack
+}) => {
+  var messages = window.useEntities('hl7_messages');
+  var partners = window.useEntities('hl7_partners');
+  var canEdit = hasPermission('EDIT_INTERFACES');
+  var [direction, setDirection] = useStateOS('all');
+  var [statusFilter, setStatusFilter] = useStateOS('');
+  var [partnerFilter, setPartnerFilter] = useStateOS('');
+  var [q, setQ] = useStateOS('');
+  var [expandedId, setExpandedId] = useStateOS(null);
+  var [resendFlash, setResendFlash] = useStateOS(null);
+  var partnerById = useMemoOS(() => Object.fromEntries(partners.map(p => [p.id, p])), [partners]);
+  var filtered = useMemoOS(() => {
+    var needle = q.trim().toLowerCase();
+    return [...messages].filter(m => direction === 'all' ? true : m.direction === direction).filter(m => !statusFilter || m.status === statusFilter).filter(m => !partnerFilter || m.partnerId === partnerFilter).filter(m => !needle || [m.controlId, m.messageType, m.sendingApp, m.sendingFacility, m.errorReason, m.raw].filter(Boolean).join(' ').toLowerCase().includes(needle)).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }, [messages, direction, statusFilter, partnerFilter, q]);
+  var pager = usePagination(filtered);
+  var counts = useMemoOS(() => ({
+    inbound: messages.filter(m => m.direction === 'inbound').length,
+    outbound: messages.filter(m => m.direction === 'outbound').length,
+    acked: messages.filter(m => m.status === 'acked' || m.status === 'accepted').length,
+    failed: messages.filter(m => ['failed', 'errored', 'nakked', 'rejected', 'timed-out'].includes(m.status)).length
+  }), [messages]);
+  var statusOptions = direction === 'inbound' ? MSG_STATUSES_IN : direction === 'outbound' ? MSG_STATUSES_OUT : [...MSG_STATUSES_OUT, ...MSG_STATUSES_IN];
+  var resend = async m => {
+    if (!canEdit) return;
+    if (m.direction !== 'outbound') return;
+    if (!window.hl7Transport) return;
+    var out = await window.hl7Transport.send(m.partnerId, m.raw, {
+      messageType: m.messageType,
+      orderId: m.orderId,
+      resultId: m.resultId,
+      patientId: m.patientId
+    });
+    setResendFlash(m.id + ':' + (out.ok ? 'ok' : 'fail'));
+    setTimeout(() => setResendFlash(null), 1500);
+  };
+  return React.createElement(Page, {
+    label: "HL7 Message Log"
+  }, React.createElement(PageHeader, {
+    title: "HL7 Message Log",
+    sub: "Every HL7 message we sent or received \u2014 wire-level audit & replay.",
+    actions: onBack ? [React.createElement("button", {
+      key: "b",
+      className: "btn",
+      "data-size": "sm",
+      "data-variant": "ghost",
+      onClick: onBack
+    }, React.createElement(IconChevRight, {
+      size: 13,
+      style: {
+        transform: 'rotate(180deg)'
+      }
+    }), " Admin")] : []
+  }), React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(4, 1fr)',
+      gap: 12,
+      marginBottom: 12
+    }
+  }, React.createElement(KpiPanel, {
+    label: "Inbound",
+    value: counts.inbound
+  }), React.createElement(KpiPanel, {
+    label: "Outbound",
+    value: counts.outbound
+  }), React.createElement(KpiPanel, {
+    label: "ACKed / Accepted",
+    value: counts.acked
+  }), React.createElement(KpiPanel, {
+    label: "Failed / NAKked",
+    value: counts.failed,
+    tone: counts.failed > 0 ? 'rust' : null
+  })), React.createElement("div", {
+    className: "panel",
+    style: {
+      display: 'flex',
+      flexDirection: 'column'
+    }
+  }, React.createElement("div", {
+    style: {
+      padding: '8px 12px',
+      borderBottom: '1px solid var(--line)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      flexWrap: 'wrap'
+    }
+  }, React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 4
+    }
+  }, MSG_DIRECTIONS.map(d => React.createElement("button", {
+    key: d,
+    className: "btn",
+    "data-size": "xs",
+    "data-variant": direction === d ? 'primary' : 'ghost',
+    onClick: () => {
+      setDirection(d);
+      setStatusFilter('');
+    }
+  }, d))), React.createElement("select", {
+    className: "input",
+    value: statusFilter,
+    onChange: e => setStatusFilter(e.target.value),
+    style: {
+      height: 28
+    }
+  }, React.createElement("option", {
+    value: ""
+  }, "All statuses"), statusOptions.map(s => React.createElement("option", {
+    key: s,
+    value: s
+  }, s))), React.createElement("select", {
+    className: "input",
+    value: partnerFilter,
+    onChange: e => setPartnerFilter(e.target.value),
+    style: {
+      height: 28
+    }
+  }, React.createElement("option", {
+    value: ""
+  }, "All partners"), partners.map(p => React.createElement("option", {
+    key: p.id,
+    value: p.id
+  }, p.name))), React.createElement("input", {
+    className: "input",
+    value: q,
+    onChange: e => setQ(e.target.value),
+    placeholder: "Search control id / type / raw\u2026",
+    style: {
+      height: 28,
+      flex: 1,
+      minWidth: 220
+    }
+  }), React.createElement("span", {
+    style: {
+      fontSize: 11.5,
+      color: 'var(--ink-400)'
+    }
+  }, filtered.length, " of ", messages.length)), filtered.length > 0 && React.createElement(TablePagination, _extends({}, pager, {
+    pos: "top"
+  })), React.createElement("div", {
+    style: {
+      flex: 1,
+      overflowY: 'auto',
+      minHeight: 0
+    }
+  }, filtered.length === 0 ? React.createElement(EmptyTable, {
+    columns: ['When', 'Direction', 'Partner', 'Type', 'Control ID', 'Status'],
+    message: "No HL7 messages logged yet",
+    sub: "Once a result releases (outbound ORU^R01) or you paste a message in the HL7 Intake panel (inbound ORM^O01), it shows here."
+  }) : React.createElement("table", {
+    className: "tbl"
+  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "When"), React.createElement("th", null, "Dir"), React.createElement("th", null, "Partner"), React.createElement("th", null, "Type"), React.createElement("th", null, "Control ID"), React.createElement("th", null, "Status"), React.createElement("th", null, "ACK"), React.createElement("th", null))), React.createElement("tbody", null, pager.slice.map(m => {
+    var partner = partnerById[m.partnerId];
+    var isExpanded = expandedId === m.id;
+    return React.createElement(React.Fragment, {
+      key: m.id
+    }, React.createElement("tr", {
+      onClick: () => setExpandedId(isExpanded ? null : m.id),
+      style: {
+        cursor: 'pointer',
+        background: isExpanded ? 'var(--ivory-100)' : undefined
+      }
+    }, React.createElement("td", null, React.createElement("span", {
+      className: "mono",
+      style: {
+        fontSize: 11.5,
+        color: 'var(--ink-500)'
+      }
+    }, formatDateTime(m.createdAt))), React.createElement("td", null, React.createElement("span", {
+      className: "pill",
+      "data-tone": m.direction === 'inbound' ? 'info' : 'ghost'
+    }, m.direction === 'inbound' ? '↓ in' : '↑ out')), React.createElement("td", null, partner ? partner.name : React.createElement("span", {
+      style: {
+        color: 'var(--ink-400)'
+      }
+    }, "\u2014")), React.createElement("td", null, React.createElement("span", {
+      className: "mono",
+      style: {
+        fontSize: 11.5
+      }
+    }, m.messageType || '—')), React.createElement("td", null, React.createElement("span", {
+      className: "mono",
+      style: {
+        fontSize: 11.5,
+        color: 'var(--ink-500)'
+      }
+    }, m.controlId || '—')), React.createElement("td", null, React.createElement(MessageStatusPill, {
+      status: m.status
+    })), React.createElement("td", null, m.ackCode ? React.createElement("span", {
+      className: "pill",
+      "data-tone": m.ackCode === 'AA' ? 'sage' : 'rust'
+    }, m.ackCode) : React.createElement("span", {
+      style: {
+        color: 'var(--ink-300)'
+      }
+    }, "\u2014")), React.createElement("td", {
+      style: {
+        textAlign: 'right',
+        whiteSpace: 'nowrap'
+      }
+    }, m.direction === 'outbound' && ['failed', 'nakked', 'timed-out', 'errored'].includes(m.status) && React.createElement("button", {
+      className: "btn",
+      "data-size": "xs",
+      "data-variant": "ghost",
+      onClick: e => {
+        e.stopPropagation();
+        resend(m);
+      },
+      disabled: !canEdit || !m.partnerId,
+      title: !m.partnerId ? 'No partner — cannot re-send' : 'Re-queue through the same transport'
+    }, resendFlash === m.id + ':ok' ? 'Sent ✓' : resendFlash === m.id + ':fail' ? 'Failed' : 'Re-send'))), isExpanded && React.createElement("tr", null, React.createElement("td", {
+      colSpan: 8,
+      style: {
+        background: 'var(--ivory-50)',
+        padding: 12
+      }
+    }, React.createElement("div", {
+      style: {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: 14
+      }
+    }, React.createElement("div", null, React.createElement("div", {
+      className: "section-title",
+      style: {
+        fontSize: 10,
+        marginBottom: 4
+      }
+    }, "Routing"), React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: 'var(--ink-700)',
+        display: 'grid',
+        gridTemplateColumns: '90px 1fr',
+        rowGap: 3
+      }
+    }, React.createElement("span", {
+      style: {
+        color: 'var(--ink-400)'
+      }
+    }, "Sender"), React.createElement("span", {
+      className: "mono"
+    }, (m.sendingApp || '—') + ' | ' + (m.sendingFacility || '—')), React.createElement("span", {
+      style: {
+        color: 'var(--ink-400)'
+      }
+    }, "Receiver"), React.createElement("span", {
+      className: "mono"
+    }, (m.receivingApp || '—') + ' | ' + (m.receivingFacility || '—')), React.createElement("span", {
+      style: {
+        color: 'var(--ink-400)'
+      }
+    }, "Partner"), React.createElement("span", null, partner ? partner.name : '(unassigned)'), React.createElement("span", {
+      style: {
+        color: 'var(--ink-400)'
+      }
+    }, "Attempts"), React.createElement("span", null, m.attemptCount || 0), React.createElement("span", {
+      style: {
+        color: 'var(--ink-400)'
+      }
+    }, "Last attempt"), React.createElement("span", {
+      className: "mono"
+    }, formatDateTime(m.lastAttemptAt)), m.errorReason ? React.createElement(React.Fragment, null, React.createElement("span", {
+      style: {
+        color: 'var(--ink-400)'
+      }
+    }, "Error"), React.createElement("span", {
+      style: {
+        color: 'var(--err-700)'
+      }
+    }, m.errorReason)) : null)), React.createElement("div", null, React.createElement("div", {
+      className: "section-title",
+      style: {
+        fontSize: 10,
+        marginBottom: 4
+      }
+    }, "Linked records"), React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: 'var(--ink-700)',
+        display: 'grid',
+        gridTemplateColumns: '90px 1fr',
+        rowGap: 3
+      }
+    }, React.createElement("span", {
+      style: {
+        color: 'var(--ink-400)'
+      }
+    }, "Order"), React.createElement("span", {
+      className: "mono"
+    }, m.orderId || '—'), React.createElement("span", {
+      style: {
+        color: 'var(--ink-400)'
+      }
+    }, "Result"), React.createElement("span", {
+      className: "mono"
+    }, m.resultId || '—'), React.createElement("span", {
+      style: {
+        color: 'var(--ink-400)'
+      }
+    }, "Patient"), React.createElement("span", {
+      className: "mono"
+    }, m.patientId || '—'), React.createElement("span", {
+      style: {
+        color: 'var(--ink-400)'
+      }
+    }, "ACK ctrl"), React.createElement("span", {
+      className: "mono"
+    }, m.ackControlId || '—')))), React.createElement("div", {
+      style: {
+        marginTop: 12
+      }
+    }, React.createElement("div", {
+      className: "section-title",
+      style: {
+        fontSize: 10,
+        marginBottom: 4
+      }
+    }, "Raw HL7"), React.createElement("pre", {
+      style: {
+        margin: 0,
+        padding: 10,
+        background: '#fff',
+        border: '1px solid var(--line)',
+        borderRadius: 4,
+        fontSize: 11.5,
+        fontFamily: 'var(--font-mono)',
+        color: 'var(--ink-900)',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-all',
+        maxHeight: 220,
+        overflowY: 'auto'
+      }
+    }, m.raw || '(empty)')))));
+  })))), filtered.length > 0 && React.createElement(TablePagination, pager)));
+};
+Object.assign(window, {
+  PartnersPage,
+  MessageLogPage
+});
 //# sourceURL=interop-pages.jsx
 
 
@@ -24502,6 +25412,14 @@ var App = () => {
         });
       case 'interfaces':
         return React.createElement(InterfacesPage, {
+          onBack: () => setActive('manage')
+        });
+      case 'partners':
+        return React.createElement(PartnersPage, {
+          onBack: () => setActive('manage')
+        });
+      case 'hl7-messages':
+        return React.createElement(MessageLogPage, {
           onBack: () => setActive('manage')
         });
       case 'rules':

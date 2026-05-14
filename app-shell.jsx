@@ -46,6 +46,8 @@ const NAV = [
       { kind: 'item', id: 'billing',       label: 'Billing',             icon: 'IconReports' },
       { kind: 'item', id: 'customization', label: 'Customization',       icon: 'IconLabel',      anyPermission: ['EDIT_LABEL_TEMPLATES', 'EDIT_LAB_CONFIG', 'EDIT_TEST_CATALOG'] },
       { kind: 'item', id: 'interfaces',    label: 'Device Engine Setup', icon: 'IconInterface',  permission: 'EDIT_INTERFACES' },
+      { kind: 'item', id: 'partners',      label: 'HL7 Partners',        icon: 'IconInterface',  permission: 'EDIT_INTERFACES' },
+      { kind: 'item', id: 'hl7-messages',  label: 'HL7 Message Log',     icon: 'IconReports',    permission: 'EDIT_INTERFACES' },
       { kind: 'item', id: 'insurance',     label: 'Insurance',           icon: 'IconShield' },
       { kind: 'item', id: 'tests',         label: 'Order Choice Setup',  icon: 'IconBeaker',     permission: 'EDIT_TEST_CATALOG' },
       { kind: 'item', id: 'other-setup',   label: 'Other Setup',         icon: 'IconMap',        anyPermission: ['EDIT_LAB_CONFIG', 'EDIT_INTERFACES'] },
