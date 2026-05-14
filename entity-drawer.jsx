@@ -897,15 +897,20 @@ const ResultOverview = ({ result }) => {
         </div>
       )}
 
-      {correctable && (
-        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+      <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <button className="btn" data-size="sm" data-variant="ghost"
+          onClick={() => window.openResultReport && window.openResultReport(result.id)}
+          title="Print or save a PDF of this result report">
+          <IconPrint/> Print report
+        </button>
+        {correctable && (
           <button className="btn" data-size="sm" data-variant="primary" onClick={openCorrect}
             disabled={!canCorrect}
             title={permissionTitle(canCorrect, 'Correct this result', 'correct results')}>
             <IconCorrect/> Correct this result
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {(result.deliveryStatus || result.lastHl7Message) && (
         <DeliverySection result={result}/>
@@ -917,6 +922,15 @@ const ResultOverview = ({ result }) => {
 // Tone map shared with the result-history strip. Mirrors RESULT_FLAG_TONE
 // from the shared page helpers but kept local so this file doesn't need to import.
 const RESULT_FLAG_TONE_INLINE = { L: 'info', H: 'amber', LL: 'rust', HH: 'rust', A: 'amber', AA: 'rust' };
+
+const IconPrint = ({ size = 13 }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 6V2h8v4"/>
+    <rect x="2" y="6" width="12" height="6" rx="1"/>
+    <path d="M4 9h8M4 12h8v2H4v-2z"/>
+    <circle cx="4.5" cy="8.5" r="0.5" fill="currentColor" stroke="none"/>
+  </svg>
+);
 
 // Tiny inline icon — pencil-on-line. Custom 1.25px geometric per the design system.
 const IconCorrect = ({ size = 13 }) => (
