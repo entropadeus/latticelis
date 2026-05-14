@@ -85,7 +85,7 @@
         try {
           const fresh = await window.db.get('results', result.id);
           if (!fresh) return;
-          const success = Math.random() < SUCCESS_RATE;
+          let success = Math.random() < SUCCESS_RATE;
 
           // For HL7 channel, build the actual ORU-R01 message and persist it
           // on the attempt so it can be inspected (and a real network sender
@@ -94,6 +94,9 @@
           // — that's what would actually go on the socket in Tier 6.
           let hl7Payload = null;
           let framedPayload = null;
+          let partner = null;
+          let transportMessageId = null;
+          let transportAckCode = null;
           if (channel === 'hl7' && window.hl7) {
             try {
               const patient = specimen && specimen.patientId ? await window.db.get('patients', specimen.patientId) : null;
@@ -107,8 +110,33 @@
               if (hl7Payload && window.hl7Mllp) {
                 framedPayload = window.hl7Mllp.frame(hl7Payload);
               }
+              // Partner resolution: per-order override → client default →
+              // first active partner that accepts ORU^R01. When a partner
+              // resolves, route through the transport facade so the message
+              // log gets a row and the configured handler decides the
+              // outcome. The simulated SUCCESS_RATE only applies when no
+              // partner is configured (legacy demo path).
+              if (hl7Payload && window.hl7Transport) {
+                const allPartners = await window.db.list('hl7_partners', p => p.active !== false);
+                let chosen = null;
+                if (order && order.partnerId) chosen = allPartners.find(p => p.id === order.partnerId);
+                if (!chosen && client && client.partnerId) chosen = allPartners.find(p => p.id === client.partnerId);
+                if (!chosen) chosen = allPartners.find(p => Array.isArray(p.outboundTypes) && p.outboundTypes.includes('ORU^R01'));
+                if (chosen) {
+                  partner = chosen;
+                  const sendResult = await window.hl7Transport.send(chosen.id, hl7Payload, {
+                    messageType: 'ORU^R01',
+                    orderId: order && order.id || null,
+                    resultId: fresh.id,
+                    patientId: patient && patient.id || null,
+                  });
+                  success = !!sendResult.ok;
+                  transportMessageId = sendResult.messageId || null;
+                  transportAckCode = sendResult.ackCode || null;
+                }
+              }
             } catch (e) {
-              console.warn('[delivery-watcher] ORU build failed', e);
+              console.warn('[delivery-watcher] ORU build / send failed', e);
             }
           }
 
@@ -118,6 +146,10 @@
               payload: hl7Payload,
               framedPayload,
               framedBytes: framedPayload ? framedPayload.length : 0,
+              partnerId: partner ? partner.id : null,
+              partnerName: partner ? partner.name : null,
+              hl7MessageId: transportMessageId,
+              ackCode: transportAckCode,
             };
             const updated = {
               ...fresh,
@@ -127,28 +159,41 @@
               deliveredTo: endpoint,
               deliveryAttempts: recordAttempt(fresh, attempt),
               lastHl7Message: hl7Payload || fresh.lastHl7Message || null,
+              lastHl7MessageId: transportMessageId || fresh.lastHl7MessageId || null,
             };
             await window.db.put('results', updated);
             window.events.publish(window.EVENTS.RESULT_DELIVERED, {
               entityType: 'result', entityId: updated.id, result: updated,
               channel, endpoint, clientId: client && client.id, channelSource,
+              partnerId: partner ? partner.id : null,
+              hl7MessageId: transportMessageId,
             });
           } else {
+            const failureReason = transportAckCode && transportAckCode !== 'AA'
+              ? 'partner returned ' + transportAckCode
+              : 'simulated transient';
             const attempt = {
-              at: Date.now(), via: channel, to: endpoint, outcome: 'failed', reason: 'simulated transient',
+              at: Date.now(), via: channel, to: endpoint, outcome: 'failed', reason: failureReason,
               payload: hl7Payload,
               framedPayload,
               framedBytes: framedPayload ? framedPayload.length : 0,
+              partnerId: partner ? partner.id : null,
+              partnerName: partner ? partner.name : null,
+              hl7MessageId: transportMessageId,
+              ackCode: transportAckCode,
             };
             const updated = {
               ...fresh,
               deliveryStatus: 'failed',
               deliveryAttempts: recordAttempt(fresh, attempt),
+              lastHl7MessageId: transportMessageId || fresh.lastHl7MessageId || null,
             };
             await window.db.put('results', updated);
             window.events.publish(window.EVENTS.RESULT_DELIVERY_FAILED, {
               entityType: 'result', entityId: updated.id, result: updated,
               channel, endpoint, clientId: client && client.id, channelSource, reason: attempt.reason,
+              partnerId: partner ? partner.id : null,
+              hl7MessageId: transportMessageId,
             });
           }
         } catch (e) {

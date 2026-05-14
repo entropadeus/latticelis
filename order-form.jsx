@@ -85,6 +85,8 @@ const NewOrderDrawer = ({ open, onClose }) => {
   const [providerName, setProviderName] = useStateOF('');
   const [diagnosisCodes, setDiagnosisCodes] = useStateOF('');
   const [notes, setNotes] = useStateOF('');
+  const [orderSource, setOrderSource] = useStateOF('');
+  const [fasting, setFasting] = useStateOF(false);
   const [deliveryChannel, setDeliveryChannel] = useStateOF('');
   const [deliveryEndpoint, setDeliveryEndpoint] = useStateOF('');
 
@@ -254,6 +256,8 @@ const NewOrderDrawer = ({ open, onClose }) => {
         providerId: providerName.trim() || null,
         diagnosisCodes: diagnosisCodes.split(',').map(s => s.trim()).filter(Boolean),
         notes: notes.trim(),
+        source: orderSource || '',
+        fasting: fasting === true,
         deliveryChannel: deliveryChannel || '',
         // Normalize the endpoint to its canonical form per the channel's
         // registry entry (e.g. fax strips punctuation, email lowercases).
@@ -438,6 +442,18 @@ const NewOrderDrawer = ({ open, onClose }) => {
             <FieldRow label="Provider">
               <input className="input" value={providerName} onChange={e => setProviderName(e.target.value)}
                 placeholder="Ordering provider name"/>
+            </FieldRow>
+            <FieldRow label="Order source">
+              <select className="input" value={orderSource} onChange={e => setOrderSource(e.target.value)}>
+                <option value="">— not specified —</option>
+                {(window.schema?.ORDER_SOURCES || []).map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </FieldRow>
+            <FieldRow label="Fasting">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={fasting} onChange={e => setFasting(e.target.checked)}/>
+                <span style={{ fontSize: 12.5 }}>Patient is fasting</span>
+              </label>
             </FieldRow>
             <FieldRow label="Diagnosis (ICD-10)">
               <input className="input" value={diagnosisCodes} onChange={e => setDiagnosisCodes(e.target.value)}
