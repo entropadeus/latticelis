@@ -256,6 +256,33 @@ _(statuses last refreshed 2026-05-07 evening; ✅ = end-to-end usable in browser
 
 _(newest first)_
 
+### Integration session — 2026-05-15 (local) — Squash-merge of three codex feature branches + repair of duplicated script-load block on main
+
+**Tackled:** User asked to pull down three codex-developed feature branches (`feat/result-report`, `feat/critical-value-thresholds-ll-hh`, `feat/rules-destub-patient-pregnant-condition`) and land them as a single squashed commit on `main`. Each branch was one commit ahead of main, all three touched `compiled/app.bundle.js`, `index.html`, `schema.js`, and `entity-drawer.jsx` — guaranteeing conflicts on every merge.
+
+**Approach:**
+
+1. Three sequential `git merge --squash` operations onto main, intermediate wip commits, then `git reset --soft origin/main` + single final commit. Source-file conflicts were minor (non-overlapping line ranges in schema/rules/entity-drawer) and resolved by auto-merger. The two real conflict zones were `index.html` and the bundle.
+2. **Bundle conflicts ignored** — `compiled/app.bundle.js` is generated. Took ours on each merge, rebuilt once at the end via `node scripts/build-jsx-bundle.cjs` (779 KB output).
+3. **index.html** got a clean canonical script-load block at version `20260515b`, replacing the conflicted region in all three merges.
+
+**Pre-existing bug uncovered and fixed in the same commit:** `main` shipped with **two back-to-back copies of the entire script load block** in `index.html` — one at `v=20260514d`, one at `v=20260514a` (the second one had `hl7-transport.js`, the first didn't). This means production was double-loading every module: exactly the React 18 `createRoot()` double-mount footgun called out in CLAUDE.md (drawer interactables silently no-op, console spam about `removeChild` + `NotFoundError`). Every codex feature branch had inherited and propagated the same dupe. Replaced with a single canonical block; also deduped `scripts/build-jsx-bundle.cjs` which had `result-report.jsx` listed twice (the result-report branch added an entry not realizing one already existed from a prior merge).
+
+**Verified:** nothing end-to-end. User was remote (on phone, away from machine) during the integration — no Chrome MCP available to exercise the new flows. Source-level verification only: schema diff shows all three additions landed (`patient.pregnant` field, `criticalLow/criticalHigh` test thresholds, lab identity fields on labConfig); `rules-runtime.js` shows the new `patient.pregnant` evaluator replacing the stub; bundle rebuilds clean from JSX.
+
+**Honest gaps:**
+
+- Critical-value LL/HH flag generation in `instrument-sim.js` and manual entry — not exercised.
+- Result-report PDF render + print-from-order-drawer flow — not exercised.
+- `patient.pregnant` rules condition firing on a real pregnant-flagged patient — not exercised.
+- Cache-busting ritual is bumped (`__LIS_VERSION = '20260515b'`) so the user's browser will pick up the new bundle on next reload, but no live smoke test happened.
+
+**Commit:** `10535fc` pushed to `origin/main`. Fast-forward push, not a force-push.
+
+**Next session should:** verify the three features end-to-end via Chrome MCP, since this push integrated them sight-unseen.
+
+---
+
 ### Polish session - 2026-05-12 (local) - Accessioning fixes: label modal, session persistence, clear session, patient typeahead
 
 **Tackled:** Four issues surfaced by the user in one pass on the Accessioning page. (1) Clicking the row-level **Label** button opened the modal but it appeared blank/broken. (2) The action-row **Print label** button was a dead element (no `onClick`) and the **⌘L** shortcut was a documented no-op (`// real wiring would print`) — pressing them did nothing. (3) Accessioned specimens vanished from the Session log when the operator navigated away (e.g. to Dashboard) and returned. (4) Operator wanted a typeahead on **Patient / MRN** so existing patients surface as they type instead of being stubbed as fresh records by `resolvePatient` on every commit. Operator also asked for an explicit **Clear session** control to reset the log between batches without dropping the underlying specimens.
