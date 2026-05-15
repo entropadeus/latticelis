@@ -313,7 +313,7 @@ const NewOrderDrawer = ({ open, onClose }) => {
 
         {/* body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
-          <OrderSection title="Client" sub={selectedClient ? null : 'Referring clinic / outreach customer'}>
+          <OrderSection title="Client" sub={selectedClient ? null : 'Optional — referring clinic / outreach customer'}>
             {selectedClient ? (
               <ClientChip client={selectedClient} onClear={() => setClientId(null)}/>
             ) : draftClient ? (
@@ -346,7 +346,7 @@ const NewOrderDrawer = ({ open, onClose }) => {
             )}
           </OrderSection>
 
-          <OrderSection title="Patient">
+          <OrderSection title="Patient" required>
             {selectedPatient ? (
               <PatientChip patient={selectedPatient} onClear={() => setPatientId(null)}/>
             ) : draftPatient ? (
@@ -379,7 +379,7 @@ const NewOrderDrawer = ({ open, onClose }) => {
             )}
           </OrderSection>
 
-          <OrderSection title="Tests" sub={selectedTests.length > 0 ? `${selectedTests.length} selected` : null}>
+          <OrderSection title="Tests" required sub={selectedTests.length > 0 ? `${selectedTests.length} selected` : null}>
             {selectedTests.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                 {selectedTests.map(t => (
@@ -502,10 +502,13 @@ const NewOrderDrawer = ({ open, onClose }) => {
 
 // ── Section / row helpers ──────────────────────────────────────────────────
 
-const OrderSection = ({ title, sub, children }) => (
+const OrderSection = ({ title, sub, required, children }) => (
   <div style={{ marginBottom: 18 }}>
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
-      <span className="section-title">{title}</span>
+      <span className="section-title">
+        {title}
+        {required && <span style={{ color: 'var(--rust)', marginLeft: 3 }} aria-label="required">*</span>}
+      </span>
       {sub && <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>{sub}</span>}
     </div>
     {children}

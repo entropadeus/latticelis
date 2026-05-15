@@ -56,7 +56,6 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
     <Page label="Orders">
       <PageHeader title="Orders" sub="All laboratory orders across the system."
         actions={[
-          <button key="f" className="btn" data-size="sm"><IconFilter size={13}/> Filter</button>,
           <button key="n" className="btn" data-size="sm" data-variant="primary"
             onClick={() => window.openNewOrder && window.openNewOrder()}
             disabled={!canCreateOrder}

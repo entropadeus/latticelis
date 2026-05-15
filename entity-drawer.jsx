@@ -814,6 +814,7 @@ const PatientOverview = ({ patient }) => {
 const ResultOverview = ({ result }) => {
   const specimen = window.useEntity('specimens', result.specimenId);
   const test = window.useEntity('tests', result.testId);
+  const [showReport, setShowReport] = useStateED(false);
   // Walk backward through correctionOf to assemble the chain. We show the
   // chain inline so the audit trail is visible from the drawer; releases of
   // older versions remain inspectable. The newest record is the one being
@@ -937,8 +938,9 @@ const ResultOverview = ({ result }) => {
 
       <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
         <button className="btn" data-size="sm" data-variant="ghost"
-          onClick={() => window.openResultReport && window.openResultReport(result.id)}
-          title="Print or save a PDF of this result report">
+          onClick={() => setShowReport(true)}
+          disabled={!result.orderId}
+          title={result.orderId ? "Print or save a PDF of this result report" : "Result has no linked order"}>
           <IconPrint/> Print report
         </button>
         {correctable && (
@@ -953,6 +955,8 @@ const ResultOverview = ({ result }) => {
       {(result.deliveryStatus || result.lastHl7Message) && (
         <DeliverySection result={result}/>
       )}
+
+      {showReport && <window.ResultReportModal orderId={result.orderId} onClose={() => setShowReport(false)}/>}
     </div>
   );
 };

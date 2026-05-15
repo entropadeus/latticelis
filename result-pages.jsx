@@ -526,8 +526,18 @@ const ResultsPage = () => {
                 const test = r.testId ? testById[r.testId] : null;
                 const isPending = r.status === 'preliminary' || r.status === 'pending';
                 const canBatchRelease = r.status === 'final' && !r.releasedAt;
+                // Critical (panic) flags get a left-edge rust stripe + faint tint so they
+                // pop in a dense scan. LL/HH = beyond critical thresholds, AA = critical alert.
+                const isCritical = r.flag === 'LL' || r.flag === 'HH' || r.flag === 'AA';
                 return (
-                  <tr key={r.id} className={animateNew ? 'slide-up' : ''} style={{ cursor: 'pointer' }}
+                  <tr key={r.id} className={animateNew ? 'slide-up' : ''}
+                      style={{
+                        cursor: 'pointer',
+                        ...(isCritical && {
+                          background: 'rgba(168, 84, 50, 0.06)',
+                          boxShadow: 'inset 3px 0 0 var(--rust)',
+                        }),
+                      }}
                       onClick={() => window.openEntity && window.openEntity('result', r.id)}>
                     <td onClick={e => e.stopPropagation()}>
                       {canBatchRelease && (
@@ -543,7 +553,7 @@ const ResultsPage = () => {
                       {pat ? (pat.mrn || ((pat.lastName || '') + (pat.firstName ? ', ' + pat.firstName : ''))) : '—'}
                     </td>
                     <td>{test ? <><span className="mono">{test.code}</span> <span style={{ color: 'var(--ink-400)', marginLeft: 4 }}>{test.shortName || test.name}</span></> : '—'}</td>
-                    <td className="mono tnum" style={{ fontWeight: 500 }}>{r.value != null ? r.value : '—'}</td>
+                    <td className="mono tnum" style={{ fontWeight: isCritical ? 700 : 500, color: isCritical ? 'var(--rust)' : undefined }}>{r.value != null ? r.value : '—'}</td>
                     <td>{r.units || '—'}</td>
                     <td className="mono tnum" style={{ color: 'var(--ink-400)' }}>
                       {r.refRangeLow != null && r.refRangeHigh != null ? (r.refRangeLow + '–' + r.refRangeHigh) : '—'}
@@ -1015,10 +1025,15 @@ const PatientDetail = ({ patient, orders, results, testById, specimenById }) => 
             <tbody>
               {resultsShown.map(r => {
                 const test = r.testId ? testById[r.testId] : null;
+                const isCritical = r.flag === 'LL' || r.flag === 'HH' || r.flag === 'AA';
                 return (
-                  <tr key={r.id}>
+                  <tr key={r.id}
+                      style={isCritical ? {
+                        background: 'rgba(168, 84, 50, 0.06)',
+                        boxShadow: 'inset 3px 0 0 var(--rust)',
+                      } : undefined}>
                     <td>{test ? <><span className="mono">{test.code}</span> <span style={{ marginLeft: 4, color: 'var(--ink-400)' }}>{test.shortName || test.name}</span></> : '—'}</td>
-                    <td className="mono tnum" style={{ fontWeight: 500 }}>{r.value != null ? r.value : '—'}</td>
+                    <td className="mono tnum" style={{ fontWeight: isCritical ? 700 : 500, color: isCritical ? 'var(--rust)' : undefined }}>{r.value != null ? r.value : '—'}</td>
                     <td>{r.units || '—'}</td>
                     <td className="mono tnum" style={{ color: 'var(--ink-400)' }}>
                       {r.refRangeLow != null && r.refRangeHigh != null ? (r.refRangeLow + '–' + r.refRangeHigh) : '—'}

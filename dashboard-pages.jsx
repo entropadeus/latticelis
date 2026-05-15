@@ -38,10 +38,7 @@ const DashboardPage = () => {
   <Page label="Dashboard">
     <PageHeader
       title="Dashboard"
-      sub="Real-time overview of laboratory operations."
-      actions={[
-        <button key="c" className="btn" data-size="sm"><IconEdit size={13}/> Customize</button>,
-      ]}/>
+      sub="Real-time overview of laboratory operations."/>
     {/* KPI strip */}
     <div className="stagger-children" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 18 }}>
       {kpis.map(k => {

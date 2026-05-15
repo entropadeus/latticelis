@@ -6149,7 +6149,7 @@ var NewOrderDrawer = ({
     }
   }, React.createElement(OrderSection, {
     title: "Client",
-    sub: selectedClient ? null : 'Referring clinic / outreach customer'
+    sub: selectedClient ? null : 'Optional — referring clinic / outreach customer'
   }, selectedClient ? React.createElement(ClientChip, {
     client: selectedClient,
     onClear: () => setClientId(null)
@@ -6189,7 +6189,8 @@ var NewOrderDrawer = ({
     disabled: !canEditLabConfig,
     title: permissionTitle(canEditLabConfig, 'Add new client', 'edit lab configuration')
   }, "+ Add new client ", clientQ ? `(code "${clientQ.toUpperCase()}")` : '')))), React.createElement(OrderSection, {
-    title: "Patient"
+    title: "Patient",
+    required: true
   }, selectedPatient ? React.createElement(PatientChip, {
     patient: selectedPatient,
     onClear: () => setPatientId(null)
@@ -6224,6 +6225,7 @@ var NewOrderDrawer = ({
     onClick: startNewPatient
   }, "+ Create new patient ", patientQ ? `(MRN "${patientQ}")` : '')))), React.createElement(OrderSection, {
     title: "Tests",
+    required: true,
     sub: selectedTests.length > 0 ? `${selectedTests.length} selected` : null
   }, selectedTests.length > 0 && React.createElement("div", {
     style: {
@@ -6415,6 +6417,7 @@ var NewOrderDrawer = ({
 var OrderSection = ({
   title,
   sub,
+  required,
   children
 }) => React.createElement("div", {
   style: {
@@ -6429,7 +6432,13 @@ var OrderSection = ({
   }
 }, React.createElement("span", {
   className: "section-title"
-}, title), sub && React.createElement("span", {
+}, title, required && React.createElement("span", {
+  style: {
+    color: 'var(--rust)',
+    marginLeft: 3
+  },
+  "aria-label": "required"
+}, "*")), sub && React.createElement("span", {
   style: {
     fontSize: 11,
     color: 'var(--ink-400)'
@@ -9209,6 +9218,7 @@ var ResultOverview = ({
 }) => {
   var specimen = window.useEntity('specimens', result.specimenId);
   var test = window.useEntity('tests', result.testId);
+  var [showReport, setShowReport] = useStateED(false);
   var chain = window.useEntities('results', r => r.specimenId === result.specimenId && r.testId === result.testId);
   var sortedChain = useMemoED(() => {
     return [...chain].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
@@ -9395,8 +9405,9 @@ var ResultOverview = ({
     className: "btn",
     "data-size": "sm",
     "data-variant": "ghost",
-    onClick: () => window.openResultReport && window.openResultReport(result.id),
-    title: "Print or save a PDF of this result report"
+    onClick: () => setShowReport(true),
+    disabled: !result.orderId,
+    title: result.orderId ? "Print or save a PDF of this result report" : "Result has no linked order"
   }, React.createElement(IconPrint, null), " Print report"), correctable && React.createElement("button", {
     className: "btn",
     "data-size": "sm",
@@ -9406,6 +9417,9 @@ var ResultOverview = ({
     title: permissionTitle(canCorrect, 'Correct this result', 'correct results')
   }, React.createElement(IconCorrect, null), " Correct this result")), (result.deliveryStatus || result.lastHl7Message) && React.createElement(DeliverySection, {
     result: result
+  }), showReport && React.createElement(window.ResultReportModal, {
+    orderId: result.orderId,
+    onClose: () => setShowReport(false)
   }));
 };
 var RESULT_FLAG_TONE_INLINE = {
@@ -11199,14 +11213,7 @@ var DashboardPage = () => {
     label: "Dashboard"
   }, React.createElement(PageHeader, {
     title: "Dashboard",
-    sub: "Real-time overview of laboratory operations.",
-    actions: [React.createElement("button", {
-      key: "c",
-      className: "btn",
-      "data-size": "sm"
-    }, React.createElement(IconEdit, {
-      size: 13
-    }), " Customize")]
+    sub: "Real-time overview of laboratory operations."
   }), React.createElement("div", {
     className: "stagger-children",
     style: {
@@ -12180,12 +12187,6 @@ var OrdersPage = ({
     title: "Orders",
     sub: "All laboratory orders across the system.",
     actions: [React.createElement("button", {
-      key: "f",
-      className: "btn",
-      "data-size": "sm"
-    }, React.createElement(IconFilter, {
-      size: 13
-    }), " Filter"), React.createElement("button", {
       key: "n",
       className: "btn",
       "data-size": "sm",
@@ -13590,11 +13591,16 @@ var ResultsPage = () => {
     var test = r.testId ? testById[r.testId] : null;
     var isPending = r.status === 'preliminary' || r.status === 'pending';
     var canBatchRelease = r.status === 'final' && !r.releasedAt;
+    var isCritical = r.flag === 'LL' || r.flag === 'HH' || r.flag === 'AA';
     return React.createElement("tr", {
       key: r.id,
       className: animateNew ? 'slide-up' : '',
       style: {
-        cursor: 'pointer'
+        cursor: 'pointer',
+        ...(isCritical && {
+          background: 'rgba(168, 84, 50, 0.06)',
+          boxShadow: 'inset 3px 0 0 var(--rust)'
+        })
       },
       onClick: () => window.openEntity && window.openEntity('result', r.id)
     }, React.createElement("td", {
@@ -13639,7 +13645,8 @@ var ResultsPage = () => {
     }, test.shortName || test.name)) : '—'), React.createElement("td", {
       className: "mono tnum",
       style: {
-        fontWeight: 500
+        fontWeight: isCritical ? 700 : 500,
+        color: isCritical ? 'var(--rust)' : undefined
       }
     }, r.value != null ? r.value : '—'), React.createElement("td", null, r.units || '—'), React.createElement("td", {
       className: "mono tnum",
@@ -14407,8 +14414,13 @@ var PatientDetail = ({
     }
   }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Test"), React.createElement("th", null, "Value"), React.createElement("th", null, "Units"), React.createElement("th", null, "Ref range"), React.createElement("th", null, "Flag"), React.createElement("th", null, "Status"), React.createElement("th", null, "Resulted"))), React.createElement("tbody", null, resultsShown.map(r => {
     var test = r.testId ? testById[r.testId] : null;
+    var isCritical = r.flag === 'LL' || r.flag === 'HH' || r.flag === 'AA';
     return React.createElement("tr", {
-      key: r.id
+      key: r.id,
+      style: isCritical ? {
+        background: 'rgba(168, 84, 50, 0.06)',
+        boxShadow: 'inset 3px 0 0 var(--rust)'
+      } : undefined
     }, React.createElement("td", null, test ? React.createElement(React.Fragment, null, React.createElement("span", {
       className: "mono"
     }, test.code), " ", React.createElement("span", {
@@ -14419,7 +14431,8 @@ var PatientDetail = ({
     }, test.shortName || test.name)) : '—'), React.createElement("td", {
       className: "mono tnum",
       style: {
-        fontWeight: 500
+        fontWeight: isCritical ? 700 : 500,
+        color: isCritical ? 'var(--rust)' : undefined
       }
     }, r.value != null ? r.value : '—'), React.createElement("td", null, r.units || '—'), React.createElement("td", {
       className: "mono tnum",
