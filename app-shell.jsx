@@ -703,16 +703,19 @@ const CommandPalette = ({ open, onClose, onNav }) => {
   const [q, setQ] = useState('');
   const inputRef = useRef(null);
   const [idx, setIdx] = useState(0);
+  // Entity search data. Must be declared before any early return so hook call
+  // order is stable — the palette always subscribes, just renders null when closed.
+  const _patients  = window.useEntities('patients');
+  const _orders    = window.useEntities('orders');
+  const _specimens = window.useEntities('specimens');
 
   useEffect(() => {
     if (open) { setQ(''); setIdx(0); setTimeout(() => inputRef.current?.focus(), 30); }
   }, [open]);
 
   const items = useMemo(() => {
-    const all = [
+    const navActions = [
       ...NAV_FLAT.filter(__navItemAllowed).map(n => ({ id: 'nav-' + n.id, label: 'Go to ' + n.label, kind: 'Navigate', target: n.id })),
-      // Hidden destinations not on the sidebar (legacy Admin tile grid, etc.)
-      // are still indexable via the palette. Same permission gates apply.
       ...ADMIN_DESTINATIONS.filter(__navItemAllowed).map(n => ({ id: 'admnav-' + n.id, label: 'Go to ' + n.label, kind: 'Admin', target: n.id })),
       { id: 'a-new-accession', label: 'New accessioning session', kind: 'Action', target: 'accession' },
       { id: 'a-new-rule',      label: 'Create new rule',           kind: 'Action', target: 'rules' },
@@ -721,10 +724,52 @@ const CommandPalette = ({ open, onClose, onNav }) => {
       { id: 'd-shortcuts',     label: 'Keyboard shortcuts',        kind: 'Help' },
       { id: 'd-docs',          label: 'Documentation',             kind: 'Help' },
     ];
-    if (!q) return all.slice(0, 10);
+    if (!q) return navActions.slice(0, 10);
     const ql = q.toLowerCase();
-    return all.filter(i => i.label.toLowerCase().includes(ql));
-  }, [q]);
+    const navMatches = navActions.filter(i => i.label.toLowerCase().includes(ql));
+    // Entity search kicks in at 2+ characters to avoid flooding on single-letter queries.
+    if (q.length < 2) return navMatches;
+
+    const hit = s => (s || '').toString().toLowerCase().includes(ql);
+    const entityItems = [];
+    let pt = 0;
+    for (const p of (_patients || [])) {
+      if (pt >= 5) break;
+      if (hit(p.mrn) || hit(p.firstName) || hit(p.lastName)) {
+        entityItems.push({
+          id: 'e-pt-' + p.id, kind: 'Patient', entityKind: 'patient', entityId: p.id,
+          label: [p.lastName, p.firstName].filter(Boolean).join(', ') || p.mrn || p.id,
+          sub:   [p.mrn && ('MRN ' + p.mrn), p.dob, p.sex].filter(Boolean).join(' · '),
+        });
+        pt++;
+      }
+    }
+    let ord = 0;
+    for (const o of (_orders || [])) {
+      if (ord >= 5) break;
+      if (hit(o.orderNumber) || hit(o.placerOrderNumber)) {
+        entityItems.push({
+          id: 'e-ord-' + o.id, kind: 'Order', entityKind: 'order', entityId: o.id,
+          label: o.orderNumber || o.id,
+          sub:   [o.status, o.priority, o.testIds?.length && (o.testIds.length + (o.testIds.length === 1 ? ' test' : ' tests'))].filter(Boolean).join(' · '),
+        });
+        ord++;
+      }
+    }
+    let sp = 0;
+    for (const s of (_specimens || [])) {
+      if (sp >= 5) break;
+      if (hit(s.barcode) || hit(s.accessionNumber)) {
+        entityItems.push({
+          id: 'e-sp-' + s.id, kind: 'Specimen', entityKind: 'specimen', entityId: s.id,
+          label: s.barcode || s.accessionNumber || s.id,
+          sub:   [s.specimenType, s.containerType, s.status].filter(Boolean).join(' · '),
+        });
+        sp++;
+      }
+    }
+    return [...navMatches, ...entityItems];
+  }, [q, _patients, _orders, _specimens]);
 
   useEffect(() => { setIdx(0); }, [q]);
 
@@ -737,16 +782,20 @@ const CommandPalette = ({ open, onClose, onNav }) => {
   const pick = (item) => {
     if (!item) return;
     if (item.permission && !hasPermission(item.permission)) return;
+    if (item.entityKind) {
+      onClose();
+      if (window.openEntity) window.openEntity(item.entityKind, item.entityId);
+      return;
+    }
     if (item.target) onNav(item.target);
     onClose();
-    // Side-effect actions (open dialogs, etc.). Run after nav so the destination page
-    // is mounted before any drawer it depends on opens.
     if (item.id === 'a-new-order' && window.openNewOrder) {
       setTimeout(() => window.openNewOrder(), 0);
     }
   };
 
   if (!open) return null;
+  const firstEntityAt = items.findIndex(x => x.entityKind);
   return (
     <div onMouseDown={onClose} className="backdrop-in" style={{
       position: 'fixed', inset: 0, zIndex: 100,
@@ -768,34 +817,51 @@ const CommandPalette = ({ open, onClose, onNav }) => {
             style={{ flex: 1, border: 'none', outline: 'none', fontSize: 14, background: 'transparent' }}/>
           <span className="kbd">esc</span>
         </div>
-        <div style={{ maxHeight: 360, overflowY: 'auto', padding: 6 }}>
+        <div style={{ maxHeight: 400, overflowY: 'auto', padding: 6 }}>
           {items.length === 0 ? (
             <div style={{ padding: 28, textAlign: 'center', color: 'var(--ink-400)', fontSize: 12.5 }}>
               No matches. Try a different query.
             </div>
           ) : items.map((item, i) => {
             const allowed = !item.permission || hasPermission(item.permission);
+            const showResultsHeader = firstEntityAt > 0 && i === firstEntityAt;
             return (
-            <button key={item.id} onClick={() => pick(item)} onMouseEnter={() => setIdx(i)}
-              disabled={!allowed}
-              title={allowed ? item.label : `you don't have permission to ${item.deniedAction || 'use this action'}`}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 10px', border: 'none',
-                background: idx === i ? 'var(--ivory-100)' : 'transparent',
-                borderRadius: 5, cursor: allowed ? 'pointer' : 'not-allowed', textAlign: 'left',
-                opacity: allowed ? 1 : 0.5,
-              }}>
-              <span style={{ fontSize: 13, color: 'var(--ink-900)', flex: 1 }}>{item.label}</span>
-              <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>{item.kind}</span>
-              {idx === i && <IconArrowRight size={12} style={{ color: 'var(--ink-400)' }}/>}
-            </button>
+              <React.Fragment key={item.id}>
+                {showResultsHeader && (
+                  <div style={{ padding: '6px 10px 2px', borderTop: '1px solid var(--line)', marginTop: 4 }}>
+                    <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ink-400)' }}>Results</span>
+                  </div>
+                )}
+                <button onClick={() => pick(item)} onMouseEnter={() => setIdx(i)}
+                  disabled={!allowed}
+                  title={allowed ? item.label : `you don't have permission to ${item.deniedAction || 'use this action'}`}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '8px 10px', border: 'none',
+                    background: idx === i ? 'var(--ivory-100)' : 'transparent',
+                    borderRadius: 5, cursor: allowed ? 'pointer' : 'not-allowed', textAlign: 'left',
+                    opacity: allowed ? 1 : 0.5,
+                  }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: 'var(--ink-900)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {item.label}
+                    </div>
+                    {item.sub && (
+                      <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {item.sub}
+                      </div>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 11, color: 'var(--ink-400)', flexShrink: 0 }}>{item.kind}</span>
+                  {idx === i && <IconArrowRight size={12} style={{ color: 'var(--ink-400)', flexShrink: 0 }}/>}
+                </button>
+              </React.Fragment>
             );
           })}
         </div>
         <div style={{ borderTop: '1px solid var(--line)', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 14, fontSize: 11, color: 'var(--ink-400)' }}>
           <span><span className="kbd">↑↓</span> navigate</span>
-          <span><span className="kbd">↵</span> select</span>
+          <span><span className="kbd">↵</span> open</span>
           <span><span className="kbd">esc</span> close</span>
         </div>
       </div>
