@@ -26022,7 +26022,7 @@ var App = () => {
   }), React.createElement(window.NewOrderDrawer, {
     open: newOrderOpen,
     onClose: () => setNewOrderOpen(false)
-  }), React.createElement(window.EntityDrawer, null), React.createElement(CriticalAlerts, null), React.createElement(window.NotificationToasts, null), React.createElement(window.ResultReportModal, null), React.createElement(window.SafetyConfirmHost, null), React.createElement(window.TweaksPanel, {
+  }), React.createElement(window.EntityDrawer, null), React.createElement(CriticalAlerts, null), React.createElement(window.NotificationToasts, null), React.createElement(window.SafetyConfirmHost, null), React.createElement(window.TweaksPanel, {
     title: "Tweaks"
   }, React.createElement(window.TweakSection, {
     title: "Navigation"
