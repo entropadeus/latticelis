@@ -17,7 +17,7 @@ const TestCatalogPage = ({ onBack }) => {
   const startNew = () => {
     if (!hasPermission('EDIT_TEST_CATALOG')) return;
     setEditingId(null);
-    setDraft({ code: '', name: '', shortName: '', loinc: '', units: '', category: '', refRangeLow: '', refRangeHigh: '', turnaroundMinutes: '', referenceRanges: [], criticalEscalationT1Sec: '', criticalEscalationT2Sec: '', lotExpirationAmberDays: '', deltaCheckPercent: '', deltaCheckAbsolute: '', active: true });
+    setDraft({ code: '', name: '', shortName: '', loinc: '', units: '', category: '', refRangeLow: '', refRangeHigh: '', turnaroundMinutes: '', referenceRanges: [], criticalLow: '', criticalHigh: '', criticalEscalationT1Sec: '', criticalEscalationT2Sec: '', lotExpirationAmberDays: '', deltaCheckPercent: '', deltaCheckAbsolute: '', active: true });
   };
   const startEdit = (t) => {
     if (!hasPermission('EDIT_TEST_CATALOG')) return;
@@ -32,6 +32,8 @@ const TestCatalogPage = ({ onBack }) => {
       criticalEscalationT1Sec: t.criticalEscalationT1Sec == null ? '' : t.criticalEscalationT1Sec,
       criticalEscalationT2Sec: t.criticalEscalationT2Sec == null ? '' : t.criticalEscalationT2Sec,
       lotExpirationAmberDays: t.lotExpirationAmberDays == null ? '' : t.lotExpirationAmberDays,
+      criticalLow:  t.criticalLow  == null ? '' : t.criticalLow,
+      criticalHigh: t.criticalHigh == null ? '' : t.criticalHigh,
       deltaCheckPercent: t.deltaCheckPercent == null ? '' : t.deltaCheckPercent,
       deltaCheckAbsolute: t.deltaCheckAbsolute == null ? '' : t.deltaCheckAbsolute,
       active: t.active !== false,
@@ -57,6 +59,8 @@ const TestCatalogPage = ({ onBack }) => {
       criticalEscalationT1Sec: parseSec(draft.criticalEscalationT1Sec),
       criticalEscalationT2Sec: parseSec(draft.criticalEscalationT2Sec),
       lotExpirationAmberDays: parseSec(draft.lotExpirationAmberDays),
+      criticalLow:  parseSec(draft.criticalLow),
+      criticalHigh: parseSec(draft.criticalHigh),
       deltaCheckPercent:  parseSec(draft.deltaCheckPercent),
       deltaCheckAbsolute: parseSec(draft.deltaCheckAbsolute),
       referenceRanges: (draft.referenceRanges || []).map(r => window.schema.newReferenceRange(r)),
@@ -279,6 +283,25 @@ const TestCatalogPage = ({ onBack }) => {
                 )}
                 <div style={{ marginTop: 6, fontSize: 10.5, color: 'var(--ink-400)' }}>
                   Resolution: most-specific match wins (sex + age + method + effective). If none match, default range is used.
+                </div>
+              </div>
+
+              <div style={{ marginTop: 6, marginBottom: 10, padding: 10, background: 'var(--ivory-50)', border: '1px solid var(--line)', borderRadius: 5 }}>
+                <div className="section-title" style={{ fontSize: 9.5, marginBottom: 6 }}>Critical value thresholds</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <CatalogField label={`Critical low (${draft.units || 'units'})`}>
+                    <input className="input mono tnum" placeholder="e.g. 40"
+                      value={draft.criticalLow}
+                      onChange={e => setDraft({ ...draft, criticalLow: e.target.value })}/>
+                  </CatalogField>
+                  <CatalogField label={`Critical high (${draft.units || 'units'})`}>
+                    <input className="input mono tnum" placeholder="e.g. 500"
+                      value={draft.criticalHigh}
+                      onChange={e => setDraft({ ...draft, criticalHigh: e.target.value })}/>
+                  </CatalogField>
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>
+                  Panic values flagged LL/HH — triggers the critical-result escalation chain. Empty = no critical threshold; out-of-range values are flagged L/H only.
                 </div>
               </div>
 

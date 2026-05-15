@@ -656,18 +656,21 @@ const CorrectResultModal = ({ prior, test, specimen, patient, onCancel, onSave }
     return null;
   }, [test, patient]);
 
-  // Only L/H — reference-ranges.pick returns { low, high } with no critical
-  // or panic thresholds, so LL/HH/A/AA/Critical can't be derived here. Adding
-  // those flags will require schema fields (e.g. criticalLow/criticalHigh on
-  // tests or per-range entries) and a separate evaluator.
+  // Derive flag from critical thresholds (LL/HH) first, then the demographic
+  // reference range (L/H). criticalLow/criticalHigh come from the test record.
   const previewFlag = useMemoOS(() => {
-    if (draft.value === '' || !resolvedRange) return '';
+    if (draft.value === '') return '';
     const v = Number(draft.value);
     if (isNaN(v)) return '';
+    if (test) {
+      if (Number.isFinite(test.criticalLow)  && v < test.criticalLow)  return 'LL';
+      if (Number.isFinite(test.criticalHigh) && v > test.criticalHigh) return 'HH';
+    }
+    if (!resolvedRange) return '';
     if (resolvedRange.low  != null && v < Number(resolvedRange.low))  return 'L';
     if (resolvedRange.high != null && v > Number(resolvedRange.high)) return 'H';
     return '';
-  }, [draft.value, resolvedRange]);
+  }, [draft.value, resolvedRange, test]);
 
   const valueChanged = String(draft.value) !== (prior.value != null ? String(prior.value) : '');
   const ready = !!draft.value && !!String(draft.reason || '').trim() && valueChanged;
@@ -733,7 +736,7 @@ const CorrectResultModal = ({ prior, test, specimen, patient, onCancel, onSave }
                   </span>
                 )}
                 <span style={{ flex: 1 }}/>
-                {previewFlag ? <span className="pill" data-tone={previewFlag === 'L' ? 'info' : 'amber'} style={{ fontSize: 10.5 }}>{previewFlag}</span> : <span style={{ color: 'var(--ink-300)', fontSize: 11 }}>—</span>}
+                {previewFlag ? <span className="pill" data-tone={({ L: 'info', H: 'amber', LL: 'rust', HH: 'rust' })[previewFlag] || 'amber'} style={{ fontSize: 10.5 }}>{previewFlag}</span> : <span style={{ color: 'var(--ink-300)', fontSize: 11 }}>—</span>}
               </div>
             </CatalogField>
           </div>

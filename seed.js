@@ -34,19 +34,20 @@
   // 12 tests covering chemistry + heme + cardiac. Each carries a realistic
   // adult range; HGB additionally has an F-only range to exercise the
   // demographic resolver. TROP carries per-test escalation thresholds.
+  // critLow/critHigh are the panic (LL/HH) thresholds — standard CLIA values.
   const TESTS = [
-    { code: 'GLU',  name: 'Glucose',              units: 'mg/dL',   loinc: '2345-7',  low: 70,  high: 99,  cat: 'chem' },
+    { code: 'GLU',  name: 'Glucose',              units: 'mg/dL',   loinc: '2345-7',  low: 70,  high: 99,  cat: 'chem',    critLow: 40,   critHigh: 500  },
     { code: 'BUN',  name: 'Blood Urea Nitrogen',  units: 'mg/dL',   loinc: '3094-0',  low: 7,   high: 25,  cat: 'chem' },
     { code: 'CR',   name: 'Creatinine',           units: 'mg/dL',   loinc: '2160-0',  low: 0.6, high: 1.2, cat: 'chem' },
-    { code: 'NA',   name: 'Sodium',               units: 'mmol/L',  loinc: '2951-2',  low: 135, high: 145, cat: 'chem' },
-    { code: 'K',    name: 'Potassium',            units: 'mmol/L',  loinc: '2823-3',  low: 3.5, high: 5.0, cat: 'chem' },
+    { code: 'NA',   name: 'Sodium',               units: 'mmol/L',  loinc: '2951-2',  low: 135, high: 145, cat: 'chem',    critLow: 120,  critHigh: 160  },
+    { code: 'K',    name: 'Potassium',            units: 'mmol/L',  loinc: '2823-3',  low: 3.5, high: 5.0, cat: 'chem',    critLow: 2.5,  critHigh: 6.5  },
     { code: 'CL',   name: 'Chloride',             units: 'mmol/L',  loinc: '2075-0',  low: 96,  high: 106, cat: 'chem' },
-    { code: 'WBC',  name: 'White Blood Cell',     units: '10^3/uL', loinc: '6690-2',  low: 4.5, high: 11,  cat: 'heme' },
+    { code: 'WBC',  name: 'White Blood Cell',     units: '10^3/uL', loinc: '6690-2',  low: 4.5, high: 11,  cat: 'heme',    critLow: 2.0,  critHigh: 30   },
     { code: 'RBC',  name: 'Red Blood Cell',       units: '10^6/uL', loinc: '789-8',   low: 4.5, high: 5.9, cat: 'heme' },
-    { code: 'HGB',  name: 'Hemoglobin',           units: 'g/dL',    loinc: '718-7',   low: 13,  high: 17,  cat: 'heme', femaleRange: { low: 12, high: 16 } },
-    { code: 'HCT',  name: 'Hematocrit',           units: '%',       loinc: '4544-3',  low: 41,  high: 53,  cat: 'heme' },
-    { code: 'PLT',  name: 'Platelet',             units: '10^3/uL', loinc: '777-3',   low: 150, high: 400, cat: 'heme' },
-    { code: 'TROP', name: 'Troponin I',           units: 'ng/mL',   loinc: '10839-9', low: 0,   high: 0.04, cat: 'cardiac', t1Sec: 30, t2Sec: 60 },
+    { code: 'HGB',  name: 'Hemoglobin',           units: 'g/dL',    loinc: '718-7',   low: 13,  high: 17,  cat: 'heme',    critLow: 7,    critHigh: 20,   femaleRange: { low: 12, high: 16 } },
+    { code: 'HCT',  name: 'Hematocrit',           units: '%',       loinc: '4544-3',  low: 41,  high: 53,  cat: 'heme',    critLow: 21,   critHigh: 60   },
+    { code: 'PLT',  name: 'Platelet',             units: '10^3/uL', loinc: '777-3',   low: 150, high: 400, cat: 'heme',    critLow: 50,   critHigh: 1000 },
+    { code: 'TROP', name: 'Troponin I',           units: 'ng/mL',   loinc: '10839-9', low: 0,   high: 0.04, cat: 'cardiac', critHigh: 0.5,  t1Sec: 30, t2Sec: 60 },
   ];
 
   const INSTRUMENTS = [
@@ -101,6 +102,8 @@
   const floatBetween = (lo, hi, decimals = 2) => Number((lo + rand() * (hi - lo)).toFixed(decimals));
 
   // Distribution: most values inside range, ~15% just outside (L/H), ~3% way out (LL/HH).
+  // When critLow/critHigh are defined, critical values land outside those thresholds
+  // so the seeded data matches what the live flag evaluator would compute.
   const valueWithFlag = (test, sex) => {
     const range = (sex === 'F' && test.femaleRange) ? test.femaleRange : { low: test.low, high: test.high };
     const span = range.high - range.low || 1;
@@ -110,19 +113,27 @@
       return { value: v, flag: '', range };
     }
     if (r < 0.92) {
-      // Just-outside L/H
+      // Just-outside L/H — stays inside critical thresholds when they exist so
+      // the flag evaluator and the seeded flag agree.
       const side = rand() < 0.5 ? -1 : 1;
       const v = side > 0
-        ? floatBetween(range.high + 0.01, range.high + span * 0.4)
-        : floatBetween(Math.max(0, range.low - span * 0.4), range.low - 0.01);
+        ? floatBetween(range.high + 0.01, test.critHigh != null ? test.critHigh - 0.01 : range.high + span * 0.4)
+        : floatBetween(Math.max(0, test.critLow != null ? test.critLow + 0.01 : range.low - span * 0.4), range.low - 0.01);
       return { value: v, flag: side > 0 ? 'H' : 'L', range };
     }
     if (r < 0.98) {
-      // Critical LL/HH
+      // Critical LL/HH — land outside the configured critical thresholds when available
       const side = rand() < 0.5 ? -1 : 1;
-      const v = side > 0
-        ? floatBetween(range.high + span, range.high + span * 2)
-        : floatBetween(Math.max(0, range.low - span), Math.max(0, range.low - span * 0.5));
+      let v;
+      if (side > 0 && test.critHigh != null) {
+        v = floatBetween(test.critHigh + 0.01, test.critHigh + span * 0.5);
+      } else if (side < 0 && test.critLow != null) {
+        v = floatBetween(Math.max(0, test.critLow - span * 0.5), Math.max(0, test.critLow - 0.01));
+      } else {
+        v = side > 0
+          ? floatBetween(range.high + span, range.high + span * 2)
+          : floatBetween(Math.max(0, range.low - span), Math.max(0, range.low - span * 0.5));
+      }
       return { value: v, flag: side > 0 ? 'HH' : 'LL', range };
     }
     // Abnormal flag for cardiac panel — TROP just having any positive value is abnormal
@@ -184,6 +195,8 @@
         refRangeLow: t.low, refRangeHigh: t.high,
         referenceRanges: refRanges,
         category: catMap[t.cat] || '',
+        criticalLow:  t.critLow  != null ? t.critLow  : null,
+        criticalHigh: t.critHigh != null ? t.critHigh : null,
         criticalEscalationT1Sec: t.t1Sec || null,
         criticalEscalationT2Sec: t.t2Sec || null,
       });

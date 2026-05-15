@@ -190,6 +190,7 @@ const App = () => {
       case 'preferences':   return <window.PreferencesPage/>;
       case 'admin-reports': return <window.AdminReportsPage onNav={setActive}/>;
       case 'system-setup':  return <window.SystemSetupPage onNav={setActive}/>;
+      case 'lab-identity':  return <window.LabIdentityPage onBack={() => setActive('system-setup')}/>;
       case 'billing':       return <window.BillingPage onNav={setActive}/>;
       case 'customization': return <window.CustomizationPage onNav={setActive}/>;
       case 'insurance':     return <window.InsurancePage onNav={setActive}/>;

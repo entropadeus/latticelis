@@ -170,15 +170,70 @@ const PreferencesPage = () => {
 // Buckets that aggregate existing pages route via tiles; pure-stub buckets
 // render the empty-bucket state in OutreachBucketPage.
 
+// Lab Identity — edit the fields that appear on printed result reports.
+// Reads/writes the singleton lab_config row (id = schema.LAB_CONFIG_ID).
+const LabIdentityPage = ({ onBack }) => {
+  const cfg = window.useEntity('lab_config', window.schema && window.schema.LAB_CONFIG_ID);
+  const [form, setForm] = useStateOR({
+    labName: '', labClia: '', labDirectorName: '', labPhone: '', labAddress: '',
+  });
+  const [saved, setSaved] = useStateOR(false);
+
+  useEffectOR(() => {
+    if (!cfg) return;
+    setForm({
+      labName:         cfg.labName         || '',
+      labClia:         cfg.labClia         || '',
+      labDirectorName: cfg.labDirectorName || '',
+      labPhone:        cfg.labPhone        || '',
+      labAddress:      cfg.labAddress      || '',
+    });
+  }, [cfg && cfg.id]);
+
+  const handleSave = async () => {
+    const base = cfg || (window.schema ? window.schema.newLabConfig() : { id: window.schema && window.schema.LAB_CONFIG_ID });
+    await window.db.put('lab_config', { ...base, ...form });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2200);
+  };
+
+  const LabeledField = ({ label, k, placeholder }) => (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: 'block', fontSize: 11.5, color: 'var(--ink-500)', marginBottom: 4 }}>{label}</label>
+      <input className="input" value={form[k]} placeholder={placeholder || ''}
+        onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}/>
+    </div>
+  );
+
+  return (
+    <Page label="Lab Identity">
+      <PageHeader title="Lab Identity"
+        sub="Shown on printed result reports and PDF exports."
+        actions={[
+          { label: saved ? 'Saved ✓' : 'Save', onClick: handleSave, tone: saved ? 'positive' : 'primary' },
+          { label: 'Back', onClick: onBack },
+        ]}/>
+      <div className="panel" style={{ maxWidth: 520, padding: '20px 24px' }}>
+        <LabeledField label="Lab name"            k="labName"         placeholder="e.g. Acme Regional Laboratory"/>
+        <LabeledField label="CLIA number"          k="labClia"         placeholder="e.g. 12D3456789"/>
+        <LabeledField label="Laboratory director"  k="labDirectorName" placeholder="e.g. Jane Smith, MD"/>
+        <LabeledField label="Phone"                k="labPhone"        placeholder="e.g. (555) 123-4567"/>
+        <LabeledField label="Address"              k="labAddress"      placeholder="e.g. 100 Lab Dr, Suite 1, City, ST 00000"/>
+      </div>
+    </Page>
+  );
+};
+
 // System Setup used to surface "Snapshot & Migration" as a tile that drilled
 // into the legacy AdminPage. Those actions now live in the Manage page header
 // (the AdminCenter > Manage route), so this bucket is empty for the moment.
-// Lab identity / audit retention sub-pages will land here when they ship.
 const SystemSetupPage = ({ onNav }) => (
   <OutreachBucketPage title="System Setup" label="System Setup"
     sub="Lab identity, audit retention. (Snapshot tools moved to Manage.)"
     onNav={onNav}
-    tiles={[]}/>
+    tiles={[
+      { id: 'lab-identity', label: 'Lab Identity', desc: 'Lab name, CLIA, director — shown on result reports', icon: 'IconReports', go: 'lab-identity', permission: 'EDIT_LAB_CONFIG' },
+    ]}/>
 );
 
 const BillingPage = ({ onNav }) => (
@@ -272,6 +327,7 @@ const AdminReportsPage = ({ onNav }) => (
 Object.assign(window, {
   OutreachBucketPage,
   ThisLocationPage, PreferencesPage,
+  LabIdentityPage,
   SystemSetupPage, BillingPage, CustomizationPage, InsurancePage,
   OtherSetupPage, PatientSetupPage, ToxicologyPage,
   ManagePage, MonitorPage, AdminReportsPage,

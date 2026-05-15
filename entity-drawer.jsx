@@ -357,13 +357,18 @@ const ManualResultEntry = ({ specimen, tests, onClose }) => {
   const [saving, setSaving] = useStateED(false);
   const canVerify = hasPermission('VERIFY_RESULT');
 
-  // Auto-flag based on the resolved demographic range. Numeric values get
-  // L / H if outside; non-numeric strings stay flagless (handled by rules
-  // downstream if they need to mark "POSITIVE" or similar as A/AA).
+  // Auto-flag based on critical thresholds (LL/HH) then the resolved
+  // demographic range (L/H). Non-numeric strings stay flagless — downstream
+  // rules handle qualitative results like "POSITIVE" via A/AA if needed.
   const flagFor = (testId, raw) => {
     if (raw === '' || raw == null) return '';
     const v = Number(raw);
     if (isNaN(v)) return '';
+    const t = tests.find(x => x.id === testId);
+    if (t) {
+      if (Number.isFinite(t.criticalLow)  && v < t.criticalLow)  return 'LL';
+      if (Number.isFinite(t.criticalHigh) && v > t.criticalHigh) return 'HH';
+    }
     const r = ranges[testId];
     if (!r) return '';
     if (r.low  != null && v < Number(r.low))  return 'L';
@@ -551,6 +556,7 @@ const OrderOverview = ({ order }) => {
   const location = window.useEntity('locations', order.locationId);
   const specs = window.useEntities('specimens', s => order && s.orderId === order.id);
   const tests = window.useEntities('tests', t => order && order.testIds && order.testIds.includes(t.id));
+  const [showReport, setShowReport] = useStateED(false);
   // Display: prefer locationId → location.name; fall back to free-text facility.
   const facilityDisplay = location
     ? <span><span className="mono" style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>{location.code}</span> <span style={{ marginLeft: 6 }}>{location.name}</span></span>
@@ -627,6 +633,13 @@ const OrderOverview = ({ order }) => {
           </table>
         )}
       </div>
+      <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
+        <button className="btn" data-tone="ghost" onClick={() => setShowReport(true)}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <IconReports size={13}/> Print report
+        </button>
+      </div>
+      {showReport && <window.ResultReportModal orderId={order.id} onClose={() => setShowReport(false)}/>}
     </div>
   );
 };
@@ -708,7 +721,7 @@ const PatientOverview = ({ patient }) => {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(null);
   const [saving, setSaving] = React.useState(false);
-  const startEdit = () => { setDraft({ phone: patient.phone || '', email: patient.email || '', preferredContact: patient.preferredContact || '' }); setEditing(true); };
+  const startEdit = () => { setDraft({ phone: patient.phone || '', email: patient.email || '', preferredContact: patient.preferredContact || '', pregnant: patient.pregnant ?? null }); setEditing(true); };
   const cancel = () => { setDraft(null); setEditing(false); };
   const save = async () => {
     setSaving(true);
@@ -764,12 +777,22 @@ const PatientOverview = ({ patient }) => {
                 <option value="portal">Patient portal</option>
               </select>
             </div>
+            <div style={{ gridColumn: '1 / 3' }}>
+              <div className="section-title" style={{ fontSize: 9, marginBottom: 3 }}>Pregnancy status</div>
+              <select className="input" value={draft.pregnant == null ? '' : String(draft.pregnant)}
+                onChange={e => setDraft({ ...draft, pregnant: e.target.value === '' ? null : e.target.value === 'true' })}>
+                <option value="">Unknown / not recorded</option>
+                <option value="true">Currently pregnant</option>
+                <option value="false">Not pregnant</option>
+              </select>
+            </div>
           </div>
         ) : (
           <FactGrid items={[
             { l: 'Phone',     v: <span className="mono">{patient.phone || '—'}</span> },
             { l: 'Email',     v: <span className="mono">{patient.email || '—'}</span> },
             { l: 'Preferred', v: patient.preferredContact ? <span className="pill" data-tone="info">{patient.preferredContact}</span> : <span style={{ color: 'var(--ink-400)' }}>—</span> },
+            { l: 'Pregnant',  v: patient.pregnant === true ? <span className="pill" data-tone="warn">Pregnant</span> : patient.pregnant === false ? <span style={{ color: 'var(--ink-400)' }}>No</span> : <span style={{ color: 'var(--ink-400)' }}>Unknown</span> },
           ]}/>
         )}
       </div>

@@ -44,6 +44,9 @@ const newPatient = (init = {}) => ({
   // delivery itself follows order.deliveryChannel + client.deliveryChannel
   // overrides — see `delivery-watcher.js`. Empty falls back to client default.
   preferredContact: init.preferredContact || '',  // ''|'phone'|'email'|'mail'|'portal'
+  // null = not asked / unknown; true = currently pregnant; false = confirmed not pregnant.
+  // Used by the patient.pregnant rules condition and reference-range demographic resolver.
+  pregnant: init.pregnant == null ? null : !!init.pregnant,
   createdAt: init.createdAt || Date.now(),
   updatedAt: Date.now(),
 });
@@ -260,6 +263,14 @@ const newTest = (init = {}) => ({
   // Treat as the "any sex, any age, no effective dating" fallback.
   refRangeLow: init.refRangeLow == null ? null : init.refRangeLow,
   refRangeHigh: init.refRangeHigh == null ? null : init.refRangeHigh,
+  // Critical (panic) value thresholds. Values below criticalLow or above
+  // criticalHigh are flagged LL/HH — a notifiable critical that fires the
+  // critical-result escalation chain. `null` means "no critical threshold" —
+  // out-of-range values are flagged L/H only via the reference range bounds.
+  // Set per test in the Test Catalog; evaluated by instrument-sim and manual
+  // result entry at result creation time.
+  criticalLow:  init.criticalLow  == null ? null : Number(init.criticalLow),
+  criticalHigh: init.criticalHigh == null ? null : Number(init.criticalHigh),
   // Demographic-aware ranges. Resolution lives in `reference-ranges.js`:
   //   pickReferenceRange(test, { patient, asOf, method })
   // Each entry shape: see `newReferenceRange` below.
@@ -712,6 +723,12 @@ const __coerceTatRecipientsByPriority = (raw) => {
 };
 const newLabConfig = (init = {}) => ({
   id: LAB_CONFIG_ID,                                      // fixed singleton id
+  // Lab identity — shown on printed result reports and in the System Setup page.
+  labName:          init.labName          || '',
+  labClia:          init.labClia          || '',
+  labDirectorName:  init.labDirectorName  || '',
+  labPhone:         init.labPhone         || '',
+  labAddress:       init.labAddress       || '',
   qcDisabledRules: Array.isArray(init.qcDisabledRules)
     ? init.qcDisabledRules.filter(r => typeof r === 'string')
     : [],

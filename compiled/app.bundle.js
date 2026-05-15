@@ -8349,6 +8349,11 @@ var ManualResultEntry = ({
     if (raw === '' || raw == null) return '';
     var v = Number(raw);
     if (isNaN(v)) return '';
+    var t = tests.find(x => x.id === testId);
+    if (t) {
+      if (Number.isFinite(t.criticalLow) && v < t.criticalLow) return 'LL';
+      if (Number.isFinite(t.criticalHigh) && v > t.criticalHigh) return 'HH';
+    }
     var r = ranges[testId];
     if (!r) return '';
     if (r.low != null && v < Number(r.low)) return 'L';
@@ -8654,6 +8659,7 @@ var OrderOverview = ({
   var location = window.useEntity('locations', order.locationId);
   var specs = window.useEntities('specimens', s => order && s.orderId === order.id);
   var tests = window.useEntities('tests', t => order && order.testIds && order.testIds.includes(t.id));
+  var [showReport, setShowReport] = useStateED(false);
   var facilityDisplay = location ? React.createElement("span", null, React.createElement("span", {
     className: "mono",
     style: {
@@ -8821,7 +8827,27 @@ var OrderOverview = ({
       color: 'var(--ink-300)',
       fontSize: 14
     }
-  }, "\u203A"))))))));
+  }, "\u203A"))))))), React.createElement("div", {
+    style: {
+      marginTop: 20,
+      paddingTop: 16,
+      borderTop: '1px solid var(--line)'
+    }
+  }, React.createElement("button", {
+    className: "btn",
+    "data-tone": "ghost",
+    onClick: () => setShowReport(true),
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6
+    }
+  }, React.createElement(IconReports, {
+    size: 13
+  }), " Print report")), showReport && React.createElement(window.ResultReportModal, {
+    orderId: order.id,
+    onClose: () => setShowReport(false)
+  }));
 };
 var OrderTatBlock = ({
   order
@@ -8955,7 +8981,8 @@ var PatientOverview = ({
     setDraft({
       phone: patient.phone || '',
       email: patient.email || '',
-      preferredContact: patient.preferredContact || ''
+      preferredContact: patient.preferredContact || '',
+      pregnant: patient.pregnant ?? null
     });
     setEditing(true);
   };
@@ -9105,7 +9132,30 @@ var PatientOverview = ({
     value: "mail"
   }, "Mail"), React.createElement("option", {
     value: "portal"
-  }, "Patient portal")))) : React.createElement(FactGrid, {
+  }, "Patient portal"))), React.createElement("div", {
+    style: {
+      gridColumn: '1 / 3'
+    }
+  }, React.createElement("div", {
+    className: "section-title",
+    style: {
+      fontSize: 9,
+      marginBottom: 3
+    }
+  }, "Pregnancy status"), React.createElement("select", {
+    className: "input",
+    value: draft.pregnant == null ? '' : String(draft.pregnant),
+    onChange: e => setDraft({
+      ...draft,
+      pregnant: e.target.value === '' ? null : e.target.value === 'true'
+    })
+  }, React.createElement("option", {
+    value: ""
+  }, "Unknown / not recorded"), React.createElement("option", {
+    value: "true"
+  }, "Currently pregnant"), React.createElement("option", {
+    value: "false"
+  }, "Not pregnant")))) : React.createElement(FactGrid, {
     items: [{
       l: 'Phone',
       v: React.createElement("span", {
@@ -9126,6 +9176,20 @@ var PatientOverview = ({
           color: 'var(--ink-400)'
         }
       }, "\u2014")
+    }, {
+      l: 'Pregnant',
+      v: patient.pregnant === true ? React.createElement("span", {
+        className: "pill",
+        "data-tone": "warn"
+      }, "Pregnant") : patient.pregnant === false ? React.createElement("span", {
+        style: {
+          color: 'var(--ink-400)'
+        }
+      }, "No") : React.createElement("span", {
+        style: {
+          color: 'var(--ink-400)'
+        }
+      }, "Unknown")
     }]
   })), React.createElement("button", {
     className: "btn",
@@ -13710,13 +13774,18 @@ var CorrectResultModal = ({
     return null;
   }, [test, patient]);
   var previewFlag = useMemoOS(() => {
-    if (draft.value === '' || !resolvedRange) return '';
+    if (draft.value === '') return '';
     var v = Number(draft.value);
     if (isNaN(v)) return '';
+    if (test) {
+      if (Number.isFinite(test.criticalLow) && v < test.criticalLow) return 'LL';
+      if (Number.isFinite(test.criticalHigh) && v > test.criticalHigh) return 'HH';
+    }
+    if (!resolvedRange) return '';
     if (resolvedRange.low != null && v < Number(resolvedRange.low)) return 'L';
     if (resolvedRange.high != null && v > Number(resolvedRange.high)) return 'H';
     return '';
-  }, [draft.value, resolvedRange]);
+  }, [draft.value, resolvedRange, test]);
   var valueChanged = String(draft.value) !== (prior.value != null ? String(prior.value) : '');
   var ready = !!draft.value && !!String(draft.reason || '').trim() && valueChanged;
   var submit = async () => {
@@ -13894,7 +13963,12 @@ var CorrectResultModal = ({
     }
   }), previewFlag ? React.createElement("span", {
     className: "pill",
-    "data-tone": previewFlag === 'L' ? 'info' : 'amber',
+    "data-tone": {
+      L: 'info',
+      H: 'amber',
+      LL: 'rust',
+      HH: 'rust'
+    }[previewFlag] || 'amber',
     style: {
       fontSize: 10.5
     }
@@ -16793,6 +16867,8 @@ var TestCatalogPage = ({
       refRangeHigh: '',
       turnaroundMinutes: '',
       referenceRanges: [],
+      criticalLow: '',
+      criticalHigh: '',
       criticalEscalationT1Sec: '',
       criticalEscalationT2Sec: '',
       lotExpirationAmberDays: '',
@@ -16820,6 +16896,8 @@ var TestCatalogPage = ({
       criticalEscalationT1Sec: t.criticalEscalationT1Sec == null ? '' : t.criticalEscalationT1Sec,
       criticalEscalationT2Sec: t.criticalEscalationT2Sec == null ? '' : t.criticalEscalationT2Sec,
       lotExpirationAmberDays: t.lotExpirationAmberDays == null ? '' : t.lotExpirationAmberDays,
+      criticalLow: t.criticalLow == null ? '' : t.criticalLow,
+      criticalHigh: t.criticalHigh == null ? '' : t.criticalHigh,
       deltaCheckPercent: t.deltaCheckPercent == null ? '' : t.deltaCheckPercent,
       deltaCheckAbsolute: t.deltaCheckAbsolute == null ? '' : t.deltaCheckAbsolute,
       active: t.active !== false
@@ -16847,6 +16925,8 @@ var TestCatalogPage = ({
       criticalEscalationT1Sec: parseSec(draft.criticalEscalationT1Sec),
       criticalEscalationT2Sec: parseSec(draft.criticalEscalationT2Sec),
       lotExpirationAmberDays: parseSec(draft.lotExpirationAmberDays),
+      criticalLow: parseSec(draft.criticalLow),
+      criticalHigh: parseSec(draft.criticalHigh),
       deltaCheckPercent: parseSec(draft.deltaCheckPercent),
       deltaCheckAbsolute: parseSec(draft.deltaCheckAbsolute),
       referenceRanges: (draft.referenceRanges || []).map(r => window.schema.newReferenceRange(r))
@@ -17278,6 +17358,52 @@ var TestCatalogPage = ({
       color: 'var(--ink-400)'
     }
   }, "Resolution: most-specific match wins (sex + age + method + effective). If none match, default range is used.")), React.createElement("div", {
+    style: {
+      marginTop: 6,
+      marginBottom: 10,
+      padding: 10,
+      background: 'var(--ivory-50)',
+      border: '1px solid var(--line)',
+      borderRadius: 5
+    }
+  }, React.createElement("div", {
+    className: "section-title",
+    style: {
+      fontSize: 9.5,
+      marginBottom: 6
+    }
+  }, "Critical value thresholds"), React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: 8
+    }
+  }, React.createElement(CatalogField, {
+    label: `Critical low (${draft.units || 'units'})`
+  }, React.createElement("input", {
+    className: "input mono tnum",
+    placeholder: "e.g. 40",
+    value: draft.criticalLow,
+    onChange: e => setDraft({
+      ...draft,
+      criticalLow: e.target.value
+    })
+  })), React.createElement(CatalogField, {
+    label: `Critical high (${draft.units || 'units'})`
+  }, React.createElement("input", {
+    className: "input mono tnum",
+    placeholder: "e.g. 500",
+    value: draft.criticalHigh,
+    onChange: e => setDraft({
+      ...draft,
+      criticalHigh: e.target.value
+    })
+  }))), React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: 'var(--ink-400)'
+    }
+  }, "Panic values flagged LL/HH \u2014 triggers the critical-result escalation chain. Empty = no critical threshold; out-of-range values are flagged L/H only.")), React.createElement("div", {
     style: {
       marginTop: 6,
       marginBottom: 10,
@@ -23402,6 +23528,104 @@ var PreferencesPage = () => {
     className: "empty-sub"
   }, "Default landing tab, notification toggles, default location, time-zone overrides.")));
 };
+var LabIdentityPage = ({
+  onBack
+}) => {
+  var cfg = window.useEntity('lab_config', window.schema && window.schema.LAB_CONFIG_ID);
+  var [form, setForm] = useStateOR({
+    labName: '',
+    labClia: '',
+    labDirectorName: '',
+    labPhone: '',
+    labAddress: ''
+  });
+  var [saved, setSaved] = useStateOR(false);
+  useEffectOR(() => {
+    if (!cfg) return;
+    setForm({
+      labName: cfg.labName || '',
+      labClia: cfg.labClia || '',
+      labDirectorName: cfg.labDirectorName || '',
+      labPhone: cfg.labPhone || '',
+      labAddress: cfg.labAddress || ''
+    });
+  }, [cfg && cfg.id]);
+  var handleSave = async () => {
+    var base = cfg || (window.schema ? window.schema.newLabConfig() : {
+      id: window.schema && window.schema.LAB_CONFIG_ID
+    });
+    await window.db.put('lab_config', {
+      ...base,
+      ...form
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2200);
+  };
+  var LabeledField = ({
+    label,
+    k,
+    placeholder
+  }) => React.createElement("div", {
+    style: {
+      marginBottom: 14
+    }
+  }, React.createElement("label", {
+    style: {
+      display: 'block',
+      fontSize: 11.5,
+      color: 'var(--ink-500)',
+      marginBottom: 4
+    }
+  }, label), React.createElement("input", {
+    className: "input",
+    value: form[k],
+    placeholder: placeholder || '',
+    onChange: e => setForm(f => ({
+      ...f,
+      [k]: e.target.value
+    }))
+  }));
+  return React.createElement(Page, {
+    label: "Lab Identity"
+  }, React.createElement(PageHeader, {
+    title: "Lab Identity",
+    sub: "Shown on printed result reports and PDF exports.",
+    actions: [{
+      label: saved ? 'Saved ✓' : 'Save',
+      onClick: handleSave,
+      tone: saved ? 'positive' : 'primary'
+    }, {
+      label: 'Back',
+      onClick: onBack
+    }]
+  }), React.createElement("div", {
+    className: "panel",
+    style: {
+      maxWidth: 520,
+      padding: '20px 24px'
+    }
+  }, React.createElement(LabeledField, {
+    label: "Lab name",
+    k: "labName",
+    placeholder: "e.g. Acme Regional Laboratory"
+  }), React.createElement(LabeledField, {
+    label: "CLIA number",
+    k: "labClia",
+    placeholder: "e.g. 12D3456789"
+  }), React.createElement(LabeledField, {
+    label: "Laboratory director",
+    k: "labDirectorName",
+    placeholder: "e.g. Jane Smith, MD"
+  }), React.createElement(LabeledField, {
+    label: "Phone",
+    k: "labPhone",
+    placeholder: "e.g. (555) 123-4567"
+  }), React.createElement(LabeledField, {
+    label: "Address",
+    k: "labAddress",
+    placeholder: "e.g. 100 Lab Dr, Suite 1, City, ST 00000"
+  })));
+};
 var SystemSetupPage = ({
   onNav
 }) => React.createElement(OutreachBucketPage, {
@@ -23409,7 +23633,14 @@ var SystemSetupPage = ({
   label: "System Setup",
   sub: "Lab identity, audit retention. (Snapshot tools moved to Manage.)",
   onNav: onNav,
-  tiles: []
+  tiles: [{
+    id: 'lab-identity',
+    label: 'Lab Identity',
+    desc: 'Lab name, CLIA, director — shown on result reports',
+    icon: 'IconReports',
+    go: 'lab-identity',
+    permission: 'EDIT_LAB_CONFIG'
+  }]
 });
 var BillingPage = ({
   onNav
@@ -23586,6 +23817,7 @@ Object.assign(window, {
   OutreachBucketPage,
   ThisLocationPage,
   PreferencesPage,
+  LabIdentityPage,
   SystemSetupPage,
   BillingPage,
   CustomizationPage,
@@ -24869,371 +25101,563 @@ Object.assign(window, {
 // ---- result-report.jsx ----
 var {
   useState: useStateRR,
-  useEffect: useEffectRR,
-  useRef: useRefRR
+  useMemo: useMemoRR
 } = React;
-var RR_FLAG_LABELS = {
-  L: 'Low',
-  H: 'High',
-  LL: 'Critical Low',
-  HH: 'Critical High',
-  A: 'Abnormal',
-  AA: 'Critical Abnormal'
-};
-var rrAgeAt = dob => {
-  if (!dob) return null;
-  var b = new Date(dob);
-  if (isNaN(b)) return null;
-  var n = new Date();
-  var a = n.getFullYear() - b.getFullYear();
-  var m = n.getMonth() - b.getMonth();
-  if (m < 0 || m === 0 && n.getDate() < b.getDate()) a--;
-  return a;
-};
-var rrEsc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-var rrFmtTs = ts => {
+var fmtDateRR = ts => {
   if (!ts) return '—';
-  return new Date(ts).toLocaleString([], {
+  var d = new Date(typeof ts === 'string' ? ts : ts);
+  return d.toLocaleDateString('en-US', {
     year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+};
+var fmtTsRR = ts => {
+  if (!ts) return '—';
+  var d = new Date(typeof ts === 'string' ? ts : ts);
+  return d.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }) + ' ' + d.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false
   });
 };
-var rrFmtDob = dob => {
-  if (!dob) return '—';
-  var d = new Date(dob);
-  if (isNaN(d)) return '—';
-  return d.toLocaleDateString([], {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  });
-};
-var buildReportHtml = ({
-  result,
-  test,
-  specimen,
+var naRR = (v, fb = '—') => v != null && v !== '' ? v : fb;
+var InfoRow = ({
+  label,
+  value
+}) => React.createElement("div", {
+  style: {
+    display: 'flex',
+    gap: 8,
+    marginBottom: 4,
+    alignItems: 'baseline'
+  }
+}, React.createElement("span", {
+  style: {
+    fontSize: 11,
+    color: 'var(--ink-400)',
+    minWidth: 72,
+    flexShrink: 0
+  }
+}, label), React.createElement("span", {
+  style: {
+    fontSize: 12,
+    color: 'var(--ink-900)',
+    flex: 1
+  }
+}, value));
+var ReportPreview = ({
   order,
   patient,
-  client
+  results,
+  testById,
+  specimens,
+  labName,
+  labClia,
+  labDirector,
+  labPhone,
+  labAddress,
+  reportStatus,
+  reportedAt
 }) => {
-  var labName = window.schema && window.schema.LAB_NAME || 'Lattice LIS';
-  var pt = patient || {};
-  var sp = specimen || {};
-  var or = order || {};
-  var ts = test || {};
-  var cl = client || {};
-  var age = rrAgeAt(pt.dateOfBirth);
-  var ageStr = age != null ? `, ${age} y` : '';
-  var sexStr = pt.sex ? `, ${pt.sex}` : '';
-  var dobStr = rrFmtDob(pt.dateOfBirth);
-  var patientName = [pt.lastName, pt.firstName].filter(Boolean).join(', ') || '—';
-  var mrn = pt.mrn || '—';
-  var specimenType = sp.specimenType || sp.type || '—';
-  var container = sp.containerType || sp.container || '—';
-  var collected = rrFmtTs(sp.collectedAt || sp.receivedAt);
-  var received = rrFmtTs(sp.receivedAt);
-  var accession = sp.accessionNumber || sp.accession || '—';
-  var priority = or.priority || '—';
-  var ordered = rrFmtTs(or.createdAt || or.orderedAt);
-  var clientName = cl.name || or.clientName || '—';
-  var facility = or.facility || cl.facility || '—';
-  var testCode = ts.code || result.testCode || '—';
-  var testName = ts.name || result.testName || testCode;
-  var loincCode = ts.loincCode ? ` (LOINC ${rrEsc(ts.loincCode)})` : '';
-  var value = result.value != null ? String(result.value) : '—';
-  var units = result.units || ts.units || '';
-  var refRange = result.referenceRange || ts.referenceRange || '—';
-  var flag = result.flag || '';
-  var flagLabel = RR_FLAG_LABELS[flag] || flag || '';
-  var isCritical = flag === 'LL' || flag === 'HH' || flag === 'AA';
-  var isAbnormal = flag && !isCritical;
-  var status = result.status || '—';
-  var verifiedBy = result.verifiedBy || '—';
-  var verifiedAt = rrFmtTs(result.verifiedAt);
-  var releasedBy = result.releasedBy || verifiedBy;
-  var releasedAt = rrFmtTs(result.releasedAt || result.verifiedAt);
-  var isCorrected = !!result.corrections && result.corrections.length > 0;
-  var correctionNote = isCorrected ? `Corrected result. Original value: ${rrEsc(result.corrections[result.corrections.length - 1].previousValue || '—')}.` + (result.corrections[result.corrections.length - 1].reason ? ` Reason: ${rrEsc(result.corrections[result.corrections.length - 1].reason)}` : '') : '';
-  var comments = result.comment || result.comments || '';
-  var flagCell = flag ? `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:600;background:${isCritical ? '#fde8e8' : '#fff7e6'};color:${isCritical ? '#c0392b' : '#b45309'};">${rrEsc(flagLabel)}</span>` : '<span style="color:#999;">—</span>';
-  var correctionBlock = isCorrected ? `
-    <div style="margin-top:14px;padding:10px 14px;background:#fffbeb;border:1px solid #f59e0b;border-radius:4px;">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#b45309;margin-bottom:4px;">Corrected Result</div>
-      <div style="font-size:12px;color:#92400e;">${rrEsc(correctionNote)}</div>
-    </div>` : '';
-  var commentsBlock = comments ? `
-    <div style="margin-top:14px;">
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#555;margin-bottom:5px;">Comments / Interpretation</div>
-      <div style="font-size:12px;color:#222;line-height:1.55;white-space:pre-wrap;">${rrEsc(comments)}</div>
-    </div>` : '';
-  var version = window.__LIS_VERSION || '';
-  return `<!doctype html>
-<html lang="en">
+  var patientName = [patient.lastName, patient.firstName].filter(Boolean).join(', ') || '—';
+  var patientAge = patient.dob ? Math.floor((Date.now() - new Date(patient.dob).getTime()) / (365.25 * 24 * 3600 * 1000)) : null;
+  var dobLine = patient.dob ? fmtDateRR(new Date(patient.dob).getTime()) + (patientAge != null ? ` (${patientAge}y)` : '') : '—';
+  return React.createElement("div", {
+    style: {
+      background: '#fff',
+      border: '1px solid var(--line)',
+      borderRadius: 6,
+      fontFamily: 'Geist, ui-sans-serif, system-ui, sans-serif',
+      fontSize: 12,
+      color: '#1A1917',
+      overflow: 'hidden'
+    }
+  }, React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      padding: '14px 20px',
+      background: 'var(--ivory-100)',
+      borderBottom: '2px solid var(--line-strong)'
+    }
+  }, React.createElement("div", null, labName ? React.createElement("div", {
+    style: {
+      fontSize: 15,
+      fontWeight: 700
+    }
+  }, labName) : React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontStyle: 'italic',
+      color: 'var(--ink-400)'
+    }
+  }, "(Lab name not configured \u2014 see System Setup \u2192 Lab Identity)"), labAddress && React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--ink-500)',
+      marginTop: 2
+    }
+  }, labAddress), labPhone && React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--ink-500)'
+    }
+  }, labPhone)), React.createElement("div", {
+    style: {
+      textAlign: 'right'
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 700,
+      letterSpacing: 1
+    }
+  }, "LAB REPORT"), labClia && React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: 'var(--ink-500)',
+      marginTop: 2
+    }
+  }, "CLIA: ", labClia), React.createElement("div", {
+    style: {
+      marginTop: 6
+    }
+  }, React.createElement("span", {
+    style: {
+      fontSize: 10,
+      padding: '2px 8px',
+      borderRadius: 999,
+      fontWeight: 700,
+      background: reportStatus === 'FINAL' ? '#d1fae5' : '#fef3c7',
+      color: reportStatus === 'FINAL' ? '#065f46' : '#92400e'
+    }
+  }, reportStatus)))), React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      borderBottom: '1px solid var(--line)'
+    }
+  }, React.createElement("div", {
+    style: {
+      padding: '12px 20px',
+      borderRight: '1px solid var(--line)'
+    }
+  }, React.createElement("div", {
+    className: "section-title",
+    style: {
+      fontSize: 10,
+      marginBottom: 8
+    }
+  }, "Patient"), React.createElement(InfoRow, {
+    label: "Name",
+    value: patientName
+  }), React.createElement(InfoRow, {
+    label: "DOB",
+    value: dobLine
+  }), React.createElement(InfoRow, {
+    label: "Sex",
+    value: naRR(patient.sex)
+  }), React.createElement(InfoRow, {
+    label: "MRN",
+    value: React.createElement("span", {
+      className: "mono",
+      style: {
+        fontSize: 11.5
+      }
+    }, naRR(patient.mrn))
+  })), React.createElement("div", {
+    style: {
+      padding: '12px 20px'
+    }
+  }, React.createElement("div", {
+    className: "section-title",
+    style: {
+      fontSize: 10,
+      marginBottom: 8
+    }
+  }, "Order"), React.createElement(InfoRow, {
+    label: "Order #",
+    value: React.createElement("span", {
+      className: "mono",
+      style: {
+        fontSize: 11.5
+      }
+    }, naRR(order.orderNumber))
+  }), React.createElement(InfoRow, {
+    label: "Priority",
+    value: (order.priority || '—').toUpperCase()
+  }), React.createElement(InfoRow, {
+    label: "Collected",
+    value: React.createElement("span", {
+      className: "mono",
+      style: {
+        fontSize: 11
+      }
+    }, fmtTsRR(order.collectedAt))
+  }), React.createElement(InfoRow, {
+    label: "Received",
+    value: React.createElement("span", {
+      className: "mono",
+      style: {
+        fontSize: 11
+      }
+    }, fmtTsRR(order.receivedAt))
+  }), order.diagnosisCodes && order.diagnosisCodes.length > 0 && React.createElement(InfoRow, {
+    label: "Dx",
+    value: order.diagnosisCodes.join(', ')
+  }))), React.createElement("div", {
+    style: {
+      padding: '12px 20px'
+    }
+  }, React.createElement("div", {
+    className: "section-title",
+    style: {
+      fontSize: 10,
+      marginBottom: 8
+    }
+  }, "Results"), results.length === 0 ? React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: 'var(--ink-400)',
+      fontStyle: 'italic'
+    }
+  }, "No results on this order yet.") : React.createElement("table", {
+    className: "tbl",
+    style: {
+      fontSize: 12
+    }
+  }, React.createElement("thead", null, React.createElement("tr", null, React.createElement("th", null, "Test"), React.createElement("th", null, "Result"), React.createElement("th", null, "Units"), React.createElement("th", null, "Reference range"), React.createElement("th", {
+    style: {
+      textAlign: 'center'
+    }
+  }, "Flag"), React.createElement("th", null, "Status"))), React.createElement("tbody", null, results.map(r => {
+    var t = testById[r.testId] || {};
+    var critical = r.flag && (r.flag === 'HH' || r.flag === 'LL' || r.flag === 'Critical');
+    var abnormal = r.flag && ['H', 'L', 'A'].includes(r.flag);
+    var refRange = r.refRangeLow != null && r.refRangeHigh != null ? `${r.refRangeLow} – ${r.refRangeHigh}` : '—';
+    return React.createElement("tr", {
+      key: r.id,
+      style: {
+        background: critical ? 'var(--rust-soft)' : 'transparent'
+      }
+    }, React.createElement("td", {
+      style: {
+        fontWeight: 500
+      }
+    }, t.name || t.code || '—'), React.createElement("td", {
+      className: "mono",
+      style: {
+        fontWeight: critical ? 700 : 400,
+        color: critical ? 'var(--rust)' : abnormal ? 'var(--amber)' : 'inherit'
+      }
+    }, r.value != null ? r.value : '—'), React.createElement("td", {
+      style: {
+        color: 'var(--ink-400)'
+      }
+    }, r.units || t.units || '—'), React.createElement("td", {
+      className: "mono",
+      style: {
+        fontSize: 11,
+        color: 'var(--ink-500)'
+      }
+    }, refRange), React.createElement("td", {
+      style: {
+        textAlign: 'center',
+        fontWeight: 700,
+        color: critical ? 'var(--rust)' : abnormal ? 'var(--amber)' : 'var(--ink-300)'
+      }
+    }, r.flag || '—'), React.createElement("td", {
+      style: {
+        color: 'var(--ink-400)',
+        fontSize: 11
+      }
+    }, r.status || '—'));
+  })))), specimens.length > 0 && React.createElement("div", {
+    style: {
+      padding: '12px 20px',
+      borderTop: '1px solid var(--line)',
+      background: 'var(--ivory-50)'
+    }
+  }, React.createElement("div", {
+    className: "section-title",
+    style: {
+      fontSize: 10,
+      marginBottom: 8
+    }
+  }, "Specimens"), specimens.map(s => React.createElement("div", {
+    key: s.id,
+    style: {
+      fontSize: 11.5,
+      color: 'var(--ink-600)',
+      marginBottom: 4
+    }
+  }, React.createElement("span", {
+    className: "mono",
+    style: {
+      color: 'var(--ink-900)'
+    }
+  }, s.accessionNumber || s.barcode || s.id.slice(-6)), React.createElement("span", {
+    style: {
+      margin: '0 8px',
+      color: 'var(--line-strong)'
+    }
+  }, "\xB7"), s.type || '—', React.createElement("span", {
+    style: {
+      margin: '0 8px',
+      color: 'var(--line-strong)'
+    }
+  }, "\xB7"), s.container || '—', s.collectedAt && React.createElement("span", null, " \xB7 Coll ", fmtDateRR(s.collectedAt)), s.receivedAt && React.createElement("span", null, " \xB7 Rec'd ", fmtDateRR(s.receivedAt)), s.condition && s.condition !== 'ACCEPTABLE' && React.createElement("span", {
+    style: {
+      color: 'var(--amber)',
+      marginLeft: 8
+    }
+  }, "\u26A0 ", s.condition.toLowerCase().replace(/_/g, ' '))))), React.createElement("div", {
+    style: {
+      padding: '10px 20px',
+      borderTop: '1px solid var(--line)',
+      background: 'var(--ivory-100)',
+      fontSize: 10.5,
+      color: 'var(--ink-500)',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'baseline'
+    }
+  }, React.createElement("div", null, labDirector && React.createElement("span", null, "Lab Director: ", labDirector), labDirector && labClia && React.createElement("span", {
+    style: {
+      margin: '0 8px'
+    }
+  }, "\xB7"), labClia && React.createElement("span", null, "CLIA: ", labClia), !labDirector && !labClia && React.createElement("span", {
+    style: {
+      fontStyle: 'italic'
+    }
+  }, "(Lab identity not configured)")), React.createElement("div", {
+    style: {
+      textAlign: 'right'
+    }
+  }, reportedAt > 0 && React.createElement("div", null, "Reported: ", fmtTsRR(reportedAt)), React.createElement("div", {
+    style: {
+      color: 'var(--rust)',
+      fontWeight: 600,
+      fontSize: 10,
+      marginTop: 2
+    }
+  }, "PROTOTYPE \u2014 NOT FOR CLINICAL USE"))));
+};
+var buildReportHtml = ({
+  order,
+  patient,
+  results,
+  testById,
+  specimens,
+  labName,
+  labClia,
+  labDirector,
+  labPhone,
+  labAddress,
+  reportStatus,
+  reportedAt
+}) => {
+  var na = (v, fb = '—') => v != null && v !== '' ? v : fb;
+  var patientName = [patient.lastName, patient.firstName].filter(Boolean).join(', ') || '—';
+  var patientAge = patient.dob ? Math.floor((Date.now() - new Date(patient.dob).getTime()) / (365.25 * 24 * 3600 * 1000)) : null;
+  var dobLine = patient.dob ? fmtDateRR(new Date(patient.dob).getTime()) + (patientAge != null ? ` (${patientAge}y)` : '') : '—';
+  var resultRows = (results || []).map(r => {
+    var t = testById[r.testId] || {};
+    var critical = r.flag && (r.flag === 'HH' || r.flag === 'LL' || r.flag === 'Critical');
+    var abnormal = r.flag && ['H', 'L', 'A'].includes(r.flag);
+    var refRange = r.refRangeLow != null && r.refRangeHigh != null ? `${r.refRangeLow} – ${r.refRangeHigh}` : '—';
+    var valueColor = critical ? '#dc2626' : abnormal ? '#d97706' : '#1A1917';
+    var flagColor = critical ? '#dc2626' : abnormal ? '#d97706' : '#9ca3af';
+    var rowBg = critical ? '#fef2f2' : 'transparent';
+    return `
+      <tr style="border-bottom:1px solid #e8e3db;background:${rowBg};">
+        <td style="padding:5px 8px;font-weight:500;">${t.name || t.code || '—'}</td>
+        <td style="padding:5px 8px;font-family:monospace;font-weight:${critical ? 700 : 400};color:${valueColor};">${r.value != null ? r.value : '—'}</td>
+        <td style="padding:5px 8px;color:#6b7280;">${r.units || t.units || '—'}</td>
+        <td style="padding:5px 8px;font-family:monospace;font-size:11px;color:#6b7280;">${refRange}</td>
+        <td style="padding:5px 8px;text-align:center;font-weight:700;color:${flagColor};">${r.flag || '—'}</td>
+        <td style="padding:5px 8px;color:#9ca3af;font-size:11px;">${r.status || '—'}</td>
+      </tr>`;
+  }).join('');
+  var specimenRows = (specimens || []).map(s => {
+    var condNote = s.condition && s.condition !== 'ACCEPTABLE' ? `<span style="color:#d97706;margin-left:8px;">⚠ ${s.condition.toLowerCase().replace(/_/g, ' ')}</span>` : '';
+    return `<div style="font-size:11.5px;color:#374151;margin-bottom:4px;">
+      <span style="font-family:monospace;">${s.accessionNumber || s.barcode || s.id.slice(-6)}</span>
+      · ${s.type || '—'} · ${s.container || '—'}
+      ${s.collectedAt ? ` · Coll ${fmtDateRR(s.collectedAt)}` : ''}
+      ${s.receivedAt ? ` · Rec'd ${fmtDateRR(s.receivedAt)}` : ''}
+      ${condNote}
+    </div>`;
+  }).join('');
+  var dxRow = order.diagnosisCodes && order.diagnosisCodes.length ? `<tr><td style="padding:2px 0;color:#9ca3af;width:74px;">Dx</td><td>${order.diagnosisCodes.join(', ')}</td></tr>` : '';
+  var reportedLine = reportedAt > 0 ? `<div>Reported: ${fmtTsRR(reportedAt)}</div>` : '';
+  var labFooterLeft = [labDirector ? `Lab Director: ${labDirector}` : null, labClia ? `CLIA: ${labClia}` : null].filter(Boolean).join(' · ') || '<em>(Lab identity not configured)</em>';
+  var labHeaderHtml = labName ? `<div style="font-size:15px;font-weight:700;">${labName}</div>
+       ${labAddress ? `<div style="font-size:11px;color:#6b7280;margin-top:2px;">${labAddress}</div>` : ''}
+       ${labPhone ? `<div style="font-size:11px;color:#6b7280;">${labPhone}</div>` : ''}` : `<div style="font-size:12px;font-style:italic;color:#9ca3af;">(Lab name not configured — see System Setup → Lab Identity)</div>`;
+  var statusBg = reportStatus === 'FINAL' ? '#d1fae5' : '#fef3c7';
+  var statusClr = reportStatus === 'FINAL' ? '#065f46' : '#92400e';
+  return `<!DOCTYPE html>
+<html>
 <head>
-<meta charset="utf-8">
-<title>Result Report — ${rrEsc(testName)} — ${rrEsc(patientName)}</title>
-<style>
-  @page { size: letter portrait; margin: 18mm 16mm; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: 'Arial', sans-serif; font-size: 12px; color: #111; background: #fff; }
-  h1 { margin: 0; font-size: 15px; font-weight: 700; color: #111; }
-  h2 { margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #555; }
-  table { width: 100%; border-collapse: collapse; }
-  th { background: #f5f5f0; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #555; padding: 6px 10px; border: 1px solid #ddd; text-align: left; }
-  td { padding: 7px 10px; border: 1px solid #ddd; font-size: 12px; vertical-align: top; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
-  .card { border: 1px solid #ddd; border-radius: 4px; padding: 10px 14px; }
-  .card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin-bottom: 6px; }
-  .card-row { display: flex; gap: 8px; margin-bottom: 3px; }
-  .card-key { font-size: 11px; color: #555; min-width: 80px; flex-shrink: 0; }
-  .card-val { font-size: 11.5px; color: #111; font-weight: 500; }
-  .divider { border: none; border-top: 1px solid #ddd; margin: 14px 0; }
-  .footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd; font-size: 10px; color: #999; display: flex; justify-content: space-between; }
-  .proto-badge { display: inline-block; padding: 2px 8px; background: #fde8e8; color: #c0392b; border: 1px solid #f5a0a0; border-radius: 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; vertical-align: middle; margin-left: 10px; }
-  @media print {
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  }
-</style>
+  <meta charset="utf-8">
+  <title>Lab Report — ${na(order.orderNumber)}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #1A1917; background: #fff; }
+    @media print { body { margin: 0; } @page { margin: 1.2cm; size: letter portrait; } }
+    .section-label { font-size: 10px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    table.results-tbl { width: 100%; border-collapse: collapse; }
+    table.results-tbl th { text-align: left; padding: 4px 8px; font-size: 10.5px; font-weight: 600; color: #9ca3af; border-bottom: 1px solid #e8e3db; }
+    table.info-tbl td { padding: 2px 0; vertical-align: baseline; }
+  </style>
 </head>
 <body>
-
-<!-- Header -->
-<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;">
-  <div>
-    <h1>${rrEsc(labName)} <span class="proto-badge">PROTOTYPE — Not for clinical use</span></h1>
-    <div style="font-size:11px;color:#555;margin-top:3px;">Laboratory Result Report</div>
+<div style="max-width:720px;margin:0 auto;padding:24px 20px;">
+  <!-- Header -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:12px;border-bottom:2px solid #1A1917;margin-bottom:16px;">
+    <div>${labHeaderHtml}</div>
+    <div style="text-align:right;">
+      <div style="font-size:13px;font-weight:700;letter-spacing:1px;">LAB REPORT</div>
+      ${labClia ? `<div style="font-size:11px;color:#6b7280;margin-top:2px;">CLIA: ${labClia}</div>` : ''}
+      <div style="margin-top:6px;display:inline-block;font-size:10px;font-weight:700;color:${statusClr};background:${statusBg};padding:2px 10px;border-radius:999px;">${reportStatus}</div>
+    </div>
   </div>
-  <div style="text-align:right;font-size:11px;color:#555;">
-    <div>Report generated: ${rrEsc(rrFmtTs(Date.now()))}</div>
-    <div>Status: <strong>${rrEsc(status)}</strong>${isCorrected ? ' · <strong style="color:#b45309;">CORRECTED</strong>' : ''}</div>
-  </div>
-</div>
 
-<hr class="divider" style="margin-top:0;">
-
-<!-- Patient + Report Info -->
-<div class="grid2">
-  <div class="card">
-    <div class="card-label">Patient</div>
-    <div class="card-row"><span class="card-key">Name</span><span class="card-val">${rrEsc(patientName)}</span></div>
-    <div class="card-row"><span class="card-key">MRN</span><span class="card-val">${rrEsc(mrn)}</span></div>
-    <div class="card-row"><span class="card-key">DOB</span><span class="card-val">${rrEsc(dobStr)}${ageStr ? ' (' + rrEsc(ageStr.replace(/^, /, '')) + ')' : ''}</span></div>
-    <div class="card-row"><span class="card-key">Sex</span><span class="card-val">${rrEsc(sexStr.replace(/^, /, '')) || '—'}</span></div>
+  <!-- Patient + Order -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #e8e3db;">
+    <div>
+      <div class="section-label">Patient</div>
+      <table class="info-tbl" style="font-size:12px;">
+        <tr><td style="color:#9ca3af;width:74px;">Name</td><td style="font-weight:500;">${patientName}</td></tr>
+        <tr><td style="color:#9ca3af;">DOB</td><td>${dobLine}</td></tr>
+        <tr><td style="color:#9ca3af;">Sex</td><td>${na(patient.sex)}</td></tr>
+        <tr><td style="color:#9ca3af;">MRN</td><td style="font-family:monospace;">${na(patient.mrn)}</td></tr>
+      </table>
+    </div>
+    <div>
+      <div class="section-label">Order</div>
+      <table class="info-tbl" style="font-size:12px;">
+        <tr><td style="color:#9ca3af;width:74px;">Order #</td><td style="font-family:monospace;">${na(order.orderNumber)}</td></tr>
+        <tr><td style="color:#9ca3af;">Priority</td><td>${(order.priority || '—').toUpperCase()}</td></tr>
+        <tr><td style="color:#9ca3af;">Collected</td><td style="font-family:monospace;">${fmtTsRR(order.collectedAt)}</td></tr>
+        <tr><td style="color:#9ca3af;">Received</td><td style="font-family:monospace;">${fmtTsRR(order.receivedAt)}</td></tr>
+        ${dxRow}
+      </table>
+    </div>
   </div>
-  <div class="card">
-    <div class="card-label">Report</div>
-    <div class="card-row"><span class="card-key">Accession</span><span class="card-val">${rrEsc(accession)}</span></div>
-    <div class="card-row"><span class="card-key">Order #</span><span class="card-val">${rrEsc(or.id || '—')}</span></div>
-    <div class="card-row"><span class="card-key">Verified</span><span class="card-val">${rrEsc(verifiedAt)}</span></div>
-    <div class="card-row"><span class="card-key">Released</span><span class="card-val">${rrEsc(releasedAt)}</span></div>
-  </div>
-</div>
 
-<!-- Specimen + Order -->
-<div class="grid2">
-  <div class="card">
-    <div class="card-label">Specimen</div>
-    <div class="card-row"><span class="card-key">Type</span><span class="card-val">${rrEsc(specimenType)}</span></div>
-    <div class="card-row"><span class="card-key">Container</span><span class="card-val">${rrEsc(container)}</span></div>
-    <div class="card-row"><span class="card-key">Collected</span><span class="card-val">${rrEsc(collected)}</span></div>
-    <div class="card-row"><span class="card-key">Received</span><span class="card-val">${rrEsc(received)}</span></div>
+  <!-- Results -->
+  <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #e8e3db;">
+    <div class="section-label">Results</div>
+    ${results.length === 0 ? '<div style="font-style:italic;color:#9ca3af;">No results on this order yet.</div>' : `<table class="results-tbl"><thead><tr>
+          <th>Test</th><th>Result</th><th>Units</th><th>Reference range</th>
+          <th style="text-align:center;">Flag</th><th>Status</th>
+         </tr></thead><tbody>${resultRows}</tbody></table>`}
   </div>
-  <div class="card">
-    <div class="card-label">Order</div>
-    <div class="card-row"><span class="card-key">Priority</span><span class="card-val">${rrEsc(priority)}</span></div>
-    <div class="card-row"><span class="card-key">Ordered</span><span class="card-val">${rrEsc(ordered)}</span></div>
-    <div class="card-row"><span class="card-key">Client</span><span class="card-val">${rrEsc(clientName)}</span></div>
-    <div class="card-row"><span class="card-key">Facility</span><span class="card-val">${rrEsc(facility)}</span></div>
-  </div>
-</div>
 
-<!-- Result table -->
-<div style="margin-bottom:14px;">
-  <h2>Results</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Test</th>
-        <th>Value</th>
-        <th>Units</th>
-        <th>Reference Range</th>
-        <th>Flag</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>
-          <div style="font-weight:600;">${rrEsc(testName)}</div>
-          <div style="font-size:10.5px;color:#666;">${rrEsc(testCode)}${loincCode}</div>
-        </td>
-        <td style="font-weight:700;font-size:13px;${isCritical ? 'color:#c0392b;' : isAbnormal ? 'color:#b45309;' : ''}">${rrEsc(value)}</td>
-        <td>${rrEsc(units)}</td>
-        <td>${rrEsc(refRange)}</td>
-        <td>${flagCell}</td>
-        <td><span style="font-size:11px;">${rrEsc(status)}</span></td>
-      </tr>
-    </tbody>
-  </table>
-</div>
+  ${specimens.length > 0 ? `
+  <!-- Specimens -->
+  <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #e8e3db;">
+    <div class="section-label">Specimens</div>
+    ${specimenRows}
+  </div>` : ''}
 
-${commentsBlock}
-${correctionBlock}
-
-<!-- Verification block -->
-<div style="margin-top:14px;padding:10px 14px;background:#f5f5f0;border-radius:4px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-  <div>
-    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#888;margin-bottom:4px;">Verified by</div>
-    <div style="font-size:12px;font-weight:500;">${rrEsc(verifiedBy)}</div>
-    <div style="font-size:11px;color:#555;">${rrEsc(verifiedAt)}</div>
-  </div>
-  <div>
-    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#888;margin-bottom:4px;">Released by</div>
-    <div style="font-size:12px;font-weight:500;">${rrEsc(releasedBy)}</div>
-    <div style="font-size:11px;color:#555;">${rrEsc(releasedAt)}</div>
+  <!-- Footer -->
+  <div style="font-size:10.5px;color:#6b7280;display:flex;justify-content:space-between;align-items:baseline;">
+    <div>${labFooterLeft}</div>
+    <div style="text-align:right;">
+      ${reportedLine}
+      <div style="color:#dc2626;font-weight:700;font-size:10px;margin-top:2px;">PROTOTYPE — NOT FOR CLINICAL USE</div>
+    </div>
   </div>
 </div>
-
-<div class="footer">
-  <span>CONFIDENTIAL — For authorized recipient use only. This report is a prototype generated by Lattice LIS and must not be used for clinical decision-making.</span>
-  <span>${version ? 'v' + rrEsc(version) : ''}</span>
-</div>
-
-<script>
-window.onload = function() {
-  window.print();
-  window.onafterprint = function() { window.close(); };
-};
-</script>
 </body>
 </html>`;
 };
-var ReportPreview = ({
-  data
+var ResultReportModal = ({
+  orderId,
+  onClose
 }) => {
-  var iframeRef = useRefRR(null);
-  useEffectRR(() => {
-    if (!iframeRef.current || !data) return;
-    var html = buildReportHtml(data);
-    var doc = iframeRef.current.contentDocument || iframeRef.current.contentWindow.document;
-    doc.open();
-    doc.write(html);
-    doc.close();
-  }, [data]);
-  if (!data) return null;
-  return React.createElement("div", {
-    style: {
-      position: 'relative',
-      background: '#e5e5e5',
-      borderRadius: 4,
-      overflow: 'hidden',
-      flex: 1,
-      minHeight: 0
-    }
-  }, React.createElement("iframe", {
-    ref: iframeRef,
-    title: "Report preview",
-    style: {
-      width: '100%',
-      height: '100%',
-      border: 'none',
-      display: 'block'
-    }
-  }));
-};
-var ResultReportModal = () => {
-  var [resultId, setResultId] = useStateRR(null);
-  var [data, setData] = useStateRR(null);
-  var [loading, setLoading] = useStateRR(false);
-  var [err, setErr] = useStateRR(null);
-  useEffectRR(() => {
-    window.openResultReport = id => {
-      setResultId(id || null);
-      setData(null);
-      setErr(null);
-    };
-    return () => {
-      delete window.openResultReport;
-    };
-  }, []);
-  useEffectRR(() => {
-    if (!resultId) return;
-    var cancelled = false;
-    setLoading(true);
-    setErr(null);
-    (async () => {
-      try {
-        var _result = await window.db.get('results', resultId);
-        if (!_result) throw new Error('Result not found');
-        var [_test, specimen] = await Promise.all([_result.testId ? window.db.get('tests', _result.testId) : Promise.resolve(null), _result.specimenId ? window.db.get('specimens', _result.specimenId) : Promise.resolve(null)]);
-        var order = specimen && specimen.orderId ? await window.db.get('orders', specimen.orderId) : _result.orderId ? await window.db.get('orders', _result.orderId) : null;
-        var [patient, client] = await Promise.all([order && order.patientId ? window.db.get('patients', order.patientId) : Promise.resolve(null), order && order.clientId ? window.db.get('clients', order.clientId) : Promise.resolve(null)]);
-        if (!cancelled) {
-          setData({
-            result: _result,
-            test: _test,
-            specimen,
-            order,
-            patient,
-            client
-          });
-          setLoading(false);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setErr(e.message || String(e));
-          setLoading(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [resultId]);
+  var order = window.useEntity('orders', orderId);
+  var patient = window.useEntity('patients', order && order.patientId);
+  var labCfg = window.useEntity('lab_config', window.schema && window.schema.LAB_CONFIG_ID);
+  var allResults = window.useEntities('results');
+  var allTests = window.useEntities('tests');
+  var allSpecimens = window.useEntities('specimens');
+  var results = useMemoRR(() => (allResults || []).filter(r => r.orderId === orderId && !r.supersededByResultId && r.status !== 'cancelled'), [allResults, orderId]);
+  var specimens = useMemoRR(() => (allSpecimens || []).filter(s => s.orderId === orderId), [allSpecimens, orderId]);
+  var testById = useMemoRR(() => Object.fromEntries((allTests || []).map(t => [t.id, t])), [allTests]);
+  var labName = labCfg && labCfg.labName;
+  var labClia = labCfg && labCfg.labClia;
+  var labDirector = labCfg && labCfg.labDirectorName;
+  var labPhone = labCfg && labCfg.labPhone;
+  var labAddress = labCfg && labCfg.labAddress;
+  var isAllFinal = results.length > 0 && results.every(r => r.status === 'final' || r.status === 'corrected');
+  var reportStatus = isAllFinal ? 'FINAL' : 'PRELIMINARY';
+  var reportedAt = results.reduce((max, r) => Math.max(max, r.releasedAt || r.verifiedAt || r.createdAt || 0), 0);
   var printReport = () => {
-    if (!data) return;
-    var html = buildReportHtml(data);
-    var w = window.open('', '_blank', 'width=820,height=1080');
-    if (!w) {
-      window.alert('Pop-up blocked — allow pop-ups for this site to print.');
+    if (!order || !patient) return;
+    var html = buildReportHtml({
+      order,
+      patient,
+      results,
+      testById,
+      specimens,
+      labName,
+      labClia,
+      labDirector,
+      labPhone,
+      labAddress,
+      reportStatus,
+      reportedAt
+    });
+    var win = window.open('', '_blank', 'width=860,height=1100,resizable=yes,scrollbars=yes');
+    if (!win) {
+      window.safetyNotice && window.safetyNotice({
+        tone: 'info',
+        title: 'Pop-up blocked',
+        message: 'Allow pop-ups for this page and try again.'
+      });
       return;
     }
-    w.document.write(html);
-    w.document.close();
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => {
+      try {
+        win.print();
+      } catch (_) {}
+    }, 300);
   };
-  var close = () => {
-    setResultId(null);
-    setData(null);
-    setErr(null);
-  };
-  if (!resultId) return null;
-  var result = data && data.result;
-  var test = data && data.test;
-  var titleStr = result ? `${test ? test.name || test.code : result.testCode || 'Result'} — ${result.value != null ? result.value : '—'} ${result.units || ''}` : 'Loading…';
+  var loading = !order || !patient;
   return React.createElement("div", {
-    className: "modal-backdrop",
-    style: {
-      zIndex: 2100
-    }
+    className: "modal-backdrop backdrop-in",
+    onClick: e => e.target === e.currentTarget && onClose()
   }, React.createElement("div", {
-    className: "modal",
+    className: "modal scale-in",
     style: {
-      width: 860,
-      maxWidth: '95vw',
-      height: '88vh',
+      maxWidth: 740,
+      width: '92vw',
+      maxHeight: '90vh',
       display: 'flex',
-      flexDirection: 'column'
+      flexDirection: 'column',
+      overflow: 'hidden',
+      padding: 0
     }
   }, React.createElement("div", {
-    className: "modal-header",
     style: {
       display: 'flex',
       alignItems: 'center',
       gap: 10,
+      padding: '12px 20px',
+      borderBottom: '1px solid var(--line)',
       flexShrink: 0
     }
   }, React.createElement("div", {
@@ -25241,108 +25665,67 @@ var ResultReportModal = () => {
       flex: 1
     }
   }, React.createElement("div", {
-    className: "modal-title"
-  }, "Print Result Report"), result && React.createElement("div", {
+    style: {
+      fontWeight: 600,
+      fontSize: 14
+    }
+  }, "Lab Report Preview"), order && patient ? React.createElement("div", {
     style: {
       fontSize: 11.5,
       color: 'var(--ink-400)',
-      marginTop: 2
+      marginTop: 1
     }
-  }, titleStr)), React.createElement("button", {
-    className: "btn",
-    "data-size": "sm",
-    "data-variant": "ghost",
-    onClick: close,
-    title: "Close"
-  }, "\u2715")), React.createElement("div", {
+  }, order.orderNumber, " \xB7 ", [patient.lastName, patient.firstName].filter(Boolean).join(', ')) : React.createElement("div", {
     style: {
-      flex: 1,
-      minHeight: 0,
-      display: 'flex',
-      flexDirection: 'column',
-      padding: '0 16px 16px'
-    }
-  }, loading && React.createElement("div", {
-    style: {
-      flex: 1,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
+      fontSize: 11.5,
       color: 'var(--ink-400)',
-      fontSize: 13
+      marginTop: 1
     }
-  }, "Loading\u2026"), err && React.createElement("div", {
+  }, "Loading\u2026")), !loading && React.createElement("span", {
+    className: "pill",
+    "data-tone": reportStatus === 'FINAL' ? 'sage' : 'amber',
+    style: {
+      fontSize: 10.5
+    }
+  }, reportStatus), React.createElement("button", {
+    className: "btn",
+    "data-variant": "primary",
+    onClick: printReport,
+    disabled: loading
+  }, "Print / Save PDF"), React.createElement("button", {
+    className: "btn",
+    onClick: onClose
+  }, "Close")), React.createElement("div", {
     style: {
       flex: 1,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
+      overflow: 'auto',
+      padding: 20,
+      background: 'var(--ivory-100)'
     }
-  }, React.createElement("div", {
+  }, loading ? React.createElement("div", {
     style: {
-      textAlign: 'center'
+      textAlign: 'center',
+      padding: '48px 0',
+      color: 'var(--ink-400)'
     }
-  }, React.createElement("div", {
-    style: {
-      fontSize: 13,
-      color: 'var(--rust-600)',
-      marginBottom: 8
-    }
-  }, err), React.createElement("button", {
-    className: "btn",
-    "data-size": "sm",
-    onClick: close
-  }, "Close"))), data && !loading && !err && React.createElement(ReportPreview, {
-    data: data
-  })), data && !loading && !err && React.createElement("div", {
-    className: "modal-footer",
-    style: {
-      display: 'flex',
-      justifyContent: 'flex-end',
-      gap: 8,
-      flexShrink: 0
-    }
-  }, React.createElement("button", {
-    className: "btn",
-    "data-size": "sm",
-    "data-variant": "ghost",
-    onClick: close
-  }, "Cancel"), React.createElement("button", {
-    className: "btn",
-    "data-size": "sm",
-    "data-variant": "primary",
-    onClick: printReport
-  }, React.createElement(IconPrintRR, null), " Print / Save PDF"))));
+  }, "Loading report\u2026") : React.createElement(ReportPreview, {
+    order: order,
+    patient: patient,
+    results: results,
+    testById: testById,
+    specimens: specimens,
+    labName: labName,
+    labClia: labClia,
+    labDirector: labDirector,
+    labPhone: labPhone,
+    labAddress: labAddress,
+    reportStatus: reportStatus,
+    reportedAt: reportedAt
+  }))));
 };
-var IconPrintRR = ({
-  size = 13
-}) => React.createElement("svg", {
-  width: size,
-  height: size,
-  viewBox: "0 0 16 16",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: "1.25",
-  strokeLinecap: "round",
-  strokeLinejoin: "round"
-}, React.createElement("path", {
-  d: "M4 6V2h8v4"
-}), React.createElement("rect", {
-  x: "2",
-  y: "6",
-  width: "12",
-  height: "6",
-  rx: "1"
-}), React.createElement("path", {
-  d: "M4 9h8M4 12h8v2H4v-2z"
-}), React.createElement("circle", {
-  cx: "4.5",
-  cy: "8.5",
-  r: "0.5",
-  fill: "currentColor",
-  stroke: "none"
-}));
-window.ResultReportModal = ResultReportModal;
+Object.assign(window, {
+  ResultReportModal
+});
 //# sourceURL=result-report.jsx
 
 
@@ -25554,6 +25937,10 @@ var App = () => {
       case 'system-setup':
         return React.createElement(window.SystemSetupPage, {
           onNav: setActive
+        });
+      case 'lab-identity':
+        return React.createElement(window.LabIdentityPage, {
+          onBack: () => setActive('system-setup')
         });
       case 'billing':
         return React.createElement(window.BillingPage, {
