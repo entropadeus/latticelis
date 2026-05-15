@@ -256,6 +256,45 @@ _(statuses last refreshed 2026-05-07 evening; ✅ = end-to-end usable in browser
 
 _(newest first)_
 
+### UX polish — 2026-05-15 (local) — Top 3 from workflow audit shipped: critical-row tinting, required-field markers, dead-button cleanup
+
+**Tackled:** Following an Explore-agent audit of the app's user journeys, shipped the three highest-impact UX wins in a single commit.
+
+**Changes (commit `f3b1c83`):**
+
+1. **Critical results visually scream now.** LL / HH / AA flagged rows in both the main Results table and the patient panel's Recent Results table get a 3px rust left-edge stripe (`box-shadow: inset 3px 0 0 var(--rust)`) + a faint rust-tint background (`rgba(168,84,50,0.06)`), and the value cell is bolded to 700 + tinted rust. Previously a panic value was just a small rust pill on a white row — easy to miss when scanning a queue. Files: `result-pages.jsx`.
+2. **Required-field markers on New Order form.** `OrderSection` component now accepts a `required` prop that renders a red asterisk after the title. Patient and Tests are marked required; Client's sub-label changed from "Referring clinic / outreach customer" to "Optional — referring clinic / outreach customer" so optional/required is unambiguous from the first glance. File: `order-form.jsx`.
+3. **Dead buttons removed or wired:**
+   - Dashboard "Customize" button (`dashboard-pages.jsx:43`) — no `onClick`. Removed; no customization feature exists behind it.
+   - Orders "Filter" button (`order-workflow-pages.jsx:59`) — no `onClick`. Removed; the Status SegSelect in the panel already covers the only filter the page implements.
+   - Result drawer's "Print report" button (`entity-drawer.jsx:940`) was calling an unregistered `window.openResultReport(result.id)` (silent no-op). Now uses local `showReport` state inside `ResultOverview` — mirrors the order-drawer's pattern at line 642. Modal mounts conditionally with `orderId={result.orderId}` and `onClose={() => setShowReport(false)}`. Button is disabled with a tooltip when the result has no linked order.
+
+**Audit-item dismissed:** Accessioning draft-on-error was flagged as a bug by the auditor but verified to be already fixed — the `catch` block in `commitRow` (`accessioning.jsx:266-279`) shows the error notice and `return`s before `setDraft(blankRow())`. Comment explicitly says "Don't clear the draft on failure." Auditor misread the comment as a description of the bug. No change needed.
+
+**Verified:** Source-level only. User was remote (on phone) during this push — no Chrome MCP exercise of the new UI states. Required-field asterisks, dead-button removals, and the print-report local-state wiring are obviously correct on read. Critical-row styling and the print-report flow itself need a hard refresh + visual check next session.
+
+**Honest gaps:**
+- The critical-row tinting only fires when a result's `flag` is set to LL / HH / AA. If results in seeded data don't have any criticals, the styling won't be visible until one is generated (instrument-sim run or manual entry that crosses a critical threshold). Seed data check pending.
+- Print-report flow: the EntityDrawer order-view's `<window.ResultReportModal/>` was the previously-known-good path. The new result-view variant uses the same modal and the same prop interface, so behavior should be identical, but actual click-through unverified.
+
+**Cache bump** to `20260515d`, bundle rebuilt (780 KB). Hard refresh required (CLAUDE.md ritual) — the dev server doesn't send no-cache headers.
+
+**Next session should:** verify the three UX changes end-to-end via Chrome MCP, then start picking off the UX-audit queue (see Next Up).
+
+---
+
+### Result-report modal hotfix — 2026-05-15 (local) — Removed always-mounted bare ResultReportModal that stuck on "Loading…" with no working close
+
+**Tackled:** User reported the lab report modal was popping up on every page load and the Close button didn't work. Codex's `feat/result-report` branch (integrated earlier today) added `<window.ResultReportModal/>` to `app.jsx` line 240 with no props — `orderId` was undefined (modal stuck on "Loading report…"), `onClose` was undefined (clicking Close called `undefined()` which silently threw), and there was no `open` gate so the modal mounted on every page render. The branch had intended a global trigger (`window.openResultReport`) but never registered one.
+
+**Fix (commit `6bda5b5`):** Removed the bare mount from `app.jsx`. The EntityDrawer's order-view path (`entity-drawer.jsx:642`) already mounts its own ResultReportModal correctly with local state + proper props, so the bare mount was dead weight that only shipped a broken UI. The result-view print path remained a silent no-op until the follow-up commit `f3b1c83` wired it with the same local-state pattern.
+
+**Verified:** User confirmed the dispatch-feature triage workflow earlier in the session — but this specific fix was not visually confirmed before the next polish commit. The fix is mechanically obvious (remove an unconditional render of a prop-less stateful modal) so confidence is high.
+
+**Cache bump** to `20260515c`, bundle rebuilt.
+
+---
+
 ### Integration session — 2026-05-15 (local) — Squash-merge of three codex feature branches + repair of duplicated script-load block on main
 
 **Tackled:** User asked to pull down three codex-developed feature branches (`feat/result-report`, `feat/critical-value-thresholds-ll-hh`, `feat/rules-destub-patient-pregnant-condition`) and land them as a single squashed commit on `main`. Each branch was one commit ahead of main, all three touched `compiled/app.bundle.js`, `index.html`, `schema.js`, and `entity-drawer.jsx` — guaranteeing conflicts on every merge.
@@ -2436,7 +2475,26 @@ Audit events carry `thresholdSource: 'test' | 'default' | 'partial'` and `thresh
 
 ## Next Up
 
-_(updated 2026-05-08 — runtime, verification, accessioning condition capture, and review queue all now SHIPPED user-side; see Current State)_
+_(updated 2026-05-15 — added UX-audit queue at top; runtime, verification, accessioning condition capture, and review queue all now SHIPPED user-side; see Current State)_
+
+### UX-audit queue — 2026-05-15
+
+Surfaced by full-workflow audit (Explore agent walk-through). **Top 3 SHIPPED in commit `f3b1c83`**: critical-result row tinting (LL/HH/AA get rust stripe + bold value), required-field markers on order form (Patient / Tests get red asterisk, Client labeled optional), dead buttons removed/wired (Dashboard Customize, Orders Filter, result-drawer Print report). Remaining queue, in suggested priority order:
+
+- [ ] **⌘K palette: free-form cross-entity search** — currently nav + actions only. Add a "Search" mode that matches order numbers, patient MRNs, specimen barcodes, test codes; ⌘K → type → enter → opens entity drawer.
+- [ ] **Accessioning: surface first missing field on failed commit** — ValidationStrip shows dots only; on ⌘↵ with missing required, auto-focus the first empty + flash-highlight the row. (audit item #6)
+- [ ] **Empty-state CTAs** — Results table empty-with-filter shows "Adjust the filter" but not "or accession a specimen"; Orders empty shows nothing actionable. Add contextual primary action button to each major empty state. (audit item #3)
+- [ ] **New Order drawer: discard-confirm if tests selected on close/Esc** — currently silent drop. Show "Discard N selected tests?" if any tests are picked. (audit item #10)
+- [ ] **Verified-by / Released-by name truncation in tables** — long names balloon row height from 36px → 60px. Truncate to "S.A. Whitmore" form in tables; full name in drawer. (audit item #8)
+- [ ] **Correction history banner in superseded result drawer** — opening a superseded result currently shows only itself. Add banner: "This result was corrected — view correcting record" with link. (audit item #15)
+- [ ] **Inline patient create: duplicate warning by lastname+firstname** — currently no dedup check, creates new patient. Warn "John Smith already exists (MRN 123) — use existing?" (audit item #19)
+- [ ] **Multi-hop breadcrumb in entity drawer** — clicking Result → Related → Order has no "came from" chip. Add a clickable "← Result ABC123" header. (audit item #14)
+- [ ] **"Awaiting specimens" subtext on open orders** — open orders with no specimens look idle. Subtext clarifies the state. (audit item #18)
+- [ ] **Worklists bulk-reject: single reason for whole batch** — currently prompts per specimen. One reason for the batch when all failures are the same. (audit item #16)
+
+---
+
+
 
 1. **Rules Engine primitives — full enumeration with semantics & cost** — _(2026-05-07: SHIPPED as INTEROP §6. Every live primitive + stub documented with input shape, semantics, cost class, examples. See Run Log.)_ Residual: stubs themselves (panel membership, cold-chain, TAT clock, MLLP wiring); a lint task that diffs editor primitives vs. runtime keys.
 
