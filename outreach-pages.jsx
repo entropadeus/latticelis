@@ -210,8 +210,10 @@ const LabIdentityPage = ({ onBack }) => {
       <PageHeader title="Lab Identity"
         sub="Shown on printed result reports and PDF exports."
         actions={[
-          { label: saved ? 'Saved ✓' : 'Save', onClick: handleSave, tone: saved ? 'positive' : 'primary' },
-          { label: 'Back', onClick: onBack },
+          <button key="back" className="btn" data-size="sm" onClick={onBack}>Back</button>,
+          <button key="save" className="btn" data-size="sm"
+            data-variant={saved ? 'positive' : 'primary'}
+            onClick={handleSave}>{saved ? 'Saved ✓' : 'Save'}</button>,
         ]}/>
       <div className="panel" style={{ maxWidth: 520, padding: '20px 24px' }}>
         <LabeledField label="Lab name"            k="labName"         placeholder="e.g. Acme Regional Laboratory"/>

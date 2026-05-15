@@ -23603,14 +23603,18 @@ var LabIdentityPage = ({
   }, React.createElement(PageHeader, {
     title: "Lab Identity",
     sub: "Shown on printed result reports and PDF exports.",
-    actions: [{
-      label: saved ? 'Saved ✓' : 'Save',
-      onClick: handleSave,
-      tone: saved ? 'positive' : 'primary'
-    }, {
-      label: 'Back',
+    actions: [React.createElement("button", {
+      key: "back",
+      className: "btn",
+      "data-size": "sm",
       onClick: onBack
-    }]
+    }, "Back"), React.createElement("button", {
+      key: "save",
+      className: "btn",
+      "data-size": "sm",
+      "data-variant": saved ? 'positive' : 'primary',
+      onClick: handleSave
+    }, saved ? 'Saved ✓' : 'Save')]
   }), React.createElement("div", {
     className: "panel",
     style: {
