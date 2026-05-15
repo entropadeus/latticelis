@@ -44,6 +44,9 @@ const newPatient = (init = {}) => ({
   // delivery itself follows order.deliveryChannel + client.deliveryChannel
   // overrides — see `delivery-watcher.js`. Empty falls back to client default.
   preferredContact: init.preferredContact || '',  // ''|'phone'|'email'|'mail'|'portal'
+  // null = not asked / unknown; true = currently pregnant; false = confirmed not pregnant.
+  // Used by the patient.pregnant rules condition and reference-range demographic resolver.
+  pregnant: init.pregnant == null ? null : !!init.pregnant,
   createdAt: init.createdAt || Date.now(),
   updatedAt: Date.now(),
 });

@@ -206,7 +206,9 @@
       return false;
     },
     'specimen.temp.outside':     () => false,
-    'patient.pregnant':          () => false,
+    // patient.pregnant: true only when the field is explicitly set to true.
+    // null (unknown / not recorded) evaluates to false — no false positives on unasked patients.
+    'patient.pregnant':    (_, c) => !!(c.patient && c.patient.pregnant === true),
     // True when the order was placed with fasting status recorded (schema field: order.fasting).
     'patient.fasting':    (_, c) => !!(c.order && c.order.fasting),
     // result.delta.gt is now a real evaluator above — see "Delta check" comment.

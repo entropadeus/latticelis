@@ -708,7 +708,7 @@ const PatientOverview = ({ patient }) => {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(null);
   const [saving, setSaving] = React.useState(false);
-  const startEdit = () => { setDraft({ phone: patient.phone || '', email: patient.email || '', preferredContact: patient.preferredContact || '' }); setEditing(true); };
+  const startEdit = () => { setDraft({ phone: patient.phone || '', email: patient.email || '', preferredContact: patient.preferredContact || '', pregnant: patient.pregnant ?? null }); setEditing(true); };
   const cancel = () => { setDraft(null); setEditing(false); };
   const save = async () => {
     setSaving(true);
@@ -764,12 +764,22 @@ const PatientOverview = ({ patient }) => {
                 <option value="portal">Patient portal</option>
               </select>
             </div>
+            <div style={{ gridColumn: '1 / 3' }}>
+              <div className="section-title" style={{ fontSize: 9, marginBottom: 3 }}>Pregnancy status</div>
+              <select className="input" value={draft.pregnant == null ? '' : String(draft.pregnant)}
+                onChange={e => setDraft({ ...draft, pregnant: e.target.value === '' ? null : e.target.value === 'true' })}>
+                <option value="">Unknown / not recorded</option>
+                <option value="true">Currently pregnant</option>
+                <option value="false">Not pregnant</option>
+              </select>
+            </div>
           </div>
         ) : (
           <FactGrid items={[
             { l: 'Phone',     v: <span className="mono">{patient.phone || '—'}</span> },
             { l: 'Email',     v: <span className="mono">{patient.email || '—'}</span> },
             { l: 'Preferred', v: patient.preferredContact ? <span className="pill" data-tone="info">{patient.preferredContact}</span> : <span style={{ color: 'var(--ink-400)' }}>—</span> },
+            { l: 'Pregnant',  v: patient.pregnant === true ? <span className="pill" data-tone="warn">Pregnant</span> : patient.pregnant === false ? <span style={{ color: 'var(--ink-400)' }}>No</span> : <span style={{ color: 'var(--ink-400)' }}>Unknown</span> },
           ]}/>
         )}
       </div>
