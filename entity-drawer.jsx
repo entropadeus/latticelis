@@ -869,9 +869,9 @@ const ResultOverview = ({ result }) => {
         { l: 'Ref range', v: result.refRangeLow != null ? `${result.refRangeLow}–${result.refRangeHigh}` : '—' },
         { l: 'Flag',     v: result.flag || '—' },
         { l: 'Status',   v: result.status },
-        { l: 'Verified', v: result.verifiedAt ? `${fmtTs(result.verifiedAt)} by ${result.verifiedBy || '—'}` : 'pending' },
-        { l: 'Released', v: result.releasedAt ? `${fmtTs(result.releasedAt)} by ${result.releasedBy || '—'}` : 'not released', skipIfBlank: !result.releasedAt && !result.verifiedAt },
-        { l: 'Corrected', v: result.correctedAt ? `${fmtTs(result.correctedAt)} by ${result.correctedBy || '—'}` : null, skipIfBlank: !result.correctedAt },
+        { l: 'Verified', v: result.verifiedAt ? `${fmtTs(result.verifiedAt)} by ${resolveActor(result.verifiedBy)}` : 'pending' },
+        { l: 'Released', v: result.releasedAt ? `${fmtTs(result.releasedAt)} by ${resolveActor(result.releasedBy)}` : 'not released', skipIfBlank: !result.releasedAt && !result.verifiedAt },
+        { l: 'Corrected', v: result.correctedAt ? `${fmtTs(result.correctedAt)} by ${resolveActor(result.correctedBy)}` : null, skipIfBlank: !result.correctedAt },
       ]}/>
       <DrawerLink label="Specimen" entity={specimen} kind="specimen"
         text={specimen ? specimen.accessionNumber : '—'}/>
@@ -926,7 +926,7 @@ const ResultOverview = ({ result }) => {
                   <div style={{ fontSize: 10.5, color: 'var(--ink-500)', marginTop: 3 }}>
                     {fmtTs(r.correctedAt || r.verifiedAt || r.createdAt)}
                     {' · '}
-                    {r.correctedBy || r.verifiedBy || 'system'}
+                    {resolveActor(r.correctedBy || r.verifiedBy || 'system')}
                     {r.correctionReason && <span> · <em>"{r.correctionReason}"</em></span>}
                   </div>
                 </div>
@@ -1221,6 +1221,10 @@ const fmtTs = (ts) => {
   if (sameDay) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 };
+
+// Resolve a user ID to a display name for drawer fact grids and history panels.
+const resolveActor = (actorId) =>
+  (window.currentUserApi ? window.currentUserApi.displayName(actorId) : actorId) || '—';
 
 const collectionFor = (kind) => ({
   specimen: 'specimens', order: 'orders', patient: 'patients', result: 'results',
