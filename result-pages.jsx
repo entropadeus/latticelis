@@ -49,6 +49,16 @@ const ResultsPage = () => {
 
   const pager = usePagination(filtered);
 
+  // Abbreviate "First Last" → "F. Last" for dense table cells.
+  // Full name is surfaced via the element's title attribute on hover.
+  const abbrevName = (actor) => {
+    const full = window.currentUserApi ? window.currentUserApi.displayName(actor) : actor;
+    if (!full) return actor || '—';
+    const parts = full.trim().split(/\s+/);
+    if (parts.length < 2) return full;
+    return parts.slice(0, -1).map(p => p[0].toUpperCase() + '.').join('') + ' ' + parts[parts.length - 1];
+  };
+
   const pendingCount = useMemoOS(
     () => results.filter(r => r.status === 'preliminary' || r.status === 'pending').length,
     [results]
@@ -575,8 +585,9 @@ const ResultsPage = () => {
                           <button className="btn" data-variant="primary" data-size="xs" onClick={() => release(r)}
                             disabled={!canRelease}
                             title={permissionTitle(canRelease, 'Release result', 'release results')}>Release</button>
-                          <span style={{ fontSize: 10.5, color: 'var(--ink-400)', alignSelf: 'center' }}>
-                            verified by {window.currentUserApi ? window.currentUserApi.displayName(r.verifiedBy) : r.verifiedBy}
+                          <span style={{ fontSize: 10.5, color: 'var(--ink-400)', alignSelf: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 110 }}
+                            title={window.currentUserApi ? window.currentUserApi.displayName(r.verifiedBy) : r.verifiedBy}>
+                            verified by {abbrevName(r.verifiedBy)}
                           </span>
                         </div>
                       ) : r.deliveryStatus === 'failed' ? (
@@ -586,8 +597,9 @@ const ResultsPage = () => {
                         </button>
                       ) : r.releasedAt ? (
                         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                          <span style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>
-                            released by {window.currentUserApi ? window.currentUserApi.displayName(r.releasedBy) : r.releasedBy}
+                          <span style={{ fontSize: 10.5, color: 'var(--ink-400)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 110 }}
+                            title={window.currentUserApi ? window.currentUserApi.displayName(r.releasedBy) : r.releasedBy}>
+                            released by {abbrevName(r.releasedBy)}
                           </span>
                           {!r.supersededByResultId && (
                             <button className="btn" data-size="xs" data-variant="ghost"
