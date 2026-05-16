@@ -110,13 +110,38 @@ const NewOrderDrawer = ({ open, onClose }) => {
     setTimeout(() => firstFieldRef.current && firstFieldRef.current.focus(), 0);
   }, [open]);
 
-  // Esc closes (only while open)
+  // Guard close when the operator has already picked tests (or has a draft
+  // test in progress). A silent close would drop the selection with no
+  // indication — annoying when you've picked 4 tests and fat-finger Esc.
+  // Declared before the Esc effect so the effect closure captures it without
+  // a temporal-dead-zone access in the deps array.
+  const handleClose = async () => {
+    if (selectedTestIds.length === 0 && !draftTest) { onClose(); return; }
+    const n = selectedTestIds.length;
+    const what = n > 0 && draftTest
+      ? `${n} test${n === 1 ? '' : 's'} selected and a draft test in progress`
+      : n > 0
+      ? `${n} test${n === 1 ? '' : 's'} selected`
+      : 'a draft test in progress';
+    const ask = await safetyConfirm({
+      id: 'order.drawer.discard',
+      tone: 'warn',
+      title: 'Discard order draft?',
+      message: `Close without saving? You have ${what}.`,
+      confirmLabel: 'Discard and close',
+      cancelLabel: 'Keep editing',
+    });
+    if (ask.confirmed) onClose();
+  };
+
+  // Esc closes (only while open). Deps include the values handleClose closes
+  // over so the callback is always fresh when tests are added/removed.
   useEffectOF(() => {
     if (!open) return;
-    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } };
+    const onKey = async (e) => { if (e.key === 'Escape') { e.preventDefault(); await handleClose(); } };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, selectedTestIds, draftTest, onClose]);
 
   const matchingClients = useMemoOF(() => {
     const q = clientQ.trim().toLowerCase();
@@ -285,7 +310,7 @@ const NewOrderDrawer = ({ open, onClose }) => {
 
   return (
     <>
-      <div onClick={onClose} className="backdrop-in" style={{
+      <div onClick={handleClose} className="backdrop-in" style={{
         position: 'fixed', inset: 0, background: 'rgba(31,30,26,0.16)',
         zIndex: 900,
       }}/>
@@ -306,7 +331,7 @@ const NewOrderDrawer = ({ open, onClose }) => {
               Pick or create a patient, then add tests.
             </div>
           </div>
-          <button className="btn" data-variant="ghost" data-size="xs" onClick={onClose}>
+          <button className="btn" data-variant="ghost" data-size="xs" onClick={handleClose}>
             Close <span className="kbd" style={{ marginLeft: 4 }}>esc</span>
           </button>
         </div>
@@ -487,7 +512,7 @@ const NewOrderDrawer = ({ open, onClose }) => {
           padding: '12px 20px', borderTop: '1px solid var(--line)',
           display: 'flex', gap: 8, background: '#fff',
         }}>
-          <button className="btn" data-size="sm" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="btn" data-size="sm" onClick={handleClose} disabled={saving}>Cancel</button>
           <div style={{ flex: 1 }}/>
           <button className="btn" data-variant="primary" data-size="sm" onClick={save}
             disabled={saving || !canCreateOrder}
