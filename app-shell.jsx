@@ -703,12 +703,58 @@ const CommandPalette = ({ open, onClose, onNav }) => {
   const [q, setQ] = useState('');
   const inputRef = useRef(null);
   const [idx, setIdx] = useState(0);
+  const [entityMatches, setEntityMatches] = useState([]);
 
   useEffect(() => {
-    if (open) { setQ(''); setIdx(0); setTimeout(() => inputRef.current?.focus(), 30); }
+    if (open) { setQ(''); setIdx(0); setEntityMatches([]); setTimeout(() => inputRef.current?.focus(), 30); }
   }, [open]);
 
-  const items = useMemo(() => {
+  // Debounced cross-entity search: patients by MRN/name, orders by number, specimens by barcode/accession
+  useEffect(() => {
+    if (!q || q.length < 2) { setEntityMatches([]); return; }
+    const ql = q.toLowerCase();
+    const timer = setTimeout(async () => {
+      if (!window.db) return;
+      const results = [];
+      try {
+        const pts = await window.db.list('patients', p =>
+          (p.mrn || '').toLowerCase().includes(ql) ||
+          (p.lastName || '').toLowerCase().startsWith(ql) ||
+          (p.firstName || '').toLowerCase().startsWith(ql)
+        );
+        pts.slice(0, 4).forEach(p => {
+          const name = [p.lastName, p.firstName].filter(Boolean).join(', ') || p.mrn || '—';
+          results.push({ id: 'ent-p-' + p.id, label: name, sub: p.mrn || '', kind: 'Patient', entityKind: 'patient', entityId: p.id });
+        });
+      } catch (_) {}
+      try {
+        const ords = await window.db.list('orders', o =>
+          (o.orderNumber || '').toLowerCase().includes(ql) ||
+          (o.fillerOrderNumber || '').toLowerCase().includes(ql)
+        );
+        ords.slice(0, 4).forEach(o => {
+          const num = o.orderNumber || o.fillerOrderNumber || o.id;
+          const sub = [o.status, o.priority].filter(Boolean).join(' · ');
+          results.push({ id: 'ent-o-' + o.id, label: num, sub, kind: 'Order', entityKind: 'order', entityId: o.id });
+        });
+      } catch (_) {}
+      try {
+        const specs = await window.db.list('specimens', s =>
+          (s.barcode || '').toLowerCase().includes(ql) ||
+          (s.accessionNumber || '').toLowerCase().includes(ql)
+        );
+        specs.slice(0, 4).forEach(s => {
+          const bc = s.barcode || s.accessionNumber || s.id;
+          const sub = [s.type, s.state].filter(Boolean).join(' · ');
+          results.push({ id: 'ent-s-' + s.id, label: bc, sub, kind: 'Specimen', entityKind: 'specimen', entityId: s.id });
+        });
+      } catch (_) {}
+      setEntityMatches(results);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [q]);
+
+  const navItems = useMemo(() => {
     const all = [
       ...NAV_FLAT.filter(__navItemAllowed).map(n => ({ id: 'nav-' + n.id, label: 'Go to ' + n.label, kind: 'Navigate', target: n.id })),
       // Hidden destinations not on the sidebar (legacy Admin tile grid, etc.)
@@ -726,6 +772,23 @@ const CommandPalette = ({ open, onClose, onNav }) => {
     return all.filter(i => i.label.toLowerCase().includes(ql));
   }, [q]);
 
+  // Flat navigable list (entity matches first) used for keyboard idx
+  const items = useMemo(() => [...entityMatches, ...navItems], [entityMatches, navItems]);
+
+  // Render list interleaves section headers (non-navigable) between groups
+  const renderList = useMemo(() => {
+    const out = [];
+    if (entityMatches.length > 0) {
+      out.push({ _header: true, id: '_h_records', label: 'Records' });
+      entityMatches.forEach((item, i) => out.push({ ...item, _navIdx: i }));
+    }
+    if (navItems.length > 0) {
+      if (entityMatches.length > 0) out.push({ _header: true, id: '_h_actions', label: 'Actions' });
+      navItems.forEach((item, i) => out.push({ ...item, _navIdx: entityMatches.length + i }));
+    }
+    return out;
+  }, [entityMatches, navItems]);
+
   useEffect(() => { setIdx(0); }, [q]);
 
   const handleKey = (e) => {
@@ -734,9 +797,16 @@ const CommandPalette = ({ open, onClose, onNav }) => {
     if (e.key === 'Enter')     { e.preventDefault(); pick(items[idx]); }
     if (e.key === 'Escape')    { onClose(); }
   };
+
   const pick = (item) => {
     if (!item) return;
     if (item.permission && !hasPermission(item.permission)) return;
+    if (item.entityKind && item.entityId) {
+      onClose();
+      // Defer so the backdrop unmounts before the drawer mounts
+      setTimeout(() => { if (window.openEntity) window.openEntity(item.entityKind, item.entityId); }, 0);
+      return;
+    }
     if (item.target) onNav(item.target);
     onClose();
     // Side-effect actions (open dialogs, etc.). Run after nav so the destination page
@@ -744,6 +814,14 @@ const CommandPalette = ({ open, onClose, onNav }) => {
     if (item.id === 'a-new-order' && window.openNewOrder) {
       setTimeout(() => window.openNewOrder(), 0);
     }
+  };
+
+  // Kind badge style: entity kinds get palette-matched tones; nav kinds are plain
+  const kindStyle = kind => {
+    if (kind === 'Patient')  return { color: 'var(--sage-700)',  background: 'var(--sage-50)',    padding: '1px 6px', borderRadius: 4 };
+    if (kind === 'Order')    return { color: 'var(--amber)',     background: 'var(--amber-soft)', padding: '1px 6px', borderRadius: 4 };
+    if (kind === 'Specimen') return { color: 'var(--info)',      background: 'var(--info-soft)',  padding: '1px 6px', borderRadius: 4 };
+    return { color: 'var(--ink-400)' };
   };
 
   if (!open) return null;
@@ -768,28 +846,51 @@ const CommandPalette = ({ open, onClose, onNav }) => {
             style={{ flex: 1, border: 'none', outline: 'none', fontSize: 14, background: 'transparent' }}/>
           <span className="kbd">esc</span>
         </div>
-        <div style={{ maxHeight: 360, overflowY: 'auto', padding: 6 }}>
-          {items.length === 0 ? (
+        <div style={{ maxHeight: 400, overflowY: 'auto', padding: 6 }}>
+          {renderList.length === 0 ? (
             <div style={{ padding: 28, textAlign: 'center', color: 'var(--ink-400)', fontSize: 12.5 }}>
               No matches. Try a different query.
             </div>
-          ) : items.map((item, i) => {
+          ) : renderList.map(item => {
+            if (item._header) {
+              return (
+                <div key={item.id} style={{
+                  padding: '6px 10px 3px',
+                  fontSize: 10.5, fontWeight: 600,
+                  color: 'var(--ink-400)',
+                  letterSpacing: '0.05em', textTransform: 'uppercase',
+                }}>
+                  {item.label}
+                </div>
+              );
+            }
+            const navIdx = item._navIdx;
             const allowed = !item.permission || hasPermission(item.permission);
+            const ks = kindStyle(item.kind);
             return (
-            <button key={item.id} onClick={() => pick(item)} onMouseEnter={() => setIdx(i)}
-              disabled={!allowed}
-              title={allowed ? item.label : `you don't have permission to ${item.deniedAction || 'use this action'}`}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 10px', border: 'none',
-                background: idx === i ? 'var(--ivory-100)' : 'transparent',
-                borderRadius: 5, cursor: allowed ? 'pointer' : 'not-allowed', textAlign: 'left',
-                opacity: allowed ? 1 : 0.5,
-              }}>
-              <span style={{ fontSize: 13, color: 'var(--ink-900)', flex: 1 }}>{item.label}</span>
-              <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>{item.kind}</span>
-              {idx === i && <IconArrowRight size={12} style={{ color: 'var(--ink-400)' }}/>}
-            </button>
+              <button key={item.id}
+                onClick={() => pick(items[navIdx])}
+                onMouseEnter={() => setIdx(navIdx)}
+                disabled={!allowed}
+                title={allowed ? undefined : `you don't have permission to ${item.deniedAction || 'use this action'}`}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '8px 10px', border: 'none',
+                  background: idx === navIdx ? 'var(--ivory-100)' : 'transparent',
+                  borderRadius: 5, cursor: allowed ? 'pointer' : 'not-allowed', textAlign: 'left',
+                  opacity: allowed ? 1 : 0.5,
+                }}>
+                {item.entityKind ? (
+                  <>
+                    <span style={{ fontSize: 13, color: 'var(--ink-900)', fontWeight: 500, flex: 1 }}>{item.label}</span>
+                    {item.sub && <span style={{ fontSize: 11.5, color: 'var(--ink-500)', flexShrink: 0 }}>{item.sub}</span>}
+                  </>
+                ) : (
+                  <span style={{ fontSize: 13, color: 'var(--ink-900)', flex: 1 }}>{item.label}</span>
+                )}
+                <span style={{ fontSize: 11, fontWeight: 500, flexShrink: 0, ...ks }}>{item.kind}</span>
+                {idx === navIdx && <IconArrowRight size={12} style={{ color: 'var(--ink-400)' }}/>}
+              </button>
             );
           })}
         </div>
@@ -797,6 +898,9 @@ const CommandPalette = ({ open, onClose, onNav }) => {
           <span><span className="kbd">↑↓</span> navigate</span>
           <span><span className="kbd">↵</span> select</span>
           <span><span className="kbd">esc</span> close</span>
+          {q.length >= 2 && entityMatches.length === 0 && (
+            <span style={{ marginLeft: 'auto', color: 'var(--ink-300)', fontStyle: 'italic' }}>no matching records</span>
+          )}
         </div>
       </div>
     </div>
