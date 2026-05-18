@@ -30,7 +30,9 @@ const Page = ({ children, label }) => (
 );
 
 // ===== Empty data table (column scaffold preserved) =====
-const EmptyTable = ({ columns, message, sub }) => (
+// cta?: { label, onClick } — renders a primary action button below the sub-text.
+// Callers are responsible for permission-gating: only pass cta when the current user can act.
+const EmptyTable = ({ columns, message, sub, cta }) => (
   <div className="panel" style={{ overflow: 'hidden' }}>
     <table className="tbl">
       <thead>
@@ -41,6 +43,12 @@ const EmptyTable = ({ columns, message, sub }) => (
       <div className="empty-icon"><IconInbox size={18}/></div>
       <div className="empty-title">{message || 'No data to display'}</div>
       <div className="empty-sub">{sub || 'This view is wired and ready. Records will appear once data flows in.'}</div>
+      {cta && (
+        <button className="btn" data-variant="primary" data-size="sm"
+          onClick={cta.onClick} style={{ marginTop: 16 }}>
+          {cta.label}
+        </button>
+      )}
     </div>
   </div>
 );

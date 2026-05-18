@@ -502,7 +502,10 @@ const ResultsPage = () => {
           <EmptyTable
             columns={['Accession','Patient','Test','Value','Units','Ref range','Flag','Status','']}
             message={results.length === 0 ? 'No results yet' : 'No results match the filter'}
-            sub={results.length === 0 ? 'Route a specimen to an analyzer — the simulator drops results within a few seconds.' : 'Adjust the filter.'}/>
+            sub={results.length === 0
+              ? 'Route a specimen to an analyzer — the simulator drops results within a few seconds.'
+              : 'Adjust the filter, or accession a specimen to start the pipeline.'}
+            cta={hasPermission('ACCESSION') ? { label: 'Go to Accessioning', onClick: () => window.__navTo?.('accession') } : null}/>
         ) : (
           <table className="tbl">
             <thead>
