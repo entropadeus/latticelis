@@ -85,7 +85,8 @@ const OrdersPage = ({ filterClientId, onClearFilter }) => {
           <EmptyTable
             columns={['Order #','Patient','MRN','Tests','Priority','Status','TAT','Ordered','Facility']}
             message={orders.length === 0 ? 'No orders yet' : 'No orders match the filter'}
-            sub={orders.length === 0 ? 'Click "New order" to add a patient, pick tests, and set priority. Orders can also arrive via inbound interface.' : 'Adjust the filter or search.'}/>
+            sub={orders.length === 0 ? 'Create an order or wait for one to arrive via an inbound interface.' : 'Adjust the filter or search term.'}
+            cta={orders.length === 0 && canCreateOrder ? { label: 'New order', onClick: () => window.openNewOrder?.() } : null}/>
         ) : (
           <table className="tbl">
             <thead>
@@ -214,7 +215,8 @@ const SpecimensPage = () => {
           <EmptyTable
             columns={['Accession','Barcode','Patient','Order','Type','Container','Collected','Received','Condition','Flags','State']}
             message={specimens.length === 0 ? 'No specimens yet' : 'No specimens match the filter'}
-            sub={specimens.length === 0 ? 'Accession a specimen to populate the pipeline.' : 'Adjust the filter or search.'}/>
+            sub={specimens.length === 0 ? 'Accession a specimen to populate the pipeline.' : 'Adjust the filter or search term.'}
+            cta={specimens.length === 0 && canAccession ? { label: 'Go to Accessioning', onClick: () => window.__navTo?.('accession') } : null}/>
         ) : (
           <table className="tbl">
             <thead>
